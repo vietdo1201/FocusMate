@@ -6,7 +6,7 @@
 - Watch đã chuyển sang app standalone, một variant, `versionCode 14`, `1.13-watch-rules-v2`.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime và ESP-IDF GATT stub đang `IN_PROGRESS / VERIFIED_LOCAL`; camera/detector vẫn chưa bắt đầu trong firmware hiện tại.
+- Protocol canonical đã hoàn tất. BLE runtime và ESP-IDF GATT stub đang `IN_PROGRESS / VERIFIED_LOCAL`; camera smoke-test đã có scaffold build-local nhưng bị khóa mặc định, detector vẫn chưa bắt đầu.
 
 ## Gate A — nền tảng dev (đạt 2026-08-22)
 
@@ -17,8 +17,8 @@
 
 ## Hành động tiếp theo
 
-1. Trước khi cấp nguồn camera: xác minh oscillator/XCLK, pinout, 3,3 V/GND và revision PCB OV2640.
-2. Ghép camera smoke test vào firmware hiện tại; sau đó mới thêm detector/model card/license/hash.
+1. Trước khi bật camera trong firmware: xác minh oscillator/XCLK, pinout, 3,3 V/GND và revision PCB OV2640 bằng quan sát vật lý.
+2. Chạy camera smoke test đã được khóa bởi Kconfig; chỉ sau khi đạt mới thêm detector/model card/license/hash.
 3. Benchmark latency/RAM/FPS/nhiệt/nguồn trên ESP32-S3 thật, không lưu ảnh hay identifier.
 4. Chạy calibration/posture benchmark và phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE`.
 

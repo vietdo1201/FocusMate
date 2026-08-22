@@ -1,0 +1,22 @@
+menu "FocusMate camera hardware gate"
+
+config FOCUSMATE_CAMERA_ENABLE
+    bool "Enable OV2640 camera smoke test"
+    default n
+    help
+        Keep disabled until the exact module/PCB revision, 3.3 V/GND, data pins,
+        and XCLK source have been physically confirmed and recorded.
+
+config FOCUSMATE_CAMERA_PINOUT_CONFIRMED
+    bool "I physically confirmed this exact pinout and XCLK source"
+    depends on FOCUSMATE_CAMERA_ENABLE
+    default n
+    help
+        Safety interlock. Enabling camera without this confirmation fails build.
+
+config FOCUSMATE_CAMERA_EXTERNAL_OSCILLATOR
+    bool "OV2640 module has its own oscillator (ESP XCLK disconnected)"
+    depends on FOCUSMATE_CAMERA_ENABLE
+    default y
+
+endmenu

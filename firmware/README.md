@@ -5,9 +5,16 @@ privacy-safe GATT vertical slice: it advertises the normative service, exposes
 the exact 34-byte Device Info structure, accepts control commands, and emits
 canonical no-face observations at 5 Hz. No image bytes leave the ESP.
 
-The camera smoke test must remain a separate evidence step until the connected
-OV2640 module/PCB revision and its XCLK source are recorded. Do not infer an
-XCLK wiring choice from the sensor name alone.
+The camera transport dependency is pinned to Espressif `esp32-camera` 2.1.7
+(Apache-2.0); detector dependencies are intentionally not present until the
+camera smoke gate has passed on the recorded hardware revision.
+
+The camera smoke test is compiled but disabled by default. It has a two-part
+Kconfig interlock: both `FOCUSMATE_CAMERA_ENABLE` and
+`FOCUSMATE_CAMERA_PINOUT_CONFIRMED` must be enabled after the connected OV2640
+module/PCB revision and its XCLK source are physically recorded. Do not infer an
+XCLK wiring choice from the sensor name alone. Smoke frames are counted and
+immediately returned; no image bytes are stored or transmitted.
 
 Build and flash from an exported ESP-IDF 5.5.5 shell:
 

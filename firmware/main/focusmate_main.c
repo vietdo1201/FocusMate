@@ -19,6 +19,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "face_observation.h"
+#include "camera_smoke.h"
 
 /* Provided by NimBLE's persistent store implementation. */
 void ble_store_config_init(void);
@@ -30,7 +31,7 @@ void ble_store_config_init(void);
 #define DEFAULT_NOTIFICATION_CAPACITY 20U
 #define MAX_NOTIFICATION_CAPACITY 514U
 /* Stub transport does not claim detector/camera readiness (bits 0/1). */
-#define CAPABILITIES ((1U << 2) | (1U << 3) | (1U << 4))
+#define BASE_CAPABILITIES ((1U << 2) | (1U << 3) | (1U << 4))
 
 static const char *TAG = "focusmate";
 static uint8_t own_addr_type;
@@ -45,6 +46,7 @@ static uint8_t message_id;
 static uint32_t notification_attempts;
 static uint32_t notification_failures;
 static uint32_t observations_emitted;
+static uint32_t capabilities = BASE_CAPABILITIES;
 
 static const ble_uuid128_t service_uuid = BLE_UUID128_INIT(
     0x6e, 0x44, 0x37, 0xf6, 0x04, 0x4a, 0x0b, 0x83,
@@ -80,7 +82,7 @@ static int device_info_access(uint16_t connection, uint16_t attribute,
     info[27] = 4;
     info[28] = 16;
     info[29] = rate_dhz;
-    put_le(info + 30, CAPABILITIES, 4);
+    put_le(info + 30, capabilities, 4);
     return os_mbuf_append(context->om, info, sizeof info) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
@@ -372,6 +374,7 @@ void app_main(void)
     ESP_ERROR_CHECK(error);
     esp_fill_random(boot_id, sizeof boot_id);
     protocol_self_test();
+    if (focusmate_camera_smoke_init()) capabilities |= (1U << 1);
 
     ESP_ERROR_CHECK(nimble_port_init());
     ble_svc_gap_init();
