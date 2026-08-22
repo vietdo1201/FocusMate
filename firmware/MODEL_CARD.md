@@ -7,26 +7,24 @@
 - Component: `espressif/human_face_detect` `0.5.0`.
 - Source revision declared by the component: `f43b41fd533da882382f9cd3ef305c829c138189`.
 - Runtime: `espressif/esp-dl` `3.3.9` on ESP-IDF `5.5.5`.
-- Architecture selected: two-stage `MSRMNP_S8_V1`.
-- License: MIT for `human_face_detect`, its two model files, and ESP-DL. See
+- Architecture selected: one-stage `ESPDET_PICO_224_224_FACE`.
+- License: MIT for `human_face_detect`, the selected model file, and ESP-DL. See
   [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Pinned S3 model files:
 
 | File | Bytes | SHA-256 |
 |---|---:|---|
-| `human_face_detect_msr_s8_v1.espdl` | 61,168 | `AB705D4B831EEAE9FF21FABFE4471AFFAE1006A4A2C273DE022BAC26DB4DF973` |
-| `human_face_detect_mnp_s8_v1.espdl` | 129,968 | `E981FE2107281F25E8C54F5F091C1037C8343A9E23F4C51FCC22BD37728C0157` |
+| `espdet_pico_224_224_face.espdl` | 480,384 | `C9A991E00AECA4009EB2771E3FCCF7A7FF8A47781A90DC66701692FCDF1F1B5E` |
 
-The build tool packages these two files into a 191,296-byte PDL3 blob. The
-observed package SHA-256 is
-`6AD9B124F61DF63B2A7A1368310853899EC4DF8ED89AC355A7F34159ABFF65F0`.
+The build tool packages this file into a 480,496-byte PDL3 blob. The observed
+package SHA-256 is `BB8AC5DF0BCC00F00D84CDCA02BFBA8686CA7B938B3600CB23D8DD6F598D1B4`.
 
 ## Input, processing and output
 
-- Camera input: RGB565 big-endian, 240×240, one framebuffer in PSRAM.
-- Vendor model inputs: MSR 120×160×3 followed by MNP 48×48×3.
-- Default score/NMS thresholds: 0.5/0.5 for both stages.
+- Camera input: direct JPEG QVGA 320×240, quality 8, one framebuffer in PSRAM.
+- Firmware decodes RGB888 at 320×240, center-crops 240×240 without aspect distortion, then ESP-DL preprocesses for the vendor model input 224×224×3.
+- Firmware score threshold: 0.35. Calibration and posture independently require confidence ≥0.70.
 - If several faces pass the threshold, firmware selects highest score, then
   larger area, then lexicographically smaller pixel box for deterministic ties.
 - Pixel boxes are clipped to the image and treated as inclusive. Width/height
@@ -38,17 +36,18 @@ observed package SHA-256 is
 
 ## Measured device behavior
 
-On the recorded ESP32-S3 rev 0.2 at 240 MHz, the model loaded from flash rodata
-and completed its first real inference in 47 ms. A roughly 8 minute 40 second
-observation window completed 3,900 inferences with zero inference failures and
-47.0–47.1 ms average model-path latency. Camera cadence remained about 7.45
-FPS. Later device runs confirmed the positive bbox path at roughly 55–57 ms
-with confidence up to about 0.99. See
-[`../reports/2026-08-22-gate-c-face-detector.md`](../reports/2026-08-22-gate-c-face-detector.md).
+On the recorded ESP32-S3 rev 0.2 at 240 MHz, the current ESPDet build loaded
+from flash rodata and produced real positive bboxes with confidence observed up
+to about 0.90. End-to-end detector latency, including JPEG decode and square
+crop, measured about 294–304 ms (roughly 2.6–3.0 FPS). A no-person interval
+completed more than 50 consecutive inferences without a false positive. BLE
+continued at 5 Hz, MTU 256, with zero notification failures during the short
+concurrent run. This supersedes the older MSR+MNP benchmark recorded in
+[`../reports/2026-08-22-gate-c-face-detector.md`](../reports/2026-08-22-gate-c-face-detector.md); long-run evidence is still required.
 
 ## Quality and limitations
 
-- Espressif reports mAP50-95 `0.367` for the combined MSR+MNP model on its
+- Espressif reports mAP50-95 `0.504` for ESPDet Pico 224 on its
   custom validation set. That number is vendor context, not FocusMate device
   acceptance and not a guarantee for this camera placement.
 - Device runs verified model load, repeated no-face inference, positive bbox

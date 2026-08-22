@@ -12,7 +12,7 @@ Tài liệu này là contract HTTP cho dashboard shadow của ADR 0005. JSON dù
 
 ## Frame
 
-`GET /camera.jpg?after=<uint32>` trả JPEG `240×240`, `Cache-Control: no-store` và các header:
+`GET /camera.jpg?after=<uint32>` trả JPEG QVGA `320×240`, `Cache-Control: no-store` và các header:
 
 - `X-FocusMate-Frame-Sequence`
 - `X-FocusMate-Observed-Uptime-Ms`
@@ -38,9 +38,8 @@ Posture vocabulary cố định: `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT
 
 ## Control
 
-- `POST /api/posture/calibrate`: bắt đầu cửa sổ 5 giây; chỉ mẫu hợp lệ tăng progress.
+- `POST /api/posture/calibrate`: thử dùng 20 mẫu hợp lệ gần nhất trong pre-buffer tối đa 10 giây; nếu chưa đủ thì mở cửa sổ tối đa 8 giây để thu tiếp. Chỉ bbox có confidence ≥0,70 tăng progress và baseline chỉ được lưu nếu spread geometry ổn định.
 - `POST /api/posture/reset`: xóa baseline shadow khỏi RAM/NVS.
 - `GET /api/wifi/scan`, `POST /api/wifi/connect`, `POST /api/wifi/reset`, `POST /api/wifi/ap-password`: semantics tương đương dashboard camera lịch sử, có validate length và không echo password.
 
 Dashboard giữ tối đa hai phút telemetry số trong RAM browser. Export JSON/CSV chỉ gồm status/geometry, không chứa JPEG hoặc identifier.
-

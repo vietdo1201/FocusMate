@@ -15,8 +15,8 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 | Posture insight/report policy | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 180 s và 4 episode/15 phút tests |
 | BLE GATT Watch ↔ ESP | `IN_PROGRESS` | `TARGET` | `VERIFIED_LOCAL` | Watch 5 Pro + ESP thật: encrypted bond, MTU 23→256, 5,0 Hz, reboot reconnect; [Gate B report](../reports/2026-08-22-gate-b-ble-vertical-slice.md) |
 | Firmware ESP-IDF | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | GATT + camera + detector/no-face/positive-bbox chạy trên ESP32-S3 thật; long-run còn thiếu; [Gate C detector report](../reports/2026-08-22-gate-c-face-detector.md) |
-| OV2640 camera smoke | `IMPLEMENTED` | `TARGET` | `VERIFIED_DEVICE` | PID 0x26, RGB565 240×240, 25/25 frame, 0 lỗi, 7,45 FPS; [report](../reports/2026-08-22-gate-c-camera-smoke.md) |
-| Face detector ESP32-S3 | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | MSR+MNP load/inference thật; positive bbox ~55–57 ms đã xác nhận; có model card/license/hash; chưa quality/long-run gate |
+| OV2640 camera smoke | `IMPLEMENTED` | `TARGET` | `VERIFIED_DEVICE` | PID 0x26; JPEG QVGA quality 8, sensor xoay đúng 180°, 25/25 frame; [report lịch sử](../reports/2026-08-22-gate-c-camera-smoke.md), realtime retest đang hoàn thiện |
+| Face detector ESP32-S3 | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | ESPDet Pico 224 nhận bbox mặt thật tới ~90%; ~294–304 ms với JPEG decode/crop; no-person không sinh bbox trong >50 inference; BLE 5 Hz/0 notify failure; [retest](../reports/2026-08-22-shadow-dashboard-device-retest.md) |
 | Posture với ESP32-S3 + Galaxy Watch 5 Pro thật | `IN_PROGRESS` | `TARGET` | `UNVERIFIED` | Watch đếm đúng valid calibration `0/20→5/20`, MTU 256; chưa baseline `LIVE`, threshold hay posture |
 | Yawn/PFLD | `NOT_STARTED` | `DEFERRED` | `UNVERIFIED` | `deferred/unavailable` cho v2 và alpha |
 | Future posture model shadow | `NOT_STARTED` | `EXPERIMENTAL` | `UNVERIFIED` | Chỉ có interface, chưa runtime/model |
