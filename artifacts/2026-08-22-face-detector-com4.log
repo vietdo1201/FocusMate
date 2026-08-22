@@ -1,0 +1,33 @@
+FocusMate Gate C face-detector excerpt (COM4, 115200 baud)
+Captured: 2026-08-22 Asia/Saigon
+Commands: idf.py -p COM4 flash; idf.py -p COM4 monitor
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+Crystal is 40MHz
+Flash size: 16MB
+
+I app_init: Project name:     focusmate_esp
+I app_init: App version:      0.3.0-face-detector
+I esp_psram: Found 8MB PSRAM device
+I esp_psram: SPI SRAM memory test OK
+I focusmate: C canonical golden self-test passed
+I camera: Camera PID=0x26 VER=0x42 MIDL=0x7f MIDH=0xa2
+I camera: Detected OV2640 camera
+I focusmate-camera: OV2640 smoke PID=0x0026 format=RGB565 size=240x240 valid=25 errors=0 fps=7.45
+I focusmate-detector: integer geometry self-test passed
+I focusmate-detector: initial inference passed latency_ms=47 face=0 confidence_q6=0
+I focusmate: FocusMate GATT ready capabilities=0x0000001f; no image data is transmitted
+I focusmate-detector: benchmark inferences=3900 failures=0 avg_ms=47.0 last_ms=47 face=0 confidence_q6=0
+
+Watch transport excerpt from the same firmware build:
+
+I focusmate: connected handle=1
+I focusmate: encryption change handle=1 status=0
+I focusmate: observation subscribed=1 mtu=23
+I focusmate: control opcode=1 rate_dhz=50 streaming=1
+I focusmate: transport observations=100 notify_attempts=100 notify_failures=0 mtu=256
+
+Only operational lines required by the gate are retained. Camera frame bytes were
+returned by firmware and were not logged, stored, or transmitted. The scene did
+not contain a face, so this artifact is not evidence for a positive bbox.

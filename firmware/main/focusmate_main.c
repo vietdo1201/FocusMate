@@ -20,6 +20,7 @@
 
 #include "face_observation.h"
 #include "camera_smoke.h"
+#include "face_detector.h"
 
 /* Provided by NimBLE's persistent store implementation. */
 void ble_store_config_init(void);
@@ -355,8 +356,18 @@ static void observation_task(void *arg)
     char payload[320];
     while (true) {
         if (streaming && subscribed && active_connection != BLE_HS_CONN_HANDLE_NONE) {
-            const uint64_t uptime = (uint64_t)(esp_timer_get_time() / 1000);
-            const size_t length = focusmate_encode_no_face(payload, sizeof payload, sequence++, uptime, NULL, 0);
+            focusmate_face_result_t result = {0};
+            size_t length = 0U;
+            if (focusmate_face_detector_latest(&result)) {
+                if (result.face_detected) {
+                    length = focusmate_encode_face(payload, sizeof payload, sequence++, result.observed_uptime_ms,
+                                                   result.cx_q6, result.cy_q6, result.width_q6,
+                                                   result.height_q6, result.confidence_q6, NULL, 0);
+                } else {
+                    length = focusmate_encode_no_face(payload, sizeof payload, sequence++,
+                                                      result.observed_uptime_ms, NULL, 0);
+                }
+            }
             if (length > 0U) notify_payload((const uint8_t *)payload, length);
         }
         const TickType_t delay = pdMS_TO_TICKS(10000U / rate_dhz);
@@ -374,8 +385,12 @@ void app_main(void)
     ESP_ERROR_CHECK(error);
     esp_fill_random(boot_id, sizeof boot_id);
     protocol_self_test();
-    if (focusmate_camera_smoke_init()) capabilities |= (1U << 1);
+    if (focusmate_camera_smoke_init()) {
+        capabilities |= (1U << 1);
+        if (focusmate_face_detector_start()) capabilities |= (1U << 0);
+    }
 
+    esp_log_level_set("NimBLE", ESP_LOG_WARN);
     ESP_ERROR_CHECK(nimble_port_init());
     ble_svc_gap_init();
     ble_svc_gatt_init();
@@ -392,5 +407,5 @@ void app_main(void)
     ble_store_config_init();
     nimble_port_freertos_init(host_task);
     xTaskCreate(observation_task, "face-observation", 4096, NULL, 5, NULL);
-    ESP_LOGI(TAG, "FocusMate GATT stub ready; no image data is transmitted");
+    ESP_LOGI(TAG, "FocusMate GATT ready capabilities=0x%08" PRIx32 "; no image data is transmitted", capabilities);
 }

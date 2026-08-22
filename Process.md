@@ -6,7 +6,7 @@
 - Watch đã chuyển sang app standalone, một variant, `versionCode 14`, `1.13-watch-rules-v2`.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; firmware và camera smoke có bằng chứng thiết bị thật, detector vẫn chưa bắt đầu.
+- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera smoke và detector runtime có bằng chứng thiết bị thật, positive bbox/posture vẫn chưa đạt.
 
 ## Gate A — nền tảng dev (đạt 2026-08-22)
 
@@ -17,9 +17,9 @@
 
 ## Hành động tiếp theo
 
-1. Tích hợp face detector chính thức; ghi model card, license, source/version và hash.
-2. Chạy golden/negative vectors cho bbox encoder C và benchmark latency/RAM/FPS/nhiệt/nguồn trên ESP32-S3 thật.
-3. Chạy calibration/posture benchmark và phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
+1. Đặt mặt thật vào khung, thu bbox theo từng tư thế và chạy low-light acceptance.
+2. Chốt geometry threshold từ số đo thật; đo RAM/nhiệt/nguồn và xác nhận posture không đổi quyết định Rule Engine.
+3. Chạy phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 
 ## Gate B — protocol + BLE vertical slice (đạt mức local 2026-08-22)
 
@@ -36,6 +36,15 @@
 - Firmware `0.2.0-camera-smoke` build/flash trên COM4; OV2640 PID 0x26 đạt 25/25 frame RGB565 240×240, 0 lỗi, 7,45 FPS.
 - Watch reconnect bằng bond cũ, đọc capability `0x1e`, MTU 256 và tiếp tục nhận 5,0 Hz; UI giữ `UNAVAILABLE` vì detector bit chưa bật.
 - Xem [Gate C camera report](reports/2026-08-22-gate-c-camera-smoke.md). Chỉ hàng camera smoke được nâng `VERIFIED_DEVICE`; detector và posture thật vẫn chưa xác minh.
+
+## Gate C — detector runtime (đạt phạm vi runtime 2026-08-22)
+
+- Firmware `0.3.0-face-detector` dùng `human_face_detect 0.5.0` + `esp-dl 3.3.9`, model MSR+MNP S8; model card có license, source revision và hash byte.
+- Binary 2.483.664 byte chạy từ factory partition 4 MiB; NVS/bond giữ nguyên địa chỉ. Build còn 41% partition.
+- Trên ESP thật: integer geometry self-test pass, inference đầu 47 ms; cửa sổ khoảng 8 phút 40 giây đạt 3.900 inference, 0 lỗi, trung bình 47,0–47,1 ms.
+- Watch đọc capability `0x1f`, `usable=true`, MTU 256; 100/100 notify không lỗi ở 5 Hz và pipeline nhận 20/20 no-face hợp lệ.
+- Resolver xác nhận các version component đã ghim; firmware build pass với 41% app partition trống. Full `verify.ps1` pass 103 task trong 2 phút 54 giây.
+- Xem [Gate C detector report](reports/2026-08-22-gate-c-face-detector.md). Chưa có face-positive/bbox nên posture và `VERIFIED_DEVICE` toàn hệ thống vẫn bị chặn.
 
 ## Resume
 

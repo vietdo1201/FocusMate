@@ -1,0 +1,77 @@
+# Gate C — face detector runtime trên ESP32-S3 thật
+
+## Kết luận
+
+- **PASS / VERIFIED_DEVICE** cho phạm vi: load model, inference no-face lặp lại,
+  capability gate và transport sang Galaxy Watch 5 Pro.
+- **Chưa pass**: positive face/bbox, chất lượng low-light, threshold hình học,
+  nhiệt/nguồn và phiên 2–3 giờ. Vì vậy chưa nâng toàn hệ thống lên
+  `VERIFIED_DEVICE`.
+
+## Build và phần cứng
+
+- ESP-IDF `5.5.5`; app `0.3.0-face-detector`.
+- ESP32-S3 rev `0.2`, flash 16 MB, octal PSRAM 8 MB, CPU 240 MHz.
+- OV2640 PID `0x26`, RGB565 240×240, module dùng oscillator riêng.
+- Factory partition 4 MiB; NVS giữ tại `0x9000`.
+- Firmware BIN: 2,483,664 byte; SHA-256
+  `11A697FA22B0B01CF4B26FF70B29CE620D57C20C6750421163B400B1B3A438BE`.
+- ELF SHA-256:
+  `FB0C3C3FCBAC435C402A7D1F7A5396C65B6007EE4CA0E35A343BAF3D1CA48DE8`.
+- App partition còn trống `0x1a1a30` byte, khoảng 41%.
+
+Lệnh:
+
+```text
+idf.py reconfigure
+idf.py build
+idf.py -p COM4 flash
+idf.py -p COM4 monitor
+```
+
+Lần `reconfigure` cuối giải lại manifest và xác nhận đúng `esp-dl 3.3.9`,
+`esp32-camera 2.1.7`, `human_face_detect 0.5.0`, sau đó `idf.py build` pass.
+
+## Model và benchmark
+
+- `human_face_detect 0.5.0`, `esp-dl 3.3.9`, model MSR+MNP S8.
+- Hash từng model, license và giới hạn sử dụng nằm trong
+  [`../firmware/MODEL_CARD.md`](../firmware/MODEL_CARD.md).
+- Boot gate: `integer geometry self-test passed`.
+- Inference thật đầu tiên: 47 ms, no-face.
+- Cửa sổ quan sát khoảng 8 phút 40 giây: 3.900 inference, 0 inference failure,
+  latency trung bình 47,0–47,1 ms; camera khoảng 7,45 FPS.
+- Có diagnostic DMA overflow thoáng qua của camera nhưng không làm tăng bộ đếm
+  inference failure. Cần phiên dài để quyết định tính ổn định cuối cùng.
+- Log COM4 đã lọc, không chứa frame/identifier:
+  [`../artifacts/2026-08-22-face-detector-com4.log`](../artifacts/2026-08-22-face-detector-com4.log).
+
+## Watch và transport
+
+- Galaxy Watch 5 Pro `SM-R925F`, Wear OS 6 / Android 16, API 36.
+- Bond mã hóa cũ được giữ sau đổi partition/flash.
+- Watch đọc Device Info: protocol 1, framing 1, capability `0x1f`,
+  `usable=true`.
+- MTU 256, subscribe thành công, START 50 dHz.
+- Firmware ghi 100 observation / 100 notify attempt / 0 notify failure ở 5 Hz.
+- Watch nhận 20/20 observation no-face hợp lệ và giữ `CALIBRATING`, đúng vì
+  chưa có mẫu face-positive để hiệu chỉnh geometry.
+- Log pipeline Watch đã lọc:
+  [`../artifacts/2026-08-22-watch-detector-pipeline.log`](../artifacts/2026-08-22-watch-detector-pipeline.log).
+
+## Privacy và phần còn thiếu
+
+- Không frame/crop/landmark/embedding/identifier rời ESP; chỉ observation JSON.
+- Scene kiểm thử không có mặt trong khung nên chưa có bbox/confidence dương.
+- Gate kế tiếp phải thu face-positive theo từng tư thế, low-light, nhiệt/nguồn
+  và phiên 2–3 giờ trước report `VERIFIED_DEVICE` toàn hệ thống.
+
+## Regression gate
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\verify.ps1
+BUILD SUCCESSFUL in 2m 54s
+103 actionable tasks: 101 executed, 2 up-to-date
+```
+
+Gate này gồm `:protocol:test`, app unit tests, lint, debug APK và release APK.

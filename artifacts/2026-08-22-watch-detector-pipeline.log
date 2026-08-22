@@ -1,0 +1,16 @@
+FocusMate Gate C Watch detector-pipeline excerpt
+Captured: 2026-08-22 Asia/Saigon
+Device: Samsung Galaxy Watch 5 Pro SM-R925F, Android 16 / API 36
+
+FaceObservationBleClient: DeviceInfo protocol=1 framing=1 capabilities=0x1f usable=true
+FaceObservationBleClient: negotiated MTU=256
+FaceObservationBleClient: observation notifications subscribed
+FaceObservationBleClient: START rate_dhz=50
+
+Visible runtime state after receiving the real ESP stream:
+ĐANG HIỆU CHỈNH • 20/20 mẫu
+MTU 256 • 5.0 Hz
+
+The 20 valid observations were no-face observations. Remaining in CALIBRATING
+is expected and does not count as positive bbox, geometry calibration, posture,
+or whole-system VERIFIED_DEVICE evidence.
