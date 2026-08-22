@@ -2,6 +2,15 @@
 
 Status canonical: [`../../docs/STATUS.md`](../../docs/STATUS.md).
 
+## Thiết bị của hồ sơ
+
+| Vai trò | Thiết bị | Ghi chú |
+|---|---|---|
+| Watch | Galaxy Watch 5 Pro (Wear OS, API ≥ 33) | Thiết bị kiểm chứng của Giai đoạn 3; `VERIFIED_DEVICE` chỉ được cấp cho những gì đã chạy trên máy này |
+| Detector | ESP32-S3 N16R8 + OV2640 | Sơ đồ chân còn `DRAFT/UNVERIFIED` trong [`../../data/So_do_chan.md`](../../data/So_do_chan.md) |
+
+Galaxy Watch FE vẫn nằm trong dải tương thích của `minSdk 30` nhưng **không** phải thiết bị kiểm chứng của đợt này và không có bằng chứng thiết bị. Report thiết bị phải ghi model + phiên bản OS thực tế, không suy diễn sang model khác.
+
 ## Giai đoạn 0 — Watch rules/protocol local
 
 Đầu ra: app standalone một variant, fatigue `1..10`, Rule Engine v2, `FaceObservationV1`, geometry classifier, posture insight/report policy và clean verification. Đây là bằng chứng local, chưa phải hardware readiness.
@@ -26,9 +35,9 @@ Gate: build firmware và smoke test camera/detector trên board thật.
 
 - Watch calibration median, geometry/temporal classification từ bbox thật.
 - Kiểm tra reconnect, freshness, missing capability và battery.
-- Xác nhận Rule Engine/notification trên Galaxy Watch FE.
+- Xác nhận Rule Engine/notification trên Galaxy Watch 5 Pro (Wear OS, API ≥ 33).
 
-Gate: report `VERIFIED_DEVICE` có app/firmware build và hardware revision.
+Gate: report `VERIFIED_DEVICE` có app/firmware build, hardware revision của ESP32-S3, model Watch và phiên bản OS của Watch.
 
 ## Giai đoạn 4 — Alpha
 

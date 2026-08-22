@@ -8,6 +8,13 @@ Phạm vi: `soucre_code/from_On_Hand_3_android_wear`
 Phần này ghi lại căn cứ tại thời điểm cleanup. Sau khi Git baseline được tạo,
 quyền ưu tiên hiện hành nằm trong [`../../docs/GOVERNANCE.md`](../../docs/GOVERNANCE.md).
 
+> **Addendum 2026-08-22 (historical, không sửa thân báo cáo).** Ba câu trong báo cáo
+> này đã lệch so với hiện tại và **không** được dùng làm nguồn chuẩn:
+> `settings.gradle.kts` nay là `:app` + `:protocol` (không còn `:shared`); repo Git
+> đã được khởi tạo lại tại `D:\FocusMate-main` nên commit `726430a` không tồn tại
+> trong lịch sử hiện hành; thiết bị kiểm chứng nay là Galaxy Watch 5 Pro
+> ([ROADMAP.md](ROADMAP.md)). Trạng thái hiện hành: [`../../docs/STATUS.md`](../../docs/STATUS.md).
+
 1. `../../help.md` là nguồn yêu cầu kỹ thuật ưu tiên cao nhất.
 2. `../../Readme.md` xác định hai thành phần chính là Galaxy Watch FE và ESP32-S3.
 3. `../../docs/Vi_du.md` mô tả event posture/yawn trong một phiên.
