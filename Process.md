@@ -6,7 +6,7 @@
 - Watch đã chuyển sang app standalone, một variant, `versionCode 14`, `1.13-watch-rules-v2`.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime và ESP-IDF GATT stub đang `IN_PROGRESS / VERIFIED_LOCAL`; camera smoke-test đã có scaffold build-local nhưng bị khóa mặc định, detector vẫn chưa bắt đầu.
+- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; firmware và camera smoke có bằng chứng thiết bị thật, detector vẫn chưa bắt đầu.
 
 ## Gate A — nền tảng dev (đạt 2026-08-22)
 
@@ -17,10 +17,9 @@
 
 ## Hành động tiếp theo
 
-1. Trước khi bật camera trong firmware: xác minh oscillator/XCLK, pinout, 3,3 V/GND và revision PCB OV2640 bằng quan sát vật lý.
-2. Chạy camera smoke test đã được khóa bởi Kconfig; chỉ sau khi đạt mới thêm detector/model card/license/hash.
-3. Benchmark latency/RAM/FPS/nhiệt/nguồn trên ESP32-S3 thật, không lưu ảnh hay identifier.
-4. Chạy calibration/posture benchmark và phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE`.
+1. Tích hợp face detector chính thức; ghi model card, license, source/version và hash.
+2. Chạy golden/negative vectors cho bbox encoder C và benchmark latency/RAM/FPS/nhiệt/nguồn trên ESP32-S3 thật.
+3. Chạy calibration/posture benchmark và phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 
 ## Gate B — protocol + BLE vertical slice (đạt mức local 2026-08-22)
 
@@ -29,7 +28,14 @@
 - ESP-IDF 5.5.5 GATT stub dùng link mã hóa, bond lưu NVS, xử lý repeat-pairing, encoder C golden self-test và thống kê notify.
 - Trên Watch 5 Pro + ESP32-S3 thật: encrypted bond, MTU 256, 5,0 Hz, 150/150 notify không lỗi và reconnect sau reset. Xem [report](reports/2026-08-22-gate-b-ble-vertical-slice.md).
 - Lifecycle gate đã có test DND cleanup, scheduler/receiver idempotency, corrupt row retention và tracker bounds.
-- Chưa nâng `VERIFIED_DEVICE` vì chưa có camera/detector và bài test tích hợp dài hạn.
+- Chưa nâng toàn hệ thống lên `VERIFIED_DEVICE` vì detector và bài test tích hợp dài hạn còn thiếu.
+
+## Gate C — camera smoke (đạt cho riêng camera 2026-08-22)
+
+- Pinout/XCLK được đối chiếu với source Arduino đã chạy trước đây và được chủ thiết bị xác nhận.
+- Firmware `0.2.0-camera-smoke` build/flash trên COM4; OV2640 PID 0x26 đạt 25/25 frame RGB565 240×240, 0 lỗi, 7,45 FPS.
+- Watch reconnect bằng bond cũ, đọc capability `0x1e`, MTU 256 và tiếp tục nhận 5,0 Hz; UI giữ `UNAVAILABLE` vì detector bit chưa bật.
+- Xem [Gate C camera report](reports/2026-08-22-gate-c-camera-smoke.md). Chỉ hàng camera smoke được nâng `VERIFIED_DEVICE`; detector và posture thật vẫn chưa xác minh.
 
 ## Resume
 

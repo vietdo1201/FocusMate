@@ -125,6 +125,24 @@ class FaceObservationPipelineTest {
     }
 
     @Test
+    fun cameraSmokeCapabilityDoesNotClaimDetectorReadiness() {
+        val states = mutableListOf<PostureRuntimeSnapshot>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { 10_000L },
+            onRuntime = states::add,
+        )
+        val cameraOnly = deviceInfo(1_000L).copy(
+            capabilityBits = GattProfile.CAP_CAMERA_READY or GattProfile.CAP_SET_RATE or
+                GattProfile.CAP_REPORTS_LOW_LIGHT or GattProfile.CAP_REPORTS_UNSTABLE,
+        )
+
+        assertFalse(ingestor.onDeviceInfo(cameraOnly.encode()).getOrThrow().usable)
+        assertEquals(PostureRuntimePhase.UNAVAILABLE, states.last().phase)
+        assertEquals("Transport OK; camera OK; detector chưa sẵn sàng", states.last().detail)
+    }
+
+    @Test
     fun reconnectAndDisconnectNeverExposeStaleMtuOrRate() {
         var mono = 10_000L
         val states = mutableListOf<PostureRuntimeSnapshot>()

@@ -17,8 +17,8 @@ bool focusmate_camera_smoke_init(void)
     ESP_LOGW(TAG, "camera gate disabled; capability remains not-ready");
     return false;
 #else
-    /* DRAFT values from data/So_do_chan.md. The Kconfig interlock prevents use
-     * until these exact wires and the oscillator have been inspected. */
+    /* Confirmed against the previously working Arduino camera sketch recorded
+     * in data/So_do_chan.md. This 18-pin module supplies its own oscillator. */
     const camera_config_t config = {
         .pin_pwdn = 38,
         .pin_reset = 40,
@@ -36,12 +36,12 @@ bool focusmate_camera_smoke_init(void)
         .pin_vsync = 42,
         .pin_href = 41,
         .pin_pclk = 39,
-        .xclk_freq_hz = 20000000,
+        .xclk_freq_hz = 24000000,
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
-        .pixel_format = PIXFORMAT_JPEG,
-        .frame_size = FRAMESIZE_QVGA,
-        .jpeg_quality = 15,
+        .pixel_format = PIXFORMAT_RGB565,
+        .frame_size = FRAMESIZE_240X240,
+        .jpeg_quality = 12,
         .fb_count = 1,
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
@@ -64,7 +64,9 @@ bool focusmate_camera_smoke_init(void)
     unsigned errors = 0;
     for (unsigned attempt = 0; attempt < 25U; ++attempt) {
         camera_fb_t *frame = esp_camera_fb_get();
-        if (frame == NULL || frame->len == 0U || frame->format != PIXFORMAT_JPEG) {
+        if (frame == NULL || frame->format != PIXFORMAT_RGB565 ||
+            frame->width != 240U || frame->height != 240U ||
+            frame->len != 240U * 240U * 2U) {
             ++errors;
         } else {
             ++valid;
@@ -73,7 +75,7 @@ bool focusmate_camera_smoke_init(void)
     }
     const int64_t elapsed_us = esp_timer_get_time() - started_us;
     const double fps = elapsed_us > 0 ? (double)valid * 1000000.0 / (double)elapsed_us : 0.0;
-    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x valid=%u errors=%u fps=%.2f",
+    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x format=RGB565 size=240x240 valid=%u errors=%u fps=%.2f",
              sensor->id.PID, valid, errors, fps);
     if (valid < 24U || errors > 1U) {
         ESP_LOGE(TAG, "camera smoke acceptance failed");

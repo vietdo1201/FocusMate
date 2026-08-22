@@ -9,12 +9,13 @@ The camera transport dependency is pinned to Espressif `esp32-camera` 2.1.7
 (Apache-2.0); detector dependencies are intentionally not present until the
 camera smoke gate has passed on the recorded hardware revision.
 
-The camera smoke test is compiled but disabled by default. It has a two-part
-Kconfig interlock: both `FOCUSMATE_CAMERA_ENABLE` and
-`FOCUSMATE_CAMERA_PINOUT_CONFIRMED` must be enabled after the connected OV2640
-module/PCB revision and its XCLK source are physically recorded. Do not infer an
-XCLK wiring choice from the sensor name alone. Smoke frames are counted and
-immediately returned; no image bytes are stored or transmitted.
+The camera smoke test has a two-part Kconfig interlock. Both gates are enabled
+for the recorded 18-pin OV2640 wiring after owner confirmation and comparison
+with the previously working Arduino sketch (hash recorded in
+`data/So_do_chan.md`). The module supplies its own oscillator (`pin_xclk=-1`,
+declared 24 MHz). Smoke frames are counted and immediately returned; no image
+bytes are stored or transmitted. A successful build is not device evidence:
+the camera capability is set only after 24/25 valid RGB565 240x240 frames.
 
 Build and flash from an exported ESP-IDF 5.5.5 shell:
 

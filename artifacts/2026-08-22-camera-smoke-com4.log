@@ -1,0 +1,30 @@
+FocusMate Gate C camera-smoke excerpt (COM4, 115200 baud)
+Captured: 2026-08-22 Asia/Saigon
+Command: idf.py -p COM4 flash monitor
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+Crystal is 40MHz
+Flash size: 16MB
+
+I app_init: Project name:     focusmate_esp
+I app_init: App version:      0.2.0-camera-smoke
+I app_init: ELF file SHA256:  e58879e32...
+I esp_psram: Found 8MB PSRAM device
+I esp_psram: SPI SRAM memory test OK
+I focusmate: C canonical golden self-test passed
+I camera: Camera PID=0x26 VER=0x42 MIDL=0x7f MIDH=0xa2
+I camera: Detected OV2640 camera
+I camera: Detected camera at address=0x30
+I cam_hal: Allocating 115200 Byte frame buffer in PSRAM
+I focusmate-camera: OV2640 smoke PID=0x0026 format=RGB565 size=240x240 valid=25 errors=0 fps=7.45
+I focusmate: advertising FocusMate service
+I focusmate: connected handle=1
+I focusmate: encryption change handle=1 status=0
+I focusmate: observation subscribed=1 mtu=23
+I focusmate: control opcode=1 rate_dhz=50 streaming=1
+I focusmate: transport observations=50 notify_attempts=50 notify_failures=0 mtu=256
+I focusmate: transport observations=100 notify_attempts=100 notify_failures=0 mtu=256
+
+Only the operational lines needed by the gate are retained. Camera frame bytes
+were returned immediately by firmware and were not logged, stored, or sent.

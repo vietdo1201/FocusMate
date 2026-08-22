@@ -63,9 +63,11 @@ class FaceObservationIngestor(
     private var mtu: Int? = null
     private var notificationCount = 0L
     private var rateWindowStartedMs = -1L
+    private var unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
 
     fun connecting() {
         anchor = null
+        unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
         mtu = null
         resetRateWindow()
         publish(PostureRuntimePhase.CONNECTING, "Đang tìm ESP32-S3")
@@ -85,7 +87,8 @@ class FaceObservationIngestor(
         rateWindowStartedMs = monotonicMs()
         if (!info.usable) {
             anchor = null
-            publish(PostureRuntimePhase.UNAVAILABLE, "Transport OK; camera/detector chưa sẵn sàng")
+            unavailableDetail = capabilityDetail(info)
+            publish(PostureRuntimePhase.UNAVAILABLE, unavailableDetail)
             return@runCatching info
         }
         val rebooted = sequenceGate.onDeviceInfo(info.bootIdHex)
@@ -109,7 +112,7 @@ class FaceObservationIngestor(
         val observation = FaceObservationCodec.tryDecode(outcome.payload).getOrNull() ?: return
         val timeAnchor = anchor ?: run {
             recordRate(nowMono)
-            publish(PostureRuntimePhase.UNAVAILABLE, "Transport OK; camera/detector chưa sẵn sàng")
+            publish(PostureRuntimePhase.UNAVAILABLE, unavailableDetail)
             return
         }
         if (!sequenceGate.accept(observation)) return
@@ -140,6 +143,7 @@ class FaceObservationIngestor(
         classifier.reset()
         tracker.pause()
         calibration.clear()
+        unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
         mtu = null
         resetRateWindow()
         publish(PostureRuntimePhase.DISCONNECTED, detail)
@@ -151,6 +155,7 @@ class FaceObservationIngestor(
         tracker.reset()
         calibration.clear()
         anchor = null
+        unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
         mtu = null
         resetRateWindow()
         publish(PostureRuntimePhase.DISCONNECTED, "")
@@ -166,6 +171,12 @@ class FaceObservationIngestor(
         rateWindowStartedMs = -1L
     }
 
+    private fun capabilityDetail(info: EspDeviceInfo): String = when {
+        info.cameraReady && !info.detectorReady -> "Transport OK; camera OK; detector chưa sẵn sàng"
+        !info.cameraReady && info.detectorReady -> "Transport OK; detector OK; camera chưa sẵn sàng"
+        else -> DEFAULT_UNAVAILABLE_DETAIL
+    }
+
     private fun publish(
         phase: PostureRuntimePhase,
         detail: String,
@@ -178,5 +189,6 @@ class FaceObservationIngestor(
 
     private companion object {
         const val CALIBRATION_SAMPLES = 20
+        const val DEFAULT_UNAVAILABLE_DETAIL = "Transport OK; camera/detector chưa sẵn sàng"
     }
 }
