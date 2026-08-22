@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Build
+import android.os.SystemClock
 
 /** Keeps deterministic motion collection alive; heart rate is independently optional. */
 class SessionSensorService : Service() {
@@ -21,13 +23,14 @@ class SessionSensorService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var collectingSessionId: String? = null
     private val thresholdCalibrator = PersonalActivityThresholdCalibrator()
+    private lateinit var postureIngestor: FaceObservationIngestor
+    private lateinit var postureBleClient: FaceObservationBleClient
 
     private val heartRateTicker = object : Runnable {
         override fun run() {
             val active = repository.activeSession() ?: run { stopSelf(); return }
             val now = System.currentTimeMillis()
-            val hasHeartRatePermission = checkSelfPermission(Manifest.permission.BODY_SENSORS) ==
-                PackageManager.PERMISSION_GRANTED
+            val hasHeartRatePermission = hasHeartRatePermission()
             val phase = (now - active.startTimeMs).coerceAtLeast(0L) % HEART_RATE_INTERVAL_MS
             val shouldMeasure = hasHeartRatePermission && !StudySessionClock.isOnBreak(active, now) &&
                 phase < HEART_RATE_DURATION_MS
@@ -57,11 +60,27 @@ class SessionSensorService : Service() {
                 }
             },
         )
+        postureIngestor = FaceObservationIngestor(
+            wallClockMs = System::currentTimeMillis,
+            monotonicMs = SystemClock::elapsedRealtime,
+            onUpdate = { update ->
+                repository.activeSession()?.sessionId?.let { sessionId ->
+                    repository.updateActivePosture(sessionId, update.summaries, update.insights)
+                }
+            },
+            onRuntime = PostureRuntimeStore::update,
+        )
+        postureBleClient = FaceObservationBleClient(this, postureIngestor)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val active = repository.activeSession() ?: run { stopSelf(); return START_NOT_STICKY }
+        val active = repository.activeSession() ?: run {
+            StudyDndController.disable(this)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (StudySessionClock.isOnBreak(active, System.currentTimeMillis())) {
+            StudyDndController.disable(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -70,6 +89,7 @@ class SessionSensorService : Service() {
             startForeground(NOTIFICATION_ID, notification())
         } catch (error: Exception) {
             ReminderDiagnostics.recordEvent(this, "sensor_service_foreground_failed", error.javaClass.simpleName)
+            StudyDndController.disable(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -80,6 +100,7 @@ class SessionSensorService : Service() {
         }
         handler.removeCallbacks(heartRateTicker)
         handler.post(heartRateTicker)
+        postureBleClient.start()
         return START_STICKY
     }
 
@@ -87,11 +108,25 @@ class SessionSensorService : Service() {
         handler.removeCallbacks(heartRateTicker)
         motionCollector.stop()
         heartRateCollector.stop()
+        postureBleClient.stop()
+        postureIngestor.reset()
         collectingSessionId = null
+        if (::repository.isInitialized && shouldReleaseStudyDnd(repository.activeSession(), System.currentTimeMillis())) {
+            StudyDndController.disable(this)
+        }
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun hasHeartRatePermission(): Boolean {
+        val permission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+            HEART_RATE_PERMISSION
+        } else {
+            Manifest.permission.BODY_SENSORS
+        }
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
 
     private fun notification(): Notification {
         val manager = getSystemService(NotificationManager::class.java)
@@ -113,6 +148,8 @@ class SessionSensorService : Service() {
     }
 
     companion object {
+        private const val ANDROID_16_API = 36
+        private const val HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
         private const val CHANNEL_ID = "focusmate_session_measurement"
         private const val NOTIFICATION_ID = 4510
         private const val HEART_RATE_INTERVAL_MS = 5 * 60_000L
@@ -129,3 +166,6 @@ class SessionSensorService : Service() {
         }
     }
 }
+
+internal fun shouldReleaseStudyDnd(active: ActiveStudySession?, nowMs: Long): Boolean =
+    active == null || StudySessionClock.isOnBreak(active, nowMs)

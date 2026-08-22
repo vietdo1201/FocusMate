@@ -530,11 +530,30 @@ class MainActivity : Activity() {
     }
 
     private fun renderPostureRuntimeStatus(active: ActiveStudySession?) {
-        tvPostureRuntimeStatus.text = if (active == null) {
-            getString(R.string.posture_runtime_idle)
-        } else {
-            getString(R.string.posture_runtime_waiting)
+        if (active == null) {
+            tvPostureRuntimeStatus.setText(R.string.posture_runtime_idle)
+            return
         }
+        val snapshot = PostureRuntimeStore.snapshot
+        val phase = when (snapshot.phase) {
+            PostureRuntimePhase.DISCONNECTED -> "MẤT KẾT NỐI"
+            PostureRuntimePhase.CONNECTING -> "ĐANG KẾT NỐI"
+            PostureRuntimePhase.BONDING -> "ĐANG GHÉP ĐÔI"
+            PostureRuntimePhase.CALIBRATING -> "ĐANG HIỆU CHỈNH"
+            PostureRuntimePhase.LIVE -> "LIVE"
+            PostureRuntimePhase.STALE -> "STALE"
+            PostureRuntimePhase.UNAVAILABLE -> "KHÔNG TƯƠNG THÍCH"
+        }
+        val link = buildList {
+            snapshot.mtu?.let { add("MTU $it") }
+            snapshot.notificationRateHz?.let { add("%.1f Hz".format(Locale.US, it)) }
+        }.joinToString(" • ")
+        tvPostureRuntimeStatus.text = getString(
+            R.string.posture_runtime_value,
+            phase,
+            snapshot.detail.ifBlank { "Chưa có chi tiết" },
+            link.ifBlank { "chưa đo link" },
+        )
     }
 
     private fun renderHistory() {
@@ -593,8 +612,9 @@ class MainActivity : Activity() {
         accCollector?.stop()
         isCollecting = false
         val servicePermissionGranted =
-            checkSelfPermission(Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED ||
-                checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+            hasHeartRatePermission() ||
+                checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED ||
+                hasBluetoothPermissions()
         val studyingActive = active?.takeIf { isCurrentlyStudying(it) }
         if (studyingActive != null && servicePermissionGranted) {
             SessionSensorService.start(this)
@@ -616,14 +636,34 @@ class MainActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) add(Manifest.permission.POST_NOTIFICATIONS)
-            if (checkSelfPermission(Manifest.permission.BODY_SENSORS) != PackageManager.PERMISSION_GRANTED) {
-                add(Manifest.permission.BODY_SENSORS)
+            val heartRatePermission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+                HEART_RATE_PERMISSION
+            } else {
+                Manifest.permission.BODY_SENSORS
+            }
+            if (checkSelfPermission(heartRatePermission) != PackageManager.PERMISSION_GRANTED) {
+                add(heartRatePermission)
             }
             if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) !=
                 PackageManager.PERMISSION_GRANTED
             ) add(Manifest.permission.ACTIVITY_RECOGNITION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.BLUETOOTH_SCAN)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_SESSION_PERMISSIONS)
+    }
+
+    private fun hasHeartRatePermission(): Boolean {
+        val permission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+            HEART_RATE_PERMISSION
+        } else {
+            Manifest.permission.BODY_SENSORS
+        }
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun syncStudyDnd(sessionActive: Boolean) {
@@ -732,6 +772,10 @@ class MainActivity : Activity() {
     private fun isCurrentlyStudying(active: ActiveStudySession?): Boolean =
         active != null && !StudySessionClock.isOnBreak(active, System.currentTimeMillis())
 
+    private fun hasBluetoothPermissions(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_SESSION_PERMISSIONS) updateSensorCollection()
@@ -754,6 +798,8 @@ class MainActivity : Activity() {
         if (minutes < 60) "$minutes phút" else "${minutes / 60}g ${minutes % 60}p"
 
     companion object {
+        private const val ANDROID_16_API = 36
+        private const val HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
         private const val HIDDEN_SUBJECT = "Không áp dụng"
         private const val AUTO_FOCUS_SCORE = 3
         private const val REQUEST_SESSION_PERMISSIONS = 2201

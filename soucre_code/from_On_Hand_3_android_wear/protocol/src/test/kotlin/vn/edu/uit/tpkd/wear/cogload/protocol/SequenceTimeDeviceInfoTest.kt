@@ -50,7 +50,12 @@ class SequenceTimeDeviceInfoTest {
         val parsed = EspDeviceInfo.parse(info.encode())
         assertEquals(info, parsed)
         assertTrue(parsed.usable)
+        assertTrue(parsed.transportCompatible)
         assertTrue(parsed.supportsSetRate)
+
+        assertFalse(parsed.copy(maxQualityFlags = 8).transportCompatible)
+        assertFalse(parsed.copy(maxFlagLength = 24).transportCompatible)
+        assertFalse(parsed.copy(capabilityBits = parsed.capabilityBits or (1 shl 8)).transportCompatible)
     }
 
     private companion object {

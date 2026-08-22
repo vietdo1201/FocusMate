@@ -19,7 +19,7 @@ class PostureInsightTracker {
     private val totals = mutableMapOf<PostureState, Long>()
     private val episodes = mutableMapOf<PostureState, Int>()
     private val episodeStarts = mutableMapOf<PostureState, ArrayDeque<Long>>()
-    private val continuousReportedForEpisode = mutableSetOf<Pair<PostureState, Long>>()
+    private var continuousReportedForCurrentEpisode = false
     private val repeatedReportedWindow = mutableMapOf<PostureState, Long>()
 
     fun observe(state: PostureState, observedAtMs: Long): List<PostureInsight> {
@@ -30,21 +30,23 @@ class PostureInsightTracker {
         if (state != currentState) {
             currentState = state
             currentSinceMs = observedAtMs
+            continuousReportedForCurrentEpisode = false
             if (state.isBadPosture()) {
                 episodes[state] = episodes.getOrDefault(state, 0) + 1
                 val starts = episodeStarts.getOrPut(state) { ArrayDeque() }
                 starts.addLast(observedAtMs)
                 while (starts.isNotEmpty() && observedAtMs - starts.first() > REPEATED_WINDOW_MS) starts.removeFirst()
+                while (starts.size > REPEATED_EPISODES) starts.removeFirst()
             }
         }
         lastObservedAtMs = observedAtMs
         if (!state.isBadPosture()) return emptyList()
 
         val insights = mutableListOf<PostureInsight>()
-        val episodeKey = state to currentSinceMs
         if (observedAtMs - currentSinceMs >= CONTINUOUS_THRESHOLD_MS &&
-            continuousReportedForEpisode.add(episodeKey)
+            !continuousReportedForCurrentEpisode
         ) {
+            continuousReportedForCurrentEpisode = true
             insights += PostureInsight(WatchRuleEngine.INSIGHT_V2_POSTURE_CONTINUOUS, state, observedAtMs)
         }
         val starts = episodeStarts[state].orEmpty()
@@ -69,6 +71,22 @@ class PostureInsightTracker {
 
     fun breakSuggestion(nowMs: Long = lastObservedAtMs.coerceAtLeast(0L)): String? =
         summaries(nowMs).firstOrNull()?.let(PostureRecommendations::advice)
+
+    /** End the current continuous episode while retaining the session summary. */
+    fun pause() {
+        currentState = null
+        currentSinceMs = 0L
+        lastObservedAtMs = -1L
+        continuousReportedForCurrentEpisode = false
+    }
+
+    fun reset() {
+        pause()
+        totals.clear()
+        episodes.clear()
+        episodeStarts.clear()
+        repeatedReportedWindow.clear()
+    }
 
     private fun PostureState.isBadPosture(): Boolean = this in BAD_STATES
 

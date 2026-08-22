@@ -25,11 +25,18 @@ data class EspDeviceInfo(
     val reportsLowLight: Boolean get() = capabilityBits and GattProfile.CAP_REPORTS_LOW_LIGHT != 0
     val reportsUnstable: Boolean get() = capabilityBits and GattProfile.CAP_REPORTS_UNSTABLE != 0
 
-    /** Capability tối thiểu để pipeline posture có nghĩa. Thiếu thì phải báo unavailable. */
-    val usable: Boolean
+    /** Byte layout và giới hạn mà decoder v1 có thể xử lý mà không phỏng đoán. */
+    val transportCompatible: Boolean
         get() = protocolVersion == GattProfile.PROTOCOL_VERSION &&
             framingVersion == GattProfile.FRAMING_VERSION &&
-            detectorReady && cameraReady
+            maxQualityFlags == FaceObservationV1.MAX_QUALITY_FLAGS &&
+            maxFlagLength == FaceObservationV1.MAX_QUALITY_FLAG_LENGTH &&
+            nominalRateDhz in GattProfile.MIN_RATE_DHZ..GattProfile.MAX_RATE_DHZ &&
+            capabilityBits and GattProfile.CAP_RESERVED_MASK == 0
+
+    /** Capability tối thiểu để pipeline posture có nghĩa. Thiếu thì phải báo unavailable. */
+    val usable: Boolean
+        get() = transportCompatible && detectorReady && cameraReady
 
     fun encode(): ByteArray {
         val bytes = ByteArray(GattProfile.DEVICE_INFO_BYTES)

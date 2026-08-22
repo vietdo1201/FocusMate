@@ -43,8 +43,9 @@
     <string name="insights_section">PHÂN TÍCH TRỰC TIẾP</string>
     <string name="progress_section">TIẾN ĐỘ GẦN ĐÂY</string>
     <string name="posture_runtime_section">TRẠNG THÁI POSTURE</string>
-    <string name="posture_runtime_idle">Geometry classifier • chờ phiên học\nBLE runtime: chưa triển khai</string>
-    <string name="posture_runtime_waiting">Geometry classifier • chờ calibration\nBLE runtime: chưa triển khai</string>
+    <string name="posture_runtime_idle">Geometry classifier • chờ phiên học\nBLE runtime: chưa chạy</string>
+    <string name="posture_runtime_waiting">Geometry classifier • chờ calibration\nBLE runtime: đang khởi động</string>
+    <string name="posture_runtime_value">%1$s • %2$s\n%3$s</string>
     <string name="reminder_checking">Đang kiểm tra nhắc nghỉ…</string>
     <string name="fix_settings">Sửa thiết lập</string>
     <string name="test_vibration">Thử rung</string>

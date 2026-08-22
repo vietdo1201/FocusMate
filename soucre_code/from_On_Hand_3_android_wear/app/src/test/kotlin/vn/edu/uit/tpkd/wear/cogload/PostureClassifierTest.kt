@@ -28,6 +28,16 @@ class PostureClassifierTest {
     }
 
     @Test
+    fun resetDropsSessionScopedBaseline() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+        assertTrue(classifier.isCalibrated())
+        classifier.reset()
+        assertFalse(classifier.isCalibrated())
+        assertNull(classifier.baseline())
+    }
+
+    @Test
     fun postureInsightUsesConservativeThresholdsAndNeverReturnsPrompt() {
         val tracker = PostureInsightTracker()
         assertTrue(tracker.observe(PostureState.HEAD_DOWN, 0L).isEmpty())

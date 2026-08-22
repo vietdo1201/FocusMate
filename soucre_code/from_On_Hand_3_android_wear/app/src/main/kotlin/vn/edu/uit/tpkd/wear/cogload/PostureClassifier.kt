@@ -73,6 +73,14 @@ class GeometryPostureClassifier(
 
     fun isCalibrated(): Boolean = baseline != null
 
+    fun baseline(): PostureBaseline? = baseline
+
+    /** Baseline is session- and boot-scoped; never carry it across either boundary. */
+    fun reset() {
+        baseline = null
+        headDownSinceMs = null
+    }
+
     override fun classify(observation: FaceObservationV1, observedAtMs: Long): PostureClassification {
         require(observedAtMs >= 0L)
         if (!observation.faceDetected) {
