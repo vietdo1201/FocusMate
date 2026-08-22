@@ -23,9 +23,9 @@ constexpr uint64_t kMaximumResultAgeMs = 1000U;
 constexpr uint32_t kCameraWidth = 320U;
 constexpr uint32_t kCameraHeight = 240U;
 // Preserve QVGA detail, then center-crop to the square aspect ratio expected by
-// ESPDet. Feeding 4:3 directly stretched faces horizontally during the model's
+// MSR/MNP. Feeding 4:3 directly stretches faces horizontally during the model's
 // resize; the square crop keeps facial geometry intact and still covers the
-// normal seated region. Bboxes are mapped back to the 320x240 camera space.
+// normal seated region. Bboxes and landmarks are mapped back to QVGA space.
 constexpr uint32_t kDetectorWidth = 240U;
 constexpr uint32_t kDetectorHeight = 240U;
 constexpr uint32_t kDetectorLeft = (kCameraWidth - kDetectorWidth) / 2U;
@@ -35,6 +35,7 @@ const char *kTag = "focusmate-detector";
 portMUX_TYPE result_lock = portMUX_INITIALIZER_UNLOCKED;
 focusmate_face_result_t latest_result = {};
 bool has_result = false;
+uint32_t next_inference_count = 1U;
 HumanFaceDetect *detector = nullptr;
 uint8_t *decoded_rgb888 = nullptr;
 uint8_t *detector_rgb888 = nullptr;
@@ -79,6 +80,14 @@ uint32_t confidence_to_q6(float score)
     return static_cast<uint32_t>(score * static_cast<float>(kScale) + 0.5F);
 }
 
+focusmate_face_keypoint_t detector_point_to_camera_q6(int x, int y)
+{
+    return {
+        .x_q6 = scaled_ratio_half_up(static_cast<uint32_t>(x) + kDetectorLeft, kCameraWidth),
+        .y_q6 = scaled_ratio_half_up(static_cast<uint32_t>(y), kCameraHeight),
+    };
+}
+
 void detector_math_self_test()
 {
     assert(scaled_ratio_half_up(1U, 320U) == 3125U);
@@ -87,6 +96,10 @@ void detector_math_self_test()
     assert(confidence_to_q6(0.0F) == 0U);
     assert(confidence_to_q6(0.5F) == 500000U);
     assert(confidence_to_q6(1.0F) == kScale);
+    const focusmate_face_keypoint_t top_left = detector_point_to_camera_q6(0, 0);
+    const focusmate_face_keypoint_t bottom_right = detector_point_to_camera_q6(239, 239);
+    assert(top_left.x_q6 == 125000U && top_left.y_q6 == 0U);
+    assert(bottom_right.x_q6 == 871875U && bottom_right.y_q6 == 995833U);
 }
 
 bool better_result(const dl::detect::result_t &candidate, const dl::detect::result_t &current)
@@ -134,6 +147,10 @@ bool run_one_inference(focusmate_face_result_t *out)
     for (dl::detect::result_t &candidate : detections) {
         if (candidate.box.size() != 4U) continue;
         candidate.limit_box(static_cast<int>(kDetectorWidth), static_cast<int>(kDetectorHeight));
+        if (candidate.keypoint.size() == FOCUSMATE_FACE_KEYPOINT_COUNT * 2U) {
+            candidate.limit_keypoint(static_cast<int>(kDetectorWidth),
+                                     static_cast<int>(kDetectorHeight));
+        }
         if (candidate.box[2] < candidate.box[0] || candidate.box[3] < candidate.box[1]) continue;
         if (best == nullptr || better_result(candidate, *best)) best = &candidate;
     }
@@ -148,7 +165,19 @@ bool run_one_inference(focusmate_face_result_t *out)
         result.cx_q6 = scaled_ratio_half_up(2U * left + width, 2U * kCameraWidth);
         result.cy_q6 = scaled_ratio_half_up(2U * top + height, 2U * kCameraHeight);
         result.confidence_q6 = confidence_to_q6(best->score);
+        if (best->keypoint.size() == FOCUSMATE_FACE_KEYPOINT_COUNT * 2U) {
+            // Espressif MSR/MNP order is left eye, left mouth, nose,
+            // right eye, right mouth. Keep that order explicit in the ABI.
+            result.keypoint_count = FOCUSMATE_FACE_KEYPOINT_COUNT;
+            for (size_t index = 0U; index < FOCUSMATE_FACE_KEYPOINT_COUNT; ++index) {
+                result.keypoints[index] = detector_point_to_camera_q6(
+                    best->keypoint[index * 2U], best->keypoint[index * 2U + 1U]);
+            }
+        }
     }
+    portENTER_CRITICAL(&result_lock);
+    result.inference_count = next_inference_count++;
+    portEXIT_CRITICAL(&result_lock);
     focusmate_shadow_posture_observe(&result);
     focusmate_frame_broker_offer(frame, &result);
     esp_camera_fb_return(frame);
@@ -159,9 +188,7 @@ bool run_one_inference(focusmate_face_result_t *out)
 void publish(const focusmate_face_result_t &result)
 {
     portENTER_CRITICAL(&result_lock);
-    focusmate_face_result_t next = result;
-    next.inference_count = latest_result.inference_count + 1U;
-    latest_result = next;
+    latest_result = result;
     has_result = true;
     portEXIT_CRITICAL(&result_lock);
 }
@@ -219,9 +246,10 @@ extern "C" bool focusmate_face_detector_start(void)
         kCameraWidth * kCameraHeight * 3U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     detector_rgb888 = static_cast<uint8_t *>(heap_caps_malloc(
         kDetectorWidth * kDetectorHeight * 3U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    detector = new HumanFaceDetect(HumanFaceDetect::ESPDET_PICO_224_224_FACE, false);
+    detector = new HumanFaceDetect(HumanFaceDetect::MSRMNP_S8_V1, false);
     if (detector != nullptr) {
         detector->set_score_thr(kDetectorScoreThreshold, 0);
+        detector->set_score_thr(kDetectorScoreThreshold, 1);
     }
     focusmate_face_result_t first = {};
     if (decoded_rgb888 == nullptr || detector_rgb888 == nullptr || detector == nullptr ||

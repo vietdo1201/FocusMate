@@ -27,6 +27,7 @@
 #include "mdns.h"
 #include "nvs.h"
 #include "shadow_posture.h"
+#include "web_assets.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -55,6 +56,7 @@ struct WifiStatus {
 class Dashboard {
 public:
     bool start();
+    bool frame_access_snapshot(uint8_t ipv4[4], uint16_t *port, uint8_t token[16], uint8_t *flags);
     static esp_err_t dispatch(httpd_req_t *request);
 
 private:
@@ -68,6 +70,7 @@ private:
     esp_err_t logout(httpd_req_t *request);
     esp_err_t change_password(httpd_req_t *request);
     esp_err_t camera(httpd_req_t *request);
+    esp_err_t watch_camera(httpd_req_t *request);
     esp_err_t viewer_release(httpd_req_t *request);
     esp_err_t status(httpd_req_t *request);
     esp_err_t posture(httpd_req_t *request, bool calibrate);
@@ -86,12 +89,14 @@ private:
     bool promote_pending();
     void rollback_pending();
     WifiStatus wifi_status();
+    bool watch_authenticated(httpd_req_t *request) const;
 
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;
     WifiStatus wifi_{};
     std::string dashboard_password_;
     std::string session_token_;
+    std::array<uint8_t, 16> watch_token_{};
     uint64_t last_login_failure_ms_ = 0;
     uint32_t previous_inference_count_ = 0;
     uint64_t previous_inference_at_ms_ = 0;
@@ -160,9 +165,26 @@ uint32_t remote_ipv4(httpd_req_t *request)
     const int socket = httpd_req_to_sockfd(request);
     sockaddr_storage address{};
     socklen_t length = sizeof address;
-    if (socket < 0 || getpeername(socket, reinterpret_cast<sockaddr *>(&address), &length) != 0 ||
-        address.ss_family != AF_INET) return 0U;
-    return reinterpret_cast<sockaddr_in *>(&address)->sin_addr.s_addr;
+    if (socket < 0 || getpeername(socket, reinterpret_cast<sockaddr *>(&address), &length) != 0)
+        return 0U;
+    if (address.ss_family == AF_INET)
+        return reinterpret_cast<sockaddr_in *>(&address)->sin_addr.s_addr;
+    if (address.ss_family == AF_INET6) {
+        // ESP-IDF may expose an IPv4 peer accepted by its dual-stack listen
+        // socket as ::ffff:a.b.c.d. The Watch always calls the IPv4 address
+        // delivered over encrypted BLE, so accept only this mapped form and
+        // keep rejecting arbitrary IPv6 peers as a frame-lease identity.
+        const auto *mapped = reinterpret_cast<const uint8_t *>(
+            &reinterpret_cast<const sockaddr_in6 *>(&address)->sin6_addr);
+        const bool prefix = std::all_of(mapped, mapped + 10, [](uint8_t value) { return value == 0U; }) &&
+            mapped[10] == 0xffU && mapped[11] == 0xffU;
+        if (prefix) {
+            uint32_t result = 0U;
+            std::memcpy(&result, mapped + 12, sizeof result);
+            return result;
+        }
+    }
+    return 0U;
 }
 
 std::string hex_token()
@@ -181,12 +203,83 @@ bool valid_password(const std::string &value)
     return value.size() >= 8U && value.size() <= 63U;
 }
 
+uint16_t q6_to_q16(uint32_t value)
+{
+    return static_cast<uint16_t>(std::min<uint64_t>(65535U,
+        (static_cast<uint64_t>(value) * 65535U + 500000U) / 1000000U));
+}
+
+std::string face_meta_header(const focusmate_face_meta_v1_t &meta)
+{
+    std::array<uint16_t, 16> values{};
+    values[0] = (meta.flags & FOCUSMATE_FACE_META_V1_FLAG_FACE_DETECTED) != 0U ? 1U : 0U;
+    values[1] = q6_to_q16(meta.confidence_q6);
+    values[2] = q6_to_q16(meta.cx_q6);
+    values[3] = q6_to_q16(meta.cy_q6);
+    values[4] = q6_to_q16(meta.width_q6);
+    values[5] = q6_to_q16(meta.height_q6);
+    for (size_t index = 0; index < FOCUSMATE_FACE_KEYPOINT_COUNT; ++index) {
+        values[6U + index * 2U] = q6_to_q16(meta.keypoints[index].x_q6);
+        values[7U + index * 2U] = q6_to_q16(meta.keypoints[index].y_q6);
+    }
+    std::array<uint8_t, 32> bytes{};
+    for (size_t index = 0; index < values.size(); ++index) {
+        bytes[index * 2U] = static_cast<uint8_t>(values[index] & 0xffU);
+        bytes[index * 2U + 1U] = static_cast<uint8_t>(values[index] >> 8U);
+    }
+    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string encoded;
+    encoded.reserve(43U);
+    uint32_t accumulator = 0U;
+    unsigned bits = 0U;
+    for (uint8_t byte : bytes) {
+        accumulator = (accumulator << 8U) | byte;
+        bits += 8U;
+        while (bits >= 6U) {
+            bits -= 6U;
+            encoded.push_back(alphabet[(accumulator >> bits) & 0x3fU]);
+        }
+    }
+    if (bits > 0U) encoded.push_back(alphabet[(accumulator << (6U - bits)) & 0x3fU]);
+    return encoded;
+}
+
+esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view)
+{
+    char sequence[16], uptime[24], confidence[16], bbox[96];
+    std::snprintf(sequence, sizeof sequence, "%" PRIu32, view.sequence);
+    std::snprintf(uptime, sizeof uptime, "%" PRIu64, view.face.observed_uptime_ms);
+    std::snprintf(confidence, sizeof confidence, "%" PRIu32 ".%06" PRIu32,
+                  view.face.confidence_q6 / 1000000U, view.face.confidence_q6 % 1000000U);
+    httpd_resp_set_type(request, "image/jpeg");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(request, "X-Content-Type-Options", "nosniff");
+    httpd_resp_set_hdr(request, "X-FocusMate-Frame-Sequence", sequence);
+    httpd_resp_set_hdr(request, "X-FocusMate-Observed-Uptime-Ms", uptime);
+    httpd_resp_set_hdr(request, "X-FocusMate-Face-Detected", view.face.face_detected ? "true" : "false");
+    httpd_resp_set_hdr(request, "X-FocusMate-Confidence", confidence);
+    const std::string encoded_meta = face_meta_header(view.meta);
+    httpd_resp_set_hdr(request, "X-FocusMate-Face-Meta-V1", encoded_meta.c_str());
+    if (view.face.face_detected) {
+        std::snprintf(bbox, sizeof bbox,
+            "%" PRIu32 ".%06" PRIu32 ",%" PRIu32 ".%06" PRIu32
+            ",%" PRIu32 ".%06" PRIu32 ",%" PRIu32 ".%06" PRIu32,
+            view.face.cx_q6 / 1000000U, view.face.cx_q6 % 1000000U,
+            view.face.cy_q6 / 1000000U, view.face.cy_q6 % 1000000U,
+            view.face.width_q6 / 1000000U, view.face.width_q6 % 1000000U,
+            view.face.height_q6 / 1000000U, view.face.height_q6 % 1000000U);
+        httpd_resp_set_hdr(request, "X-FocusMate-Bbox", bbox);
+    }
+    return httpd_resp_send(request, reinterpret_cast<const char *>(view.data), view.size);
+}
+
 } // namespace
 
 bool Dashboard::start()
 {
     mutex_ = xSemaphoreCreateMutex();
     if (mutex_ == nullptr || !initialize_identity()) return false;
+    focusmate_web_assets_mount();
     if (!initialize_network()) return false;
     if (!initialize_server()) return false;
     ESP_LOGI(kTag, "dashboard ready at http://%s.local and http://192.168.4.1", kMdnsHost);
@@ -195,6 +288,7 @@ bool Dashboard::start()
 
 bool Dashboard::initialize_identity()
 {
+    esp_fill_random(watch_token_.data(), watch_token_.size());
     dashboard_password_ = nvs_string("dash_pass");
     if (!valid_password(dashboard_password_)) {
         const std::string legacy_ap_password = nvs_string("ap_pass");
@@ -268,10 +362,13 @@ bool Dashboard::initialize_server()
     config.max_open_sockets = 6;
     config.lru_purge_enable = true;
     config.stack_size = 10240;
+    config.uri_match_fn = httpd_uri_match_wildcard;
     if (httpd_start(&server_, &config) != ESP_OK) return false;
     const httpd_uri_t routes[] = {
         {"/", HTTP_GET, dispatch, this},
+        {"/assets/*", HTTP_GET, dispatch, this},
         {"/camera.jpg", HTTP_GET, dispatch, this},
+        {"/api/watch/frame", HTTP_GET, dispatch, this},
         {"/api/viewer/release", HTTP_POST, dispatch, this},
         {"/api/status", HTTP_GET, dispatch, this},
         {"/api/auth/login", HTTP_POST, dispatch, this},
@@ -301,7 +398,9 @@ esp_err_t Dashboard::handle(httpd_req_t *request)
     const size_t query = uri.find('?');
     if (query != std::string::npos) uri.resize(query);
     if (uri == "/") return root(request);
+    if (uri.rfind("/assets/", 0U) == 0U) return focusmate_web_assets_serve(request, uri.c_str());
     if (uri == "/api/auth/login") return login(request);
+    if (uri == "/api/watch/frame") return watch_camera(request);
     if (!authenticated(request)) return json_error(request, "401 Unauthorized", "authentication required");
     if (uri == "/api/auth/logout") return logout(request);
     if (uri == "/api/auth/password") return change_password(request);
@@ -332,12 +431,34 @@ bool Dashboard::authenticated(httpd_req_t *request) const
         (end == value.size() || value[end] == ';');
 }
 
+bool Dashboard::watch_authenticated(httpd_req_t *request) const
+{
+    constexpr char prefix[] = "FocusMate ";
+    constexpr char alphabet[] = "0123456789abcdef";
+    const size_t length = httpd_req_get_hdr_value_len(request, "Authorization");
+    if (length != sizeof(prefix) - 1U + watch_token_.size() * 2U) return false;
+    std::array<char, 64> supplied{};
+    if (httpd_req_get_hdr_value_str(request, "Authorization", supplied.data(), supplied.size()) != ESP_OK)
+        return false;
+    unsigned difference = 0U;
+    for (size_t index = 0; index < sizeof(prefix) - 1U; ++index)
+        difference |= static_cast<unsigned>(static_cast<uint8_t>(supplied[index]) ^ static_cast<uint8_t>(prefix[index]));
+    for (size_t index = 0; index < watch_token_.size(); ++index) {
+        difference |= static_cast<unsigned>(static_cast<uint8_t>(supplied[sizeof(prefix) - 1U + index * 2U]) ^
+            static_cast<uint8_t>(alphabet[watch_token_[index] >> 4U]));
+        difference |= static_cast<unsigned>(static_cast<uint8_t>(supplied[sizeof(prefix) + index * 2U]) ^
+            static_cast<uint8_t>(alphabet[watch_token_[index] & 0x0fU]));
+    }
+    return difference == 0U;
+}
+
 esp_err_t Dashboard::root(httpd_req_t *request)
 {
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     httpd_resp_set_hdr(request, "Content-Security-Policy",
-        "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'");
+        "default-src 'self'; connect-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'");
     return httpd_resp_send(request, reinterpret_cast<const char *>(dashboard_html_start),
                            dashboard_html_end - dashboard_html_start);
 }
@@ -414,32 +535,45 @@ esp_err_t Dashboard::camera(httpd_req_t *request)
     focusmate_frame_broker_touch(client);
     focusmate_jpeg_view_t view{};
     view.slot = -1;
-    if (!focusmate_frame_broker_acquire(after, 1000U, &view)) {
+    // ESP-IDF's HTTP server dispatches handlers serially. Long-polling here
+    // lets one browser request starve the Watch endpoint. Latest-frame-wins
+    // clients already retry, so respond immediately with 204 until a newer
+    // frame is available.
+    if (!focusmate_frame_broker_acquire(after, 0U, &view)) {
         httpd_resp_set_status(request, "204 No Content");
         return httpd_resp_send(request, nullptr, 0);
     }
-    char sequence[16], uptime[24], confidence[16], bbox[96];
-    std::snprintf(sequence, sizeof sequence, "%" PRIu32, view.sequence);
-    std::snprintf(uptime, sizeof uptime, "%" PRIu64, view.face.observed_uptime_ms);
-    std::snprintf(confidence, sizeof confidence, "%" PRIu32 ".%06" PRIu32,
-                  view.face.confidence_q6 / 1000000U, view.face.confidence_q6 % 1000000U);
-    httpd_resp_set_type(request, "image/jpeg");
-    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
-    httpd_resp_set_hdr(request, "X-FocusMate-Frame-Sequence", sequence);
-    httpd_resp_set_hdr(request, "X-FocusMate-Observed-Uptime-Ms", uptime);
-    httpd_resp_set_hdr(request, "X-FocusMate-Face-Detected", view.face.face_detected ? "true" : "false");
-    httpd_resp_set_hdr(request, "X-FocusMate-Confidence", confidence);
-    if (view.face.face_detected) {
-        std::snprintf(bbox, sizeof bbox,
-            "%" PRIu32 ".%06" PRIu32 ",%" PRIu32 ".%06" PRIu32
-            ",%" PRIu32 ".%06" PRIu32 ",%" PRIu32 ".%06" PRIu32,
-            view.face.cx_q6 / 1000000U, view.face.cx_q6 % 1000000U,
-            view.face.cy_q6 / 1000000U, view.face.cy_q6 % 1000000U,
-            view.face.width_q6 / 1000000U, view.face.width_q6 % 1000000U,
-            view.face.height_q6 / 1000000U, view.face.height_q6 % 1000000U);
-        httpd_resp_set_hdr(request, "X-FocusMate-Bbox", bbox);
+    const esp_err_t result = send_jpeg(request, view);
+    focusmate_frame_broker_release(&view);
+    return result;
+}
+
+esp_err_t Dashboard::watch_camera(httpd_req_t *request)
+{
+    if (!watch_authenticated(request))
+        return json_error(request, "401 Unauthorized", "invalid local frame credential");
+    uint32_t after = 0U;
+    char query[48]{};
+    char value[16]{};
+    if (httpd_req_get_url_query_str(request, query, sizeof query) == ESP_OK &&
+        httpd_query_key_value(query, "after", value, sizeof value) == ESP_OK) {
+        char *end = nullptr;
+        const unsigned long parsed = std::strtoul(value, &end, 10);
+        if (end != value && *end == '\0') after = static_cast<uint32_t>(parsed);
     }
-    const esp_err_t result = httpd_resp_send(request, reinterpret_cast<const char *>(view.data), view.size);
+    const uint32_t client = remote_ipv4(request);
+    if (client == 0U) return json_error(request, "400 Bad Request", "IPv4 LAN client required");
+    if (!focusmate_frame_broker_claim_consumer(FOCUSMATE_FRAME_CONSUMER_WATCH, client))
+        return json_error(request, "409 Conflict", "another watch is viewing the camera");
+    focusmate_frame_broker_touch_consumer(FOCUSMATE_FRAME_CONSUMER_WATCH, client);
+    focusmate_jpeg_view_t view{};
+    view.slot = -1;
+    if (!focusmate_frame_broker_try_acquire_consumer(
+            FOCUSMATE_FRAME_CONSUMER_WATCH, client, after, &view)) {
+        httpd_resp_set_status(request, "204 No Content");
+        return httpd_resp_send(request, nullptr, 0);
+    }
+    const esp_err_t result = send_jpeg(request, view);
     focusmate_frame_broker_release(&view);
     return result;
 }
@@ -504,6 +638,8 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     add_q6(camera_json, "jpeg_fps", frames.jpeg_fps_q6);
     cJSON_AddNumberToObject(camera_json, "average_jpeg_bytes", frames.average_jpeg_bytes);
     cJSON_AddBoolToObject(camera_json, "client_connected", frames.client_connected);
+    cJSON_AddBoolToObject(camera_json, "browser_connected", frames.browser_connected);
+    cJSON_AddBoolToObject(camera_json, "watch_connected", frames.watch_connected);
     cJSON_AddNumberToObject(camera_json, "encode_drops", frames.encode_drops);
     cJSON_AddNumberToObject(camera_json, "errors", frames.encode_errors);
 
@@ -524,6 +660,13 @@ esp_err_t Dashboard::status(httpd_req_t *request)
         add_q6(face_json, "width", face.width_q6); add_q6(face_json, "height", face.height_q6);
         add_q6(face_json, "area", (static_cast<uint64_t>(face.width_q6) * face.height_q6 + 500000U) / 1000000U);
         add_q6(face_json, "confidence", face.confidence_q6);
+        cJSON *keypoints = cJSON_AddArrayToObject(face_json, "keypoints");
+        for (uint8_t index = 0U; index < face.keypoint_count; ++index) {
+            cJSON *point = cJSON_CreateObject();
+            add_q6(point, "x", face.keypoints[index].x_q6);
+            add_q6(point, "y", face.keypoints[index].y_q6);
+            cJSON_AddItemToArray(keypoints, point);
+        }
     }
     cJSON_AddNumberToObject(face_json, "inference_ms", face.inference_ms);
     cJSON_AddNumberToObject(face_json, "inference_count", face.inference_count);
@@ -532,7 +675,7 @@ esp_err_t Dashboard::status(httpd_req_t *request)
         ? static_cast<double>(current - face.observed_uptime_ms) : -1.0);
 
     cJSON *posture_json = cJSON_AddObjectToObject(root, "posture");
-    cJSON_AddStringToObject(posture_json, "source", "esp_web_geometry_v2_shadow");
+    cJSON_AddStringToObject(posture_json, "source", "esp_bbox_fallback_v2");
     cJSON_AddBoolToObject(posture_json, "calibrated", posture.calibrated);
     cJSON_AddBoolToObject(posture_json, "calibration_active", posture.calibration_active);
     cJSON_AddNumberToObject(posture_json, "calibration_progress", posture.calibration_progress);
@@ -569,6 +712,9 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddBoolToObject(privacy, "storage", false);
     cJSON_AddBoolToObject(privacy, "cloud", false);
     cJSON_AddBoolToObject(privacy, "shadow_only", true);
+    cJSON_AddBoolToObject(privacy, "landmark_local", true);
+    cJSON_AddStringToObject(privacy, "pose_model_sha256",
+        "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a");
     cJSON_AddBoolToObject(root, "default_password", dashboard_password_ == kDefaultPassword);
     return send_json(request, root);
 }
@@ -878,7 +1024,30 @@ WifiStatus Dashboard::wifi_status()
     return value;
 }
 
+bool Dashboard::frame_access_snapshot(uint8_t ipv4[4], uint16_t *port,
+                                      uint8_t token[16], uint8_t *flags)
+{
+    if (ipv4 == nullptr || port == nullptr || token == nullptr || flags == nullptr || mutex_ == nullptr)
+        return false;
+    const WifiStatus wifi = wifi_status();
+    in_addr address{};
+    if (inet_pton(AF_INET, wifi.ip, &address) != 1) return false;
+    std::memcpy(ipv4, &address.s_addr, 4U);
+    *port = 80U;
+    std::memcpy(token, watch_token_.data(), watch_token_.size());
+    constexpr uint8_t kTokenRequired = 1U << 1U;
+    constexpr uint8_t kFaceMetaV1 = 1U << 2U;
+    *flags = static_cast<uint8_t>((wifi.station_online ? 1U : 0U) | kTokenRequired | kFaceMetaV1);
+    return true;
+}
+
 extern "C" bool focusmate_dashboard_start(void)
 {
     return dashboard.start();
+}
+
+extern "C" bool focusmate_dashboard_frame_access_snapshot(uint8_t ipv4[4], uint16_t *port,
+                                                              uint8_t token[16], uint8_t *flags)
+{
+    return dashboard.frame_access_snapshot(ipv4, port, token, flags);
 }

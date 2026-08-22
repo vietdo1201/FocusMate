@@ -3,3 +3,5 @@ sdkconfig
 sdkconfig.old
 dependencies.lock
 managed_components/
+.asset-cache/
+generated_web_assets/

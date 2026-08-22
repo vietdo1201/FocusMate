@@ -32,6 +32,7 @@ void ble_store_config_init(void);
 #define PROTOCOL_VERSION 1U
 #define FRAMING_VERSION 1U
 #define DEVICE_INFO_SIZE 34U
+#define FRAME_ACCESS_INFO_SIZE 40U
 #define FRAME_HEADER_SIZE 8U
 #define DEFAULT_NOTIFICATION_CAPACITY 20U
 #define MAX_NOTIFICATION_CAPACITY 514U
@@ -79,6 +80,10 @@ static const ble_uuid128_t observation_uuid = BLE_UUID128_INIT(
 static const ble_uuid128_t control_uuid = BLE_UUID128_INIT(
     0x49, 0x40, 0x2f, 0xb3, 0xb5, 0xa0, 0xce, 0xac,
     0x39, 0x4d, 0x93, 0xce, 0x4c, 0x0d, 0xbf, 0x50);
+/* f26cf312-b841-46f5-a172-6b53713a37f3 */
+static const ble_uuid128_t frame_access_info_uuid = BLE_UUID128_INIT(
+    0xf3, 0x37, 0x3a, 0x71, 0x53, 0x6b, 0x72, 0xa1,
+    0xf5, 0x46, 0x41, 0xb8, 0x12, 0xf3, 0x6c, 0xf2);
 
 static void put_le(uint8_t *target, uint64_t value, size_t count)
 {
@@ -141,6 +146,29 @@ static int control_access(uint16_t connection, uint16_t attribute,
     return 0;
 }
 
+static int frame_access_info_access(uint16_t connection, uint16_t attribute,
+                                    struct ble_gatt_access_ctxt *context, void *arg)
+{
+    (void)connection;
+    (void)attribute;
+    (void)arg;
+    uint8_t value[FRAME_ACCESS_INFO_SIZE] = {0};
+    uint8_t ipv4[4] = {0};
+    uint8_t token[16] = {0};
+    uint8_t flags = 0U;
+    uint16_t port = 0U;
+    value[0] = 1U;
+    if (focusmate_dashboard_frame_access_snapshot(ipv4, &port, token, &flags)) {
+        value[1] = flags;
+        put_le(value + 2, port, 2U);
+        memcpy(value + 4, ipv4, sizeof ipv4);
+        memcpy(value + 8, boot_id, sizeof boot_id);
+        memcpy(value + 24, token, sizeof token);
+    }
+    return os_mbuf_append(context->om, value, sizeof value) == 0
+        ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
 static int observation_access(uint16_t connection, uint16_t attribute,
                               struct ble_gatt_access_ctxt *context, void *arg)
 {
@@ -172,6 +200,11 @@ static const struct ble_gatt_svc_def services[] = {
                 .uuid = &control_uuid.u,
                 .access_cb = control_access,
                 .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,
+            },
+            {
+                .uuid = &frame_access_info_uuid.u,
+                .access_cb = frame_access_info_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC,
             },
             {0},
         },
@@ -358,6 +391,8 @@ static void on_sync(void)
     assert(rc == 0);
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     assert(rc == 0);
+    /* Queue Service Changed so bonded Android clients drop an older schema. */
+    ble_svc_gatt_changed(0x0001U, 0xffffU);
     advertise();
 }
 
@@ -409,6 +444,8 @@ void app_main(void)
         if (!focusmate_frame_broker_init()) ESP_LOGE(TAG, "frame broker init failed");
         if (focusmate_face_detector_start()) capabilities |= (1U << 0);
     }
+    if (focusmate_dashboard_start()) capabilities |= (1U << 5);
+    else ESP_LOGE(TAG, "dashboard start failed; BLE remains available");
 
     esp_log_level_set("NimBLE", ESP_LOG_WARN);
     ESP_ERROR_CHECK(nimble_port_init());
@@ -427,7 +464,6 @@ void app_main(void)
     ble_store_config_init();
     nimble_port_freertos_init(host_task);
     xTaskCreate(observation_task, "face-observation", 4096, NULL, 5, NULL);
-    if (!focusmate_dashboard_start()) ESP_LOGE(TAG, "dashboard start failed; BLE remains available");
     ESP_LOGI(TAG, "FocusMate GATT ready capabilities=0x%08" PRIx32
-             "; local shadow frames require an authenticated web client", capabilities);
+             "; local frames require authenticated browser/watch clients", capabilities);
 }
