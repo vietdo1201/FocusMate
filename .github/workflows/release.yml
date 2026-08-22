@@ -18,8 +18,8 @@ jobs:
       FOCUSMATE_RELEASE_KEY_ALIAS: ${{ secrets.FOCUSMATE_RELEASE_KEY_ALIAS }}
       FOCUSMATE_RELEASE_KEY_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
