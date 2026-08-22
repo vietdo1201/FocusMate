@@ -8,15 +8,14 @@
 - Motion deterministic; thiếu `BODY_SENSORS` chỉ làm HR unavailable.
 - `PostureClassifier`, geometry calibration experimental, shadow-model interface.
 - Insight 180 giây hoặc 4 episode/15 phút; không prompt lúc học; break/end recommendations.
-- App standalone, một variant, version `14 / 1.13-watch-rules-v2`.
+- App standalone, một variant, source version `15 / 1.14-posture-geometry`.
 
 ## Protocol/firmware còn lại
 
-1. Viết GATT profile doc và golden vectors dựa trên `FaceObservationV1`.
-2. Viết simulator và Watch BLE client với reconnect/freshness/sequence tests.
-3. Tạo ESP-IDF project, camera driver và detector nhẹ.
-4. Chỉ phát bbox/quality; cấm frame, crop, landmark và identifier.
-5. Benchmark trên ESP32-S3 thật rồi mới điều chỉnh ngưỡng geometry.
+1. GATT profile, golden vectors, simulator, Watch BLE client và ESP-IDF camera/detector đã có.
+2. Giữ payload bbox/quality; cấm frame, crop, landmark và identifier trên BLE.
+3. Hoàn tất test thật từng state, low-light và soak trước khi chốt threshold/`VERIFIED_DEVICE` posture.
+4. Cài APK version 15 lên Watch khi ADB trở lại; không suy diễn source build là device evidence.
 
 ## Definition of Done cho đợt Watch v2
 

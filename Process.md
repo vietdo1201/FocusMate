@@ -2,11 +2,18 @@
 
 ## Checkpoint hiện tại
 
-- Ngày cập nhật: 2026-08-22.
-- Watch đã chuyển sang app standalone, một variant, `versionCode 14`, `1.13-watch-rules-v2`.
+- Ngày cập nhật: 2026-08-23.
+- Watch source đã chuyển sang app standalone, một variant, `versionCode 15`, `1.14-posture-geometry`; APK mới chưa cài vì ADB hiện không thấy Watch.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera smoke và detector runtime có bằng chứng thiết bị thật, positive bbox/posture vẫn chưa đạt.
+- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera, detector và một scenario `HEAD_DOWN` shadow có bằng chứng thiết bị thật, nhưng bộ posture/soak vẫn chưa đạt.
+
+## Realtime posture retest (2026-08-23)
+
+- Firmware `0.4.1-shadow-posture` tách gate confidence: calibration `0,70`, live `0,50`; mọi state live dùng ba mẫu ổn định và stale vẫn fail-closed ngay. Xem [device retest](reports/2026-08-23-posture-geometry-retest.md).
+- Timer `SLUMPED` chỉ đếm khi `dy ≥ 0,18` liên tục 5 giây; không tái dùng thời gian `HEAD_DOWN` nhẹ hoặc `TOO_CLOSE`.
+- Flash COM4 thành công; dashboard thật tại `focusmate.local` nhận `HEAD_DOWN` ổn định với `dy=0,167`, confidence `0,86`, BLE MTU 256 và 0 notify failure.
+- Đây chỉ là bằng chứng scenario `HEAD_DOWN`; `LEAN_LEFT/RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, low-light và soak vẫn phải chạy thật trước khi nâng posture.
 
 ## Gate A — nền tảng dev (đạt 2026-08-22)
 
