@@ -43,3 +43,8 @@ private-data/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local device diagnostics; only curated, privacy-safe evidence is tracked.
+artifacts/*
+!artifacts/focusmate-watch-encrypted-5hz-status.png
+!artifacts/focusmate-watch-encrypted-5hz-status.xml
