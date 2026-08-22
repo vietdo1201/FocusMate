@@ -33,6 +33,8 @@ Không truyền frame trong `FaceObservationV1`. Đường frame tương lai ph�
 - [Kế hoạch triển khai](soucre_code/from_On_Hand_3_android_wear/IMPLEMENTATION_PLAN.md)
 - [ADR 0002](docs/decisions/0002-watch-rule-engine-and-detector-split.md)
 - [ADR 0003](docs/decisions/0003-optional-frame-transport-to-watch.md)
+- [ADR 0004](docs/decisions/0004-gatt-profile-and-canonical-framing.md)
+- [GATT profile (normative)](docs/GATT_PROFILE.md)
 
 Chạy kiểm chứng từ root:
 

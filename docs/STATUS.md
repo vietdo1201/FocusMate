@@ -9,7 +9,8 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 | Wear session/UI/fatigue input | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Một app variant, standalone |
 | Rule Engine `watch_rules_v2` | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Boundary, overlap, cooldown, missing-data tests |
 | Motion collection/rule immobility | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Thiếu HR permission không dừng motion; chưa device test |
-| `FaceObservationV1` protocol codec | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Round-trip, malformed, size, sequence gate |
+| `FaceObservationV1` protocol codec | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Round-trip, malformed, size, sequence gate. **Chưa** canonical theo ADR 0004 |
+| Canonical wire format + GATT profile | `IN_PROGRESS` | `TARGET` | `UNVERIFIED` | Spec chốt ở ADR 0004 + [GATT_PROFILE.md](GATT_PROFILE.md); code/golden vectors chưa có |
 | Geometry classifier/calibration | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Synthetic bbox only |
 | Posture insight/report policy | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 180 s và 4 episode/15 phút tests |
 | BLE GATT Watch ↔ ESP | `NOT_STARTED` | `TARGET` | `UNVERIFIED` | Chưa có client/server/runtime |
@@ -27,3 +28,5 @@ Verification chuẩn:
 ```
 
 Command gồm `:protocol:test`, `:app:testDebugUnitTest`, `:app:lintDebug`, `:app:assembleDebug`, `:app:assembleRelease`. Kết quả local không chứng minh thiết bị thật.
+
+ADR 0004 (2026-08-22) chốt canonical wire format và GATT profile. Đây là quyết định spec, **không** nâng status: BLE GATT, firmware ESP-IDF và camera + detector vẫn `NOT_STARTED / UNVERIFIED` cho tới khi có code và report thiết bị.
