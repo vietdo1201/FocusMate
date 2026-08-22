@@ -1,0 +1,45 @@
+# Build systems and generated outputs
+**/.gradle/
+**/.kotlin/
+**/build/
+**/.cxx/
+**/captures/
+.claude/
+
+# Machine-local IDE and SDK configuration
+**/.idea/
+*.iml
+local.properties
+.vscode/
+
+# Signing material, credentials, and local environment
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.properties.local
+
+# Model binaries and generated AI artifacts
+*.gguf
+*.tflite
+*.task
+*.espdl
+*.onnx
+*.safetensors
+
+# Private or raw research data
+raw-data/
+private-data/
+*.hr.csv
+*.sensor.csv
+
+# Logs, temporary files, and OS metadata
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db

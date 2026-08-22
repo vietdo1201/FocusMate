@@ -1,0 +1,29 @@
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+$wearRoot = Join-Path $PSScriptRoot 'soucre_code/from_On_Hand_3_android_wear'
+$gradleWrapper = Join-Path $wearRoot 'gradlew.bat'
+$tasks = @(
+    'clean'
+    ':protocol:test'
+    ':app:testDebugUnitTest'
+    ':app:lintDebug'
+    ':app:assembleDebug'
+    ':app:assembleRelease'
+)
+
+if (-not (Test-Path -LiteralPath $gradleWrapper)) {
+    throw "Gradle wrapper not found: $gradleWrapper"
+}
+
+Push-Location $wearRoot
+try {
+    & $gradleWrapper --no-daemon $tasks
+    if ($LASTEXITCODE -ne 0) {
+        throw "Watch rules v2 verification failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Pop-Location
+}

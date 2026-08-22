@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FocusMate</string>
+    <string name="state_ready">SẴN SÀNG</string>
+    <string name="state_studying">ĐANG HỌC</string>
+    <string name="state_break">ĐANG NGHỈ</string>
+    <string name="timer_zero">00:00:00</string>
+    <string name="break_timer_default">NGHỈ CÒN 05:00</string>
+    <string name="break_timer_value">NGHỈ CÒN %1$s</string>
+    <string name="break_timer_awaiting_choice">NGHỈ • CHỜ BẠN CHỌN</string>
+    <string name="start_study">Bắt đầu học</string>
+    <string name="finish_and_save">Kết thúc &amp; lưu</string>
+    <string name="cancel_session">Hủy phiên</string>
+    <string name="select_task_type">Chọn loại nhiệm vụ</string>
+    <string name="task_exercise">Bài tập</string>
+    <string name="decrease_focus">Giảm mức tập trung</string>
+    <string name="increase_focus">Tăng mức tập trung</string>
+    <string name="focus_value">Tập trung\n%1$d/5</string>
+    <string name="decrease_fatigue">Giảm mức mệt</string>
+    <string name="increase_fatigue">Tăng mức mệt</string>
+    <string name="minus">−</string>
+    <string name="plus">+</string>
+    <string name="fatigue_value">Mức mệt\n%1$d/10</string>
+    <string name="cooldown_default">Không làm phiền: 20:00</string>
+    <string name="session_confidence_idle">ĐỘ TIN TƯỞNG PHIÊN\n--</string>
+    <string name="session_confidence_value">ĐỘ TIN TƯỞNG PHIÊN\n%1$d%%</string>
+    <string name="rule_status_idle">RULE ENGINE v2\n--</string>
+    <string name="rule_status_value">RULE ENGINE v2 • %1$s\n%2$s</string>
+    <string name="posture_status_idle">TƯ THẾ\nChưa có phiên học</string>
+    <string name="posture_status_unavailable">TƯ THẾ\nChưa có dữ liệu bbox từ ESP</string>
+    <string name="posture_status_recorded">TƯ THẾ\nĐã ghi %1$d episode • xem khi nghỉ</string>
+    <string name="posture_status_no_advice">TƯ THẾ\nKhông có lỗi nổi trội cần chỉnh</string>
+    <string name="last_seven_days">7 NGÀY GẦN NHẤT</string>
+    <string name="today_zero">0 phút hôm nay</string>
+    <string name="today_total">%1$s hôm nay</string>
+    <string name="stats_zero">0 phiên • 0 phút • nghỉ 0/0 lần nhắc</string>
+    <plurals name="stats_summary">
+        <item quantity="one">%1$d phiên • %2$s • nghỉ %3$d/%4$d lần nhắc</item>
+        <item quantity="other">%1$d phiên • %2$s • nghỉ %3$d/%4$d lần nhắc</item>
+    </plurals>
+    <string name="history_empty_short">Chưa có lịch sử.</string>
+    <string name="prepare_section">CHUẨN BỊ PHIÊN HỌC</string>
+    <string name="insights_section">PHÂN TÍCH TRỰC TIẾP</string>
+    <string name="progress_section">TIẾN ĐỘ GẦN ĐÂY</string>
+    <string name="posture_runtime_section">TRẠNG THÁI POSTURE</string>
+    <string name="posture_runtime_idle">Geometry classifier • chờ phiên học\nBLE runtime: chưa triển khai</string>
+    <string name="posture_runtime_waiting">Geometry classifier • chờ calibration\nBLE runtime: chưa triển khai</string>
+    <string name="reminder_checking">Đang kiểm tra nhắc nghỉ…</string>
+    <string name="fix_settings">Sửa thiết lập</string>
+    <string name="test_vibration">Thử rung</string>
+</resources>
