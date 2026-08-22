@@ -1,0 +1,8 @@
+name	head_roll_deg	torso_lean_deg	lateral_head	head_height	eye_height	face_pitch	face_scale	torso_length	hold_ms	expected
+normal	0	0	0	1.00	0.90	0.50	0.20	0.40	0	NORMAL
+head_tilt_left	13	0	0	1.00	0.90	0.50	0.20	0.40	0	LEAN_LEFT
+body_lean_right	0	-11	0	1.00	0.90	0.50	0.20	0.40	0	LEAN_RIGHT
+lateral_left	0	0	0.14	1.00	0.90	0.50	0.20	0.40	0	LEAN_LEFT
+head_down	0	0	0	0.75	0.68	0.50	0.20	0.40	0	HEAD_DOWN
+too_close	15	10	0.15	0.75	0.68	0.50	0.29	0.40	0	TOO_CLOSE
+slumped_sustained	0	0	0	0.70	0.63	0.50	0.20	0.34	6000	SLUMPED

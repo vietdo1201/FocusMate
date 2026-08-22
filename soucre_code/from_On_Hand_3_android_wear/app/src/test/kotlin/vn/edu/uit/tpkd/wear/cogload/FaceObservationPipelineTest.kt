@@ -68,6 +68,157 @@ class FaceObservationPipelineTest {
     }
 
     @Test
+    fun repeatedDetectorTimestampCountsTransportButOnlyOneCalibrationSample() {
+        var mono = 10_000L
+        val updates = mutableListOf<PostureIngestionUpdate>()
+        val states = mutableListOf<PostureRuntimeSnapshot>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { mono },
+            onUpdate = updates::add,
+            onRuntime = states::add,
+        )
+        ingestor.onDeviceInfo(deviceInfo(1_000L).encode()).getOrThrow()
+        val simulator = FaceObservationSimulator()
+
+        repeat(20) { index ->
+            mono += 50L
+            simulator.notifications(face(index.toLong(), 1_100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+
+        assertTrue(updates.isEmpty())
+        assertEquals(PostureRuntimePhase.CALIBRATING, states.last().phase)
+        assertEquals("1/20 mẫu", states.last().detail)
+
+        repeat(19) { index ->
+            mono += 100L
+            simulator.notifications(face(20L + index, 1_200L + index * 100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+
+        assertEquals(PostureState.NORMAL, updates.single().classification.state)
+        // All 39 complete notifications contribute to transport telemetry,
+        // even though only 20 unique detector timestamps reach calibration.
+        assertTrue(states.last().notificationRateHz!! > 10.0)
+    }
+
+    @Test
+    fun duplicateTimestampCannotPublishOrDisturbSlumpedTimer() {
+        var mono = 10_000L
+        val updates = mutableListOf<PostureIngestionUpdate>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { mono },
+            onUpdate = updates::add,
+        )
+        ingestor.onDeviceInfo(deviceInfo(1_000L).encode()).getOrThrow()
+        val simulator = FaceObservationSimulator()
+        repeat(20) { index ->
+            mono += 100L
+            simulator.notifications(face(index.toLong(), 1_100L + index * 100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+        assertEquals(PostureState.NORMAL, updates.single().classification.state)
+
+        mono += 100L
+        simulator.notifications(face(20, 4_000L, cy = 0.59), 256)
+            .forEach(ingestor::onNotification)
+        assertEquals(PostureState.HEAD_DOWN, updates.last().classification.state)
+        val publishedBeforeDuplicates = updates.size
+
+        repeat(10) { index ->
+            mono += 100L
+            simulator.notifications(face(21L + index, 4_000L, cy = 0.59), 256)
+                .forEach(ingestor::onNotification)
+        }
+        assertEquals(publishedBeforeDuplicates, updates.size)
+
+        mono += 100L
+        simulator.notifications(face(31, 6_500L, cy = 0.59), 256)
+            .forEach(ingestor::onNotification)
+        assertEquals(PostureState.HEAD_DOWN, updates.last().classification.state)
+        mono += 100L
+        simulator.notifications(face(32, 8_999L, cy = 0.59), 256)
+            .forEach(ingestor::onNotification)
+        assertEquals(PostureState.HEAD_DOWN, updates.last().classification.state)
+        mono += 100L
+        simulator.notifications(face(33, 9_000L, cy = 0.59), 256)
+            .forEach(ingestor::onNotification)
+        assertEquals(PostureState.SLUMPED, updates.last().classification.state)
+    }
+
+    @Test
+    fun repeatedTimestampCanStillMakeRuntimeStaleWithoutPublishingPosture() {
+        var mono = 10_000L
+        val updates = mutableListOf<PostureIngestionUpdate>()
+        val states = mutableListOf<PostureRuntimeSnapshot>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { mono },
+            onUpdate = updates::add,
+            onRuntime = states::add,
+        )
+        ingestor.onDeviceInfo(deviceInfo(1_000L).encode()).getOrThrow()
+        val simulator = FaceObservationSimulator()
+        repeat(20) { index ->
+            mono += 100L
+            simulator.notifications(face(index.toLong(), 1_100L + index * 100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+        val publishedBeforeDuplicate = updates.size
+
+        mono += 3_001L
+        simulator.notifications(face(20, 3_000L), 256).forEach(ingestor::onNotification)
+
+        assertEquals(publishedBeforeDuplicate, updates.size)
+        assertEquals(PostureRuntimePhase.STALE, states.last().phase)
+        assertTrue(states.last().notificationRateHz!! > 0.0)
+    }
+
+    @Test
+    fun strictUptimeGateSurvivesSequenceWrapRejectsRegressionAndResetsOnReboot() {
+        var mono = 10_000L
+        val updates = mutableListOf<PostureIngestionUpdate>()
+        val states = mutableListOf<PostureRuntimeSnapshot>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { mono },
+            onUpdate = updates::add,
+            onRuntime = states::add,
+        )
+        ingestor.onDeviceInfo(deviceInfo(1_000L).encode()).getOrThrow()
+        val simulator = FaceObservationSimulator()
+        repeat(20) { index ->
+            mono += 100L
+            val sequence = (FaceObservationV1.MAX_SEQUENCE - 9L + index) and FaceObservationV1.MAX_SEQUENCE
+            simulator.notifications(face(sequence, 1_100L + index * 100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+        assertEquals(PostureState.NORMAL, updates.single().classification.state)
+
+        val publishedBeforeRegression = updates.size
+        mono += 100L
+        simulator.notifications(face(10, 2_900L), 256).forEach(ingestor::onNotification)
+        assertEquals(publishedBeforeRegression, updates.size)
+        mono += 100L
+        simulator.notifications(face(11, 3_100L), 256).forEach(ingestor::onNotification)
+        assertEquals(publishedBeforeRegression + 1, updates.size)
+
+        ingestor.onDeviceInfo(
+            deviceInfo(50L, boot = "ffeeddccbbaa99887766554433221100").encode(),
+        ).getOrThrow()
+        assertEquals(PostureRuntimePhase.CALIBRATING, states.last().phase)
+        repeat(20) { index ->
+            mono += 100L
+            simulator.notifications(face(index.toLong(), 100L + index * 100L), 256)
+                .forEach(ingestor::onNotification)
+        }
+        assertEquals(3, updates.count { it.classification.state == PostureState.NORMAL })
+        assertEquals(PostureRuntimePhase.LIVE, states.last().phase)
+    }
+
+    @Test
     fun corruptCrcAndDegradedSamplesCannotReachLivePipeline() {
         var mono = 10_000L
         val updates = mutableListOf<PostureIngestionUpdate>()
@@ -218,12 +369,12 @@ class FaceObservationPipelineTest {
             GattProfile.CAP_REPORTS_LOW_LIGHT or GattProfile.CAP_REPORTS_UNSTABLE,
     )
 
-    private fun face(sequence: Long, uptime: Long) = FaceObservationV1(
+    private fun face(sequence: Long, uptime: Long, cy: Double = 0.4) = FaceObservationV1(
         sequence = sequence,
         espUptimeMs = uptime,
         faceDetected = true,
         centerX = 0.5,
-        centerY = 0.4,
+        centerY = cy,
         width = 0.2,
         height = 0.3,
         area = 0.06,

@@ -18,6 +18,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Repository contract verification failed with exit code $LASTEXITCODE"
 }
 
+node --test (Join-Path $PSScriptRoot 'tests/pose_classifier.test.mjs')
+if ($LASTEXITCODE -ne 0) {
+    throw "Landmark classifier verification failed with exit code $LASTEXITCODE"
+}
+
 if (-not (Test-Path -LiteralPath $gradleWrapper)) {
     throw "Gradle wrapper not found: $gradleWrapper"
 }

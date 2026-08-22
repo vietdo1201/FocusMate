@@ -14,12 +14,14 @@ def read(relative: str) -> str:
 
 
 class ShadowDashboardContractTest(unittest.TestCase):
-    def test_dashboard_is_local_authenticated_and_shadow_only(self) -> None:
+    def test_dashboard_is_local_authenticated_and_landmark_primary(self) -> None:
         source = read("firmware/main/dashboard.cpp")
         html = read("firmware/main/web/index.html")
         adr = read("docs/decisions/0005-local-realtime-shadow-dashboard.md")
         for route in (
             "/camera.jpg",
+            "/api/watch/frame",
+            "/assets/*",
             "/api/status",
             "/api/viewer/release",
             "/api/auth/login",
@@ -36,7 +38,12 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("shadow_only", source)
         self.assertIn("watch_rules_v2", adr)
         self.assertNotIn("https://", html)
-        self.assertNotIn("mediapipe", html.lower())
+        self.assertIn("MediaPipe Pose", html)
+        self.assertIn("POSE_LOCAL", html)
+        self.assertIn("pose_worker_bootstrap.js", html)
+        self.assertIn("worker-src 'self'", source)
+        self.assertIn("X-FocusMate-Face-Meta-V1", source)
+        self.assertIn("Authorization", source)
 
     def test_direct_jpeg_camera_and_bounded_broker_are_preserved(self) -> None:
         camera = read("firmware/main/camera_smoke.c")
@@ -47,11 +54,14 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("kFrameWidth = 320U", broker)
         self.assertIn("kJpegSlotCount = 3U", broker)
         self.assertIn("kJpegSlotCapacity = 128U * 1024U", broker)
-        self.assertIn("kOfferPeriodUs = 200000U", broker)
+        self.assertIn("kOfferPeriodUs = 150000U", broker)
         self.assertIn("direct camera JPEG broker", broker)
         self.assertIn("std::memcpy(slot.data, frame->buf, frame->len)", broker)
         self.assertNotIn("frame2jpg_cb", broker)
         self.assertIn("viewer_active(current_us)", broker)
+        self.assertIn("FOCUSMATE_FRAME_CONSUMER_BROWSER", broker)
+        self.assertIn("FOCUSMATE_FRAME_CONSUMER_WATCH", broker)
+        self.assertIn("keypoint_count", detector)
         self.assertIn("encode_drops", broker)
         self.assertIn("kDetectorWidth = 240U", detector)
         self.assertIn("kDetectorHeight = 240U", detector)
@@ -115,11 +125,11 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn('"live_confidence"', dashboard)
         self.assertIn('"calibration_confidence"', dashboard)
         self.assertIn('"baseline_revision"', dashboard)
-        self.assertIn("esp_web_geometry_v2_shadow", dashboard)
+        self.assertIn("esp_bbox_fallback_v2", dashboard)
         self.assertIn("watch_geometry_v2_experimental", kotlin)
         self.assertIn("rawConfidence", html)
 
-    def test_calibration_uses_only_fresh_visible_continuous_samples(self) -> None:
+    def test_landmark_calibration_is_automatic_and_bbox_fallback_stays_bounded(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
         html = read("firmware/main/web/index.html")
         self.assertIn("kCalibrationSamples = 20U", firmware)
@@ -133,8 +143,41 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertNotIn("complete_not_persisted", firmware + html)
         self.assertNotIn("recent_", firmware)
         self.assertNotIn("copy_recent_calibration", firmware)
-        self.assertIn("Hiệu chỉnh lại khi ngồi thẳng", html)
+        classifier = read("firmware/main/web/pose_classifier.mjs")
+        self.assertIn("REQUIRED_BASELINE_SAMPLES = 20", classifier)
+        self.assertIn("REQUIRED_BASELINE_MS = 5000", classifier)
+        self.assertIn("features.quality < 0.7", classifier)
+        self.assertIn("auto_calibrating", classifier)
+        self.assertIn("Xóa baseline và tự hiệu chỉnh lại", html)
+        self.assertNotIn('id="calibrate"', html)
         self.assertNotIn("Hiệu chỉnh 5 giây", html)
+
+    def test_offline_mediapipe_assets_are_pinned_and_partitioned(self) -> None:
+        script = read("firmware/tools/prepare_mediapipe_assets.ps1")
+        cmake = read("firmware/main/CMakeLists.txt")
+        partitions = read("firmware/partitions.csv")
+        assets = read("firmware/main/web_assets.cpp")
+        self.assertIn("1.0.1", script)
+        self.assertIn("EE318EAA3D42230AA10910D114FAF2A488C577C4E4D33C7CB04126924ACA505F", script)
+        self.assertIn("59929E1D1EE95287735DDD833B19CF4AC46D29BC7AFDDBBF6753C459690D574A", script)
+        self.assertIn("spiffs_create_partition_image(mp_assets", cmake)
+        self.assertIn("mp_assets", partitions)
+        self.assertIn('Content-Encoding", "gzip', assets)
+        self.assertIn("pose_landmarker_lite.task.gz", assets)
+        self.assertIn("vwi.wasm.gz", assets)
+        self.assertIn("globalThis.ModuleFactory = ModuleFactory", script)
+        self.assertIn('console.error("FocusMate Pose"', read("firmware/main/web/index.html"))
+        worker = read("firmware/main/web/pose_worker.mjs")
+        bootstrap = read("firmware/main/web/pose_worker_bootstrap.js")
+        self.assertIn("wasm-classic-v1", worker)
+        self.assertIn("wasm-classic-v1", bootstrap)
+        self.assertIn("wasm-classic-v1", assets)
+        self.assertIn("importScripts", bootstrap)
+        self.assertIn("pose-local-classic-2", bootstrap)
+        self.assertIn("pose-worker-classic-2", read("firmware/main/web/index.html"))
+        self.assertIn("classifier-2", worker)
+        self.assertIn('asset->gzip', assets)
+        self.assertIn('"no-cache"', assets)
 
     def test_subject_relative_horizontal_axis_invalidates_old_baseline(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
