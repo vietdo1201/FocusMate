@@ -4,6 +4,7 @@
 **/build/
 **/.cxx/
 **/captures/
+**/__pycache__/
 .claude/
 
 # Machine-local IDE and SDK configuration

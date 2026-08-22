@@ -6,6 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import vn.edu.uit.tpkd.wear.cogload.protocol.FaceObservationV1
+import java.io.File
+import kotlin.math.sqrt
 
 class PostureClassifierTest {
     @Test
@@ -35,6 +37,39 @@ class PostureClassifierTest {
         classifier.reset()
         assertFalse(classifier.isCalibrated())
         assertNull(classifier.baseline())
+    }
+
+    @Test
+    fun sharedGoldenVectorsMatchFirmwareShadowClassifier() {
+        val startDirectory = File(System.getProperty("user.dir") ?: ".").canonicalFile
+        val fixture = generateSequence(startDirectory) { it.parentFile }
+            .map { it.resolve("tests/golden/posture_geometry_v1.tsv") }
+            .firstOrNull(File::isFile)
+        assertTrue("Missing shared fixture above: $startDirectory", fixture != null)
+        val fixtureFile = requireNotNull(fixture)
+        fixtureFile.readLines()
+            .drop(1)
+            .filter(String::isNotBlank)
+            .forEachIndexed { index, line ->
+                val columns = line.split('\t')
+                val dx = columns[1].toDouble()
+                val dy = columns[2].toDouble()
+                val areaRatio = columns[3].toDouble()
+                val holdMs = columns[4].toLong()
+                val expected = PostureState.valueOf(columns[5])
+                val classifier = GeometryPostureClassifier()
+                assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+                val scale = sqrt(areaRatio)
+                val observation = face(
+                    sequence = 100L + index,
+                    cx = 0.5 + dx,
+                    cy = 0.4 + dy,
+                    width = 0.2 * scale,
+                    height = 0.3 * scale,
+                )
+                if (holdMs > 0) classifier.classify(observation, 1_000L)
+                assertEquals(columns[0], expected, classifier.classify(observation, 1_000L + holdMs).state)
+            }
     }
 
     @Test

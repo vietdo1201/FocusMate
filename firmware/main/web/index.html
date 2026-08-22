@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FocusMate Realtime</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07111f;--card:#101d2d;--line:#263a54;--text:#edf5ff;--muted:#91a7c0;--accent:#56a8ff;--good:#35d39a;--warn:#f7bd42;--bad:#ff6b6b}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#173253,var(--bg) 50%);font:14px system-ui,sans-serif;color:var(--text)}
+    main{max-width:1100px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{margin:4px 0;font-size:24px}.muted,.note{color:var(--muted)}.note{font-size:12px}
+    .pill{padding:7px 11px;border:1px solid var(--line);border-radius:999px}.grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:16px;margin-top:16px}
+    .card{background:#101d2df2;border:1px solid var(--line);border-radius:16px;padding:15px;box-shadow:0 16px 45px #0005}.video{padding:8px}
+    canvas{display:block;width:100%;aspect-ratio:4/3;background:#000;border-radius:11px}.posture{font-size:26px;font-weight:900;padding:13px;border-radius:11px;background:#091524;margin-bottom:9px}.posture.bad{background:#542427;color:#ffd8d8}.posture.good{background:#103a32;color:#c8ffe9}
+    .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat{background:#091524;border-radius:10px;padding:9px}.stat span{display:block;color:var(--muted);font-size:11px}.stat b{font-size:16px}
+    h2{font-size:16px;margin:2px 0 12px}button,input,select{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#091524;color:var(--text)}button{border:0;background:var(--accent);font-weight:800;cursor:pointer;margin-top:9px}.secondary{background:#253b56}.danger{background:#bb3f51}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:block;margin-top:10px;color:var(--muted)}label.check{display:flex;align-items:center;gap:8px}label.check input{width:auto}
+    progress{width:100%;height:14px;margin:8px 0}.warning{display:none;background:#4b3509;color:#ffe5a5;padding:10px;border-radius:9px;margin-bottom:9px}.warning.on{display:block}
+    #login{position:fixed;inset:0;background:#06101bea;display:flex;align-items:center;justify-content:center;z-index:5;padding:20px}#login .card{width:min(380px,100%)}#login.hidden{display:none}
+    #toast{position:fixed;right:16px;bottom:16px;background:#102943;border:1px solid var(--line);padding:11px 14px;border-radius:10px;display:none;z-index:8}
+    details{margin-top:16px}summary{cursor:pointer;font-weight:800}.privacy{color:var(--good);font-size:12px;margin-top:9px}
+    @media(max-width:780px){.grid{grid-template-columns:1fr}.top{align-items:flex-start}.pill{font-size:12px}}
+  </style>
+</head>
+<body>
+<div id="login"><div class="card"><h2>Đăng nhập FocusMate</h2><p class="muted">Mật khẩu dashboard mặc định trùng mật khẩu AP thiết lập.</p><input id="loginPass" type="password" autocomplete="current-password" placeholder="Mật khẩu"><button id="loginButton">Mở dashboard</button><p id="loginError" class="note"></p></div></div>
+<main>
+  <div class="top"><div><h1>FocusMate Realtime</h1><div class="note">OV2640 · ESP32-S3 · shadow geometry</div></div><div id="online" class="pill">Đang kết nối…</div></div>
+  <div class="grid">
+    <section>
+      <div class="card video"><canvas id="video" width="320" height="240"></canvas></div>
+      <div class="card" style="margin-top:16px">
+        <h2>Chỉ số realtime</h2>
+        <div class="stats">
+          <div class="stat"><span>Detector FPS</span><b id="captureFps">—</b></div><div class="stat"><span>Web FPS</span><b id="jpegFps">—</b></div>
+          <div class="stat"><span>Inference</span><b id="latency">—</b></div><div class="stat"><span>Face confidence</span><b id="faceConfidence">—</b></div>
+          <div class="stat"><span>Wi-Fi</span><b id="wifi">—</b></div><div class="stat"><span>BLE Watch</span><b id="ble">—</b></div>
+          <div class="stat"><span>Heap / PSRAM</span><b id="memory">—</b></div><div class="stat"><span>Notify failures</span><b id="notifyFailures">—</b></div>
+        </div>
+      </div>
+    </section>
+    <aside>
+      <div class="card">
+        <div id="passwordWarning" class="warning">Hãy đổi mật khẩu dashboard mặc định trong phần Cấu hình.</div>
+        <div id="runtimeWarning" class="warning">Camera/detector đang chậm hoặc BLE có lỗi notify; hãy xem các chỉ số kỹ thuật.</div>
+        <h2>Shadow posture</h2>
+        <div id="posture" class="posture">UNKNOWN</div>
+        <div class="stats">
+          <div class="stat"><span>Confidence</span><b id="postureConfidence">—</b></div><div class="stat"><span>Ổn định</span><b id="stable">—</b></div>
+          <div class="stat"><span>dx</span><b id="dx">—</b></div><div class="stat"><span>dy</span><b id="dy">—</b></div>
+          <div class="stat"><span>Area ratio</span><b id="areaRatio">—</b></div><div class="stat"><span>Raw state</span><b id="rawState">—</b></div>
+        </div>
+        <label>Calibration <span id="calibrationText">0/20</span></label><progress id="calibration" max="20" value="0"></progress>
+        <div id="calibrationReason" class="note">Ngồi chuẩn, nhìn thẳng; hệ thống dùng 20 mẫu ổn định gần nhất hoặc tiếp tục thu tối đa 8 giây.</div>
+        <div class="row"><button id="calibrate">Hiệu chỉnh 20 mẫu</button><button id="resetCalibration" class="secondary">Xóa baseline</button></div>
+        <button id="export" class="secondary">Xuất telemetry JSON/CSV</button>
+        <div class="privacy">Ảnh chỉ ở RAM · không lưu · không cloud · không tác động Rule Engine</div>
+      </div>
+      <details class="card">
+        <summary>Cấu hình</summary>
+        <h2 style="margin-top:14px">Wi-Fi 2.4 GHz</h2>
+        <select id="ssid"><option value="">Bấm quét mạng</option></select><button id="scan" class="secondary">Quét Wi-Fi</button>
+        <label>Mật khẩu Wi-Fi</label><input id="wifiPass" type="password" autocomplete="new-password">
+        <button id="connectWifi">Lưu và kết nối</button><button id="resetWifi" class="danger">Xóa Wi-Fi đã lưu</button>
+        <h2 style="margin-top:20px">Mật khẩu AP FocusMate-Setup</h2>
+        <input id="apPass" type="password" placeholder="Mật khẩu AP mới 8–63 ký tự">
+        <button id="saveAp" class="secondary">Đổi mật khẩu AP</button>
+        <h2 style="margin-top:20px">Hướng hiển thị camera</h2>
+        <div class="row"><label class="check"><input id="displayMirror" type="checkbox"> Lật ngang</label><label class="check"><input id="displayFlip" type="checkbox"> Lật dọc</label></div>
+        <h2 style="margin-top:20px">Đổi mật khẩu dashboard</h2>
+        <input id="oldPass" type="password" placeholder="Mật khẩu hiện tại"><input id="newPass" type="password" placeholder="Mật khẩu mới 8–63 ký tự" style="margin-top:8px">
+        <button id="changePassword">Đổi mật khẩu</button>
+      </details>
+    </aside>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const el=id=>document.getElementById(id), canvas=el("video"), ctx=canvas.getContext("2d");
+let authenticated=false,lastFrame=0,lastStatus=null,running=true,telemetry=[];
+ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
+el("displayMirror").checked=localStorage.getItem("focusmate_display_mirror_v2")==="true";el("displayFlip").checked=localStorage.getItem("focusmate_display_flip_v2")==="true";
+const viewerClient=(()=>{const existing=Number(sessionStorage.getItem("focusmate_viewer"));if(Number.isInteger(existing)&&existing>0)return existing;const values=new Uint32Array(1);crypto.getRandomValues(values);const created=values[0]||1;sessionStorage.setItem("focusmate_viewer",String(created));return created})();
+const labels={NORMAL:"NGỒI ĐÚNG",HEAD_DOWN:"CÚI ĐẦU",LEAN_LEFT:"NGHIÊNG TRÁI",LEAN_RIGHT:"NGHIÊNG PHẢI",TOO_CLOSE:"QUÁ GẦN",SLUMPED:"GÙ / SỤP",FACE_MISSING:"KHÔNG THẤY MẶT",UNKNOWN:"CHƯA XÁC ĐỊNH"};
+const toast=message=>{const node=el("toast");node.textContent=message;node.style.display="block";setTimeout(()=>node.style.display="none",3200)};
+async function api(url,options){const response=await fetch(url,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||response.statusText);return data}
+function number(value,digits=2){return Number.isFinite(value)?Number(value).toFixed(digits):"—"}
+function mb(value){return Number.isFinite(value)?(value/1048576).toFixed(1)+" MB":"—"}
+function showLogin(error=""){authenticated=false;el("login").classList.remove("hidden");el("loginError").textContent=error}
+function showStatus(s){
+  lastStatus=s;authenticated=true;el("login").classList.add("hidden");el("online").textContent=s.wifi.ip+" · "+s.wifi.mdns;
+  el("captureFps").textContent=number(s.camera.capture_fps,1);el("jpegFps").textContent=number(s.camera.jpeg_fps,1);el("latency").textContent=s.face.inference_ms+" ms";
+  el("faceConfidence").textContent=s.face.confidence==null?"—":number(s.face.confidence*100,1)+"%";el("wifi").textContent=s.wifi.ssid+" "+s.wifi.rssi+" dBm";
+  el("ble").textContent=s.ble.connected?(s.ble.subscribed?"LIVE · MTU "+s.ble.mtu:"CONNECTED"):"OFFLINE";el("memory").textContent=mb(s.memory.free_internal_heap)+" / "+mb(s.memory.free_psram);
+  el("notifyFailures").textContent=s.ble.notification_failures;const p=s.posture,state=p.state;el("posture").textContent=labels[state]||state;
+  el("posture").className="posture "+(state==="NORMAL"?"good":(["UNKNOWN","FACE_MISSING"].includes(state)?"":"bad"));
+  el("postureConfidence").textContent=number(p.confidence*100,1)+"%";el("stable").textContent=number(p.stable_ms/1000,1)+" s";el("dx").textContent=number(p.dx,3);el("dy").textContent=number(p.dy,3);
+  el("areaRatio").textContent=number(p.area_ratio,2)+"×";el("rawState").textContent=p.raw_state;el("calibration").value=p.calibration_progress;el("calibrationText").textContent=p.calibration_progress+"/20";
+  el("calibrationReason").textContent=p.calibrated?"Baseline đã sẵn sàng. Web vẫn chỉ chạy shadow.":"Trạng thái: "+p.calibration_reason;el("passwordWarning").classList.toggle("on",s.default_password);
+  el("runtimeWarning").classList.toggle("on",(s.camera.client_connected&&s.camera.jpeg_fps>0&&s.camera.jpeg_fps<2.5)||s.face.inference_ms>400||s.ble.notification_failures>0);
+  telemetry.push({at:new Date().toISOString(),posture:p,face:s.face,camera:s.camera,ble:s.ble,wifi:{rssi:s.wifi.rssi,mode:s.wifi.mode}});
+  const cutoff=Date.now()-120000;telemetry=telemetry.filter(row=>Date.parse(row.at)>=cutoff);
+}
+async function refresh(){
+  try{showStatus(await api("/api/status"))}catch(error){if(String(error.message).includes("authentication"))showLogin();else el("online").textContent="Mất kết nối"}
+}
+function drawPlaceholder(){ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#91a7c0";ctx.textAlign="center";ctx.fillText("Đang chờ camera…",canvas.width/2,canvas.height/2)}
+async function frameLoop(){
+  while(running){if(!authenticated){await new Promise(r=>setTimeout(r,300));continue}
+    try{const response=await fetch("/camera.jpg?after="+lastFrame+"&client="+viewerClient,{cache:"no-store"});if(response.status===401){showLogin();continue}if(response.status===409){toast("Camera đang được dashboard khác sử dụng");await new Promise(r=>setTimeout(r,1000));continue}if(response.status===204)continue;if(!response.ok)throw Error(response.statusText);
+      const blob=await response.blob(),bitmap=await createImageBitmap(blob),mirror=el("displayMirror").checked,flip=el("displayFlip").checked;lastFrame=Number(response.headers.get("X-FocusMate-Frame-Sequence")||lastFrame);ctx.save();ctx.translate(mirror?canvas.width:0,flip?canvas.height:0);ctx.scale(mirror?-1:1,flip?-1:1);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);ctx.restore();bitmap.close();
+      if(response.headers.get("X-FocusMate-Face-Detected")==="true"){const box=(response.headers.get("X-FocusMate-Bbox")||"").split(",").map(Number);if(box.length===4&&box.every(Number.isFinite)){let [cx,cy,w,h]=box;if(mirror)cx=1-cx;if(flip)cy=1-cy;ctx.strokeStyle="#35d39a";ctx.lineWidth=2;ctx.strokeRect((cx-w/2)*canvas.width,(cy-h/2)*canvas.height,w*canvas.width,h*canvas.height);ctx.fillStyle="#35d39a";ctx.fillText(number(Number(response.headers.get("X-FocusMate-Confidence"))*100,1)+"%",(cx-w/2)*canvas.width+4,Math.max(13,(cy-h/2)*canvas.height-4))}}
+    }catch(error){await new Promise(r=>setTimeout(r,500))}
+  }
+}
+el("loginButton").onclick=async()=>{try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:el("loginPass").value})});el("loginPass").value="";await refresh()}catch(error){showLogin(error.message)}};
+el("loginPass").onkeydown=event=>{if(event.key==="Enter")el("loginButton").click()};
+el("calibrate").onclick=async()=>{try{await api("/api/posture/calibrate",{method:"POST"});toast("Đang kiểm 20 mẫu ổn định gần nhất; hãy nhìn thẳng và giữ yên")}catch(error){toast(error.message)}};
+el("resetCalibration").onclick=async()=>{if(confirm("Xóa baseline shadow?"))try{await api("/api/posture/reset",{method:"POST"});toast("Đã xóa baseline")}catch(error){toast(error.message)}};
+el("scan").onclick=async()=>{try{const result=await api("/api/wifi/scan"),select=el("ssid");select.innerHTML="";result.networks.forEach(n=>select.add(new Option(n.ssid+" ("+n.rssi+" dBm)",n.ssid)));toast("Tìm thấy "+result.networks.length+" mạng")}catch(error){toast(error.message)}};
+el("connectWifi").onclick=async()=>{try{await api("/api/wifi/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ssid:el("ssid").value,password:el("wifiPass").value})});el("wifiPass").value="";toast("Đang kết nối Wi-Fi…")}catch(error){toast(error.message)}};
+el("resetWifi").onclick=async()=>{if(confirm("Xóa Wi-Fi đã lưu?"))try{await api("/api/wifi/reset",{method:"POST"});toast("Đã trở về AP FocusMate-Setup")}catch(error){toast(error.message)}};
+el("saveAp").onclick=async()=>{try{await api("/api/wifi/ap-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:el("apPass").value})});el("apPass").value="";toast("Đã đổi mật khẩu AP")}catch(error){toast(error.message)}};
+el("displayMirror").onchange=()=>localStorage.setItem("focusmate_display_mirror_v2",String(el("displayMirror").checked));el("displayFlip").onchange=()=>localStorage.setItem("focusmate_display_flip_v2",String(el("displayFlip").checked));
+el("changePassword").onclick=async()=>{try{await api("/api/auth/password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:el("oldPass").value,new_password:el("newPass").value})});showLogin("Đã đổi mật khẩu, hãy đăng nhập lại.")}catch(error){toast(error.message)}};
+el("export").onclick=()=>{const json=JSON.stringify({schema:1,images_saved:false,exported_at:new Date().toISOString(),samples:telemetry},null,2),csv=["at,state,raw_state,confidence,dx,dy,area_ratio,face_confidence,inference_ms,ble_connected,notify_failures"].concat(telemetry.map(r=>[r.at,r.posture.state,r.posture.raw_state,r.posture.confidence,r.posture.dx,r.posture.dy,r.posture.area_ratio,r.face.confidence??"",r.face.inference_ms,r.ble.connected,r.ble.notification_failures].join(","))).join("\n");for(const [name,data,type] of [["focusmate-telemetry.json",json,"application/json"],["focusmate-telemetry.csv",csv,"text/csv"]]){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}};
+drawPlaceholder();refresh();frameLoop();setInterval(refresh,1000);addEventListener("beforeunload",()=>{running=false;navigator.sendBeacon("/api/viewer/release",new Blob([JSON.stringify({client:viewerClient})],{type:"application/json"}))});
+</script>
+</body>
+</html>

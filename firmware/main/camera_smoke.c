@@ -39,9 +39,9 @@ bool focusmate_camera_smoke_init(void)
         .xclk_freq_hz = 24000000,
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
-        .pixel_format = PIXFORMAT_RGB565,
-        .frame_size = FRAMESIZE_240X240,
-        .jpeg_quality = 12,
+        .pixel_format = PIXFORMAT_JPEG,
+        .frame_size = FRAMESIZE_QVGA,
+        .jpeg_quality = 8,
         .fb_count = 1,
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
@@ -59,14 +59,42 @@ bool focusmate_camera_smoke_init(void)
         return false;
     }
 
+    /* Correct the module's confirmed 180-degree physical mounting at the
+     * sensor so both the detector and dashboard receive an upright frame. The
+     * transform preserves normalized bbox geometry. The old
+     * dashboard's LowLight preset used brightness +1; contrast +1 belongs to
+     * its separate Sharp preset and crushes shadow detail when both are
+     * combined.  Explicitly keep the OV2640 automatic controls enabled and
+     * give AGC enough headroom for an indoor desk without forcing fixed gain
+     * or exposure. */
+    int tuning_error = 0;
+    tuning_error |= sensor->set_whitebal(sensor, 1);
+    tuning_error |= sensor->set_awb_gain(sensor, 1);
+    tuning_error |= sensor->set_exposure_ctrl(sensor, 1);
+    tuning_error |= sensor->set_gain_ctrl(sensor, 1);
+    tuning_error |= sensor->set_aec2(sensor, 1);
+    tuning_error |= sensor->set_ae_level(sensor, 1);
+    tuning_error |= sensor->set_gainceiling(sensor, GAINCEILING_8X);
+    tuning_error |= sensor->set_brightness(sensor, 1);
+    tuning_error |= sensor->set_contrast(sensor, 0);
+    tuning_error |= sensor->set_saturation(sensor, 0);
+    tuning_error |= sensor->set_hmirror(sensor, 1);
+    tuning_error |= sensor->set_vflip(sensor, 1);
+    if (tuning_error != 0) {
+        ESP_LOGE(TAG, "OV2640 rejected the QVGA indoor-auto profile");
+        esp_camera_deinit();
+        return false;
+    }
+
     const int64_t started_us = esp_timer_get_time();
     unsigned valid = 0;
     unsigned errors = 0;
     for (unsigned attempt = 0; attempt < 25U; ++attempt) {
         camera_fb_t *frame = esp_camera_fb_get();
-        if (frame == NULL || frame->format != PIXFORMAT_RGB565 ||
-            frame->width != 240U || frame->height != 240U ||
-            frame->len != 240U * 240U * 2U) {
+        if (frame == NULL || frame->format != PIXFORMAT_JPEG ||
+            frame->width != 320U || frame->height != 240U ||
+            frame->len < 4U || frame->buf[0] != 0xffU || frame->buf[1] != 0xd8U ||
+            frame->buf[frame->len - 2U] != 0xffU || frame->buf[frame->len - 1U] != 0xd9U) {
             ++errors;
         } else {
             ++valid;
@@ -75,7 +103,7 @@ bool focusmate_camera_smoke_init(void)
     }
     const int64_t elapsed_us = esp_timer_get_time() - started_us;
     const double fps = elapsed_us > 0 ? (double)valid * 1000000.0 / (double)elapsed_us : 0.0;
-    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x format=RGB565 size=240x240 valid=%u errors=%u fps=%.2f",
+    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x format=JPEG size=320x240 quality=8 profile=indoor-auto valid=%u errors=%u fps=%.2f",
              sensor->id.PID, valid, errors, fps);
     if (valid < 24U || errors > 1U) {
         ESP_LOGE(TAG, "camera smoke acceptance failed");

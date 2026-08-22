@@ -13,6 +13,11 @@ $tasks = @(
     ':app:assembleRelease'
 )
 
+python -m unittest discover -s (Join-Path $PSScriptRoot 'tests') -p 'test_*.py'
+if ($LASTEXITCODE -ne 0) {
+    throw "Repository contract verification failed with exit code $LASTEXITCODE"
+}
+
 if (-not (Test-Path -LiteralPath $gradleWrapper)) {
     throw "Gradle wrapper not found: $gradleWrapper"
 }

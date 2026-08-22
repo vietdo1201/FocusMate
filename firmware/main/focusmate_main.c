@@ -21,6 +21,10 @@
 #include "face_observation.h"
 #include "camera_smoke.h"
 #include "face_detector.h"
+#include "dashboard.h"
+#include "dashboard_runtime.h"
+#include "frame_broker.h"
+#include "shadow_posture.h"
 
 /* Provided by NimBLE's persistent store implementation. */
 void ble_store_config_init(void);
@@ -48,6 +52,20 @@ static uint32_t notification_attempts;
 static uint32_t notification_failures;
 static uint32_t observations_emitted;
 static uint32_t capabilities = BASE_CAPABILITIES;
+
+void focusmate_ble_snapshot(focusmate_ble_snapshot_t *out)
+{
+    if (out == NULL) return;
+    const bool connected = active_connection != BLE_HS_CONN_HANDLE_NONE;
+    out->connected = connected;
+    out->subscribed = subscribed;
+    out->streaming = streaming;
+    out->mtu = connected ? ble_att_mtu(active_connection) : 0U;
+    out->rate_dhz = rate_dhz;
+    out->observations = observations_emitted;
+    out->notification_attempts = notification_attempts;
+    out->notification_failures = notification_failures;
+}
 
 static const ble_uuid128_t service_uuid = BLE_UUID128_INIT(
     0x6e, 0x44, 0x37, 0xf6, 0x04, 0x4a, 0x0b, 0x83,
@@ -387,6 +405,8 @@ void app_main(void)
     protocol_self_test();
     if (focusmate_camera_smoke_init()) {
         capabilities |= (1U << 1);
+        if (!focusmate_shadow_posture_init()) ESP_LOGE(TAG, "shadow posture init failed");
+        if (!focusmate_frame_broker_init()) ESP_LOGE(TAG, "frame broker init failed");
         if (focusmate_face_detector_start()) capabilities |= (1U << 0);
     }
 
@@ -407,5 +427,7 @@ void app_main(void)
     ble_store_config_init();
     nimble_port_freertos_init(host_task);
     xTaskCreate(observation_task, "face-observation", 4096, NULL, 5, NULL);
-    ESP_LOGI(TAG, "FocusMate GATT ready capabilities=0x%08" PRIx32 "; no image data is transmitted", capabilities);
+    if (!focusmate_dashboard_start()) ESP_LOGE(TAG, "dashboard start failed; BLE remains available");
+    ESP_LOGI(TAG, "FocusMate GATT ready capabilities=0x%08" PRIx32
+             "; local shadow frames require an authenticated web client", capabilities);
 }
