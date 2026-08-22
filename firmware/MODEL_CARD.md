@@ -24,7 +24,7 @@ package SHA-256 is `BB8AC5DF0BCC00F00D84CDCA02BFBA8686CA7B938B3600CB23D8DD6F598D
 
 - Camera input: direct JPEG QVGA 320×240, quality 8, one framebuffer in PSRAM.
 - Firmware decodes RGB888 at 320×240, center-crops 240×240 without aspect distortion, then ESP-DL preprocesses for the vendor model input 224×224×3.
-- Firmware score threshold: 0.35. Calibration and posture independently require confidence ≥0.70.
+- Firmware score threshold: 0.35. Calibration requires confidence ≥0.70 and a fully visible bbox; live posture after a valid baseline requires confidence ≥0.50.
 - If several faces pass the threshold, firmware selects highest score, then
   larger area, then lexicographically smaller pixel box for deterministic ties.
 - Pixel boxes are clipped to the image and treated as inclusive. Width/height

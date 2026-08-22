@@ -532,7 +532,7 @@ esp_err_t Dashboard::status(httpd_req_t *request)
         ? static_cast<double>(current - face.observed_uptime_ms) : -1.0);
 
     cJSON *posture_json = cJSON_AddObjectToObject(root, "posture");
-    cJSON_AddStringToObject(posture_json, "source", "esp_web_geometry_v1_shadow");
+    cJSON_AddStringToObject(posture_json, "source", "esp_web_geometry_v2_shadow");
     cJSON_AddBoolToObject(posture_json, "calibrated", posture.calibrated);
     cJSON_AddBoolToObject(posture_json, "calibration_active", posture.calibration_active);
     cJSON_AddNumberToObject(posture_json, "calibration_progress", posture.calibration_progress);
@@ -544,6 +544,11 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddNumberToObject(posture_json, "stable_ms", static_cast<double>(posture.stable_ms));
     add_q6(posture_json, "dx", posture.dx_q6); add_q6(posture_json, "dy", posture.dy_q6);
     add_q6(posture_json, "area_ratio", posture.area_ratio_q6);
+    cJSON *baseline = cJSON_AddObjectToObject(posture_json, "baseline");
+    add_q6(baseline, "cx", posture.baseline_cx_q6);
+    add_q6(baseline, "cy", posture.baseline_cy_q6);
+    add_q6(baseline, "area", posture.baseline_area_q6);
+    cJSON_AddNumberToObject(baseline, "revision", posture_thresholds.baseline_revision);
     cJSON *thresholds = cJSON_AddObjectToObject(posture_json, "thresholds");
     add_q6(thresholds, "calibration_confidence", posture_thresholds.calibration_min_confidence_q6);
     add_q6(thresholds, "live_confidence", posture_thresholds.live_min_confidence_q6);
@@ -553,6 +558,7 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     add_q6(thresholds, "too_close_ratio", posture_thresholds.too_close_ratio_q6);
     cJSON_AddNumberToObject(thresholds, "slumped_ms", static_cast<double>(posture_thresholds.slumped_minimum_ms));
     cJSON_AddNumberToObject(thresholds, "stable_samples", posture_thresholds.stable_samples);
+    cJSON_AddNumberToObject(thresholds, "baseline_revision", posture_thresholds.baseline_revision);
 
     cJSON *memory = cJSON_AddObjectToObject(root, "memory");
     cJSON_AddNumberToObject(memory, "free_internal_heap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -571,8 +577,12 @@ esp_err_t Dashboard::posture(httpd_req_t *request, bool calibrate)
 {
     if (calibrate) focusmate_shadow_posture_start_calibration();
     else focusmate_shadow_posture_reset();
+    focusmate_posture_snapshot_t posture{};
+    focusmate_shadow_posture_snapshot(&posture);
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "calibration_active", calibrate);
+    cJSON_AddBoolToObject(root, "calibration_active", posture.calibration_active);
+    cJSON_AddBoolToObject(root, "calibrated", posture.calibrated);
+    cJSON_AddStringToObject(root, "calibration_reason", posture.calibration_reason);
     return send_json(request, root);
 }
 

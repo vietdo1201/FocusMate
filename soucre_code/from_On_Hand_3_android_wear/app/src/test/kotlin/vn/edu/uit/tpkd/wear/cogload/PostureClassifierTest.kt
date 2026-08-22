@@ -16,8 +16,8 @@ class PostureClassifierTest {
         assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong(), cx = 0.5, cy = 0.4, width = 0.2, height = 0.3) }))
         assertEquals(PostureState.NORMAL, classifier.classify(face(21), 1_000).state)
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.53), 2_000).state)
-        assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(23, cx = 0.34), 3_000).state)
-        assertEquals(PostureState.LEAN_RIGHT, classifier.classify(face(24, cx = 0.66), 4_000).state)
+        assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(23, cx = 0.66), 3_000).state)
+        assertEquals(PostureState.LEAN_RIGHT, classifier.classify(face(24, cx = 0.34), 4_000).state)
         assertEquals(PostureState.TOO_CLOSE, classifier.classify(face(25, width = 0.3, height = 0.33), 5_000).state)
     }
 
@@ -59,6 +59,8 @@ class PostureClassifierTest {
 
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(21, cy = 0.53), 1_000).state)
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.59), 7_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.59), 9_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.59), 11_000).state)
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(23, cy = 0.59), 11_999).state)
         assertEquals(PostureState.SLUMPED, classifier.classify(face(24, cy = 0.59), 12_000).state)
 
@@ -67,6 +69,8 @@ class PostureClassifierTest {
             classifier.classify(face(25, cy = 0.59, width = 0.30, height = 0.33), 12_100).state,
         )
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 12_200).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 14_200).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 16_200).state)
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(27, cy = 0.59), 17_199).state)
         assertEquals(PostureState.SLUMPED, classifier.classify(face(28, cy = 0.59), 17_200).state)
     }
@@ -79,6 +83,86 @@ class PostureClassifierTest {
             PostureState.TOO_CLOSE,
             classifier.classify(face(21, cx = 0.30, cy = 0.59, width = 0.30, height = 0.33), 1_000).state,
         )
+    }
+
+    @Test
+    fun dominantSubjectRelativeAxisDisambiguatesNaturalSideLean() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+        assertEquals(
+            PostureState.LEAN_LEFT,
+            classifier.classify(face(21, cx = 0.75, cy = 0.53), 1_000).state,
+        )
+        assertEquals(
+            PostureState.LEAN_RIGHT,
+            classifier.classify(face(22, cx = 0.25, cy = 0.53), 1_100).state,
+        )
+        assertEquals(
+            PostureState.HEAD_DOWN,
+            classifier.classify(face(23, cx = 0.34, cy = 0.57), 1_200).state,
+        )
+    }
+
+    @Test
+    fun q6DominanceTieMatchesFirmwareIntegerCrossProduct() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+        assertEquals(
+            PostureState.LEAN_LEFT,
+            classifier.classify(face(21, cx = 0.650080, cy = 0.520064), 1_000).state,
+        )
+    }
+
+    @Test
+    fun evenMedianUsesFirmwareQ6FloorAtLeanBoundary() {
+        val classifier = GeometryPostureClassifier()
+        val calibration = (0 until 20).map { index ->
+            face(index.toLong(), cx = if (index < 10) 0.500000 else 0.500001)
+        }
+        assertTrue(classifier.calibrate(calibration))
+        assertEquals(0.500000, classifier.baseline()!!.centerX, 0.0)
+        assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(21, cx = 0.650000), 1_000).state)
+    }
+
+    @Test
+    fun tinyBaselineAreaRatioSaturatesInsteadOfWrapping() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(
+            classifier.calibrate(
+                (0 until 20).map {
+                    face(it.toLong(), width = 0.00325, height = 0.004, confidence = 0.95)
+                },
+            ),
+        )
+        assertEquals(
+            PostureState.TOO_CLOSE,
+            classifier.classify(face(21, width = 0.22334, height = 0.25), 1_000).state,
+        )
+    }
+
+    @Test
+    fun staleAndInvalidSamplesBreakSlumpedContinuity() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(21, cy = 0.59), 0).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.59), 2_900).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(23, cy = 0.59), 6_001).state)
+        assertEquals(PostureState.UNKNOWN, classifier.classify(face(24, cy = 0.59, confidence = 0.49), 8_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(25, cy = 0.59), 10_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(25, cy = 0.59), 12_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(25, cy = 0.59), 14_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 14_999).state)
+        assertEquals(PostureState.SLUMPED, classifier.classify(face(27, cy = 0.59), 15_000).state)
+    }
+
+    @Test
+    fun lateralDominantMotionInterruptsSlumpedTimer() {
+        val classifier = GeometryPostureClassifier()
+        assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(21, cy = 0.59), 1_000).state)
+        assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(22, cx = 0.75, cy = 0.59), 3_000).state)
+        assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(23, cx = 0.75, cy = 0.59), 8_000).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(24, cy = 0.59), 8_001).state)
     }
 
     @Test
@@ -103,7 +187,7 @@ class PostureClassifierTest {
     fun sharedGoldenVectorsMatchFirmwareShadowClassifier() {
         val startDirectory = File(System.getProperty("user.dir") ?: ".").canonicalFile
         val fixture = generateSequence(startDirectory) { it.parentFile }
-            .map { it.resolve("tests/golden/posture_geometry_v1.tsv") }
+            .map { it.resolve("tests/golden/posture_geometry_v2.tsv") }
             .firstOrNull(File::isFile)
         assertTrue("Missing shared fixture above: $startDirectory", fixture != null)
         val fixtureFile = requireNotNull(fixture)
@@ -122,12 +206,19 @@ class PostureClassifierTest {
                 val scale = sqrt(areaRatio)
                 val observation = face(
                     sequence = 100L + index,
-                    cx = 0.5 + dx,
+                    cx = 0.5 - dx,
                     cy = 0.4 + dy,
                     width = 0.2 * scale,
                     height = 0.3 * scale,
                 )
-                if (holdMs > 0) classifier.classify(observation, 1_000L)
+                if (holdMs > 0) {
+                    classifier.classify(observation, 1_000L)
+                    var elapsed = 2_000L
+                    while (elapsed < holdMs) {
+                        classifier.classify(observation, 1_000L + elapsed)
+                        elapsed += 2_000L
+                    }
+                }
                 assertEquals(columns[0], expected, classifier.classify(observation, 1_000L + holdMs).state)
             }
     }

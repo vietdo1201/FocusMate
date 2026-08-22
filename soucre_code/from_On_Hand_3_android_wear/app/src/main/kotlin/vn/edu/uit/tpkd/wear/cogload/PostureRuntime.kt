@@ -63,6 +63,8 @@ class FaceObservationIngestor(
     private var mtu: Int? = null
     private var notificationCount = 0L
     private var rateWindowStartedMs = -1L
+    private var lastCalibrationSampleMonoMs: Long? = null
+    private var lastAcceptedObservedAtMonoMs: Long? = null
     private var unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
 
     fun connecting() {
@@ -96,6 +98,8 @@ class FaceObservationIngestor(
             classifier.reset()
             tracker.reset()
             calibration.clear()
+            lastCalibrationSampleMonoMs = null
+            lastAcceptedObservedAtMonoMs = null
         }
         anchor = EspTimeAnchor.from(info, wallClockMs(), monotonicMs())
         publish(PostureRuntimePhase.CALIBRATING, "Cần 20 mẫu ổn định")
@@ -118,11 +122,33 @@ class FaceObservationIngestor(
         if (!sequenceGate.accept(observation)) return
         recordRate(nowMono)
         if (timeAnchor.isStale(observation.espUptimeMs, nowMono)) {
+            classifier.resetTemporalState()
+            tracker.pause()
+            lastAcceptedObservedAtMonoMs = null
+            if (!classifier.isCalibrated()) {
+                calibration.clear()
+                lastCalibrationSampleMonoMs = null
+            }
             publish(PostureRuntimePhase.STALE, "Không có observation mới")
             return
         }
         if (!classifier.isCalibrated()) {
-            if (classifier.isCalibrationCandidate(observation)) calibration.addLast(observation)
+            if (classifier.isCalibrationCandidate(observation)) {
+                val previous = lastCalibrationSampleMonoMs
+                if (previous != null &&
+                    (nowMono <= previous || nowMono - previous > CALIBRATION_MAXIMUM_GAP_MS)
+                ) {
+                    calibration.clear()
+                }
+                calibration.addLast(observation)
+                lastCalibrationSampleMonoMs = nowMono
+            } else {
+                val previous = lastCalibrationSampleMonoMs
+                if (previous != null && nowMono - previous > CALIBRATION_MAXIMUM_GAP_MS) {
+                    calibration.clear()
+                    lastCalibrationSampleMonoMs = null
+                }
+            }
             while (calibration.size > CALIBRATION_SAMPLES) calibration.removeFirst()
             if (!classifier.calibrate(calibration.toList())) {
                 val detail = if (calibration.size == CALIBRATION_SAMPLES) {
@@ -133,9 +159,20 @@ class FaceObservationIngestor(
                 publish(PostureRuntimePhase.CALIBRATING, detail)
                 return
             }
+            calibration.clear()
+            lastCalibrationSampleMonoMs = null
         }
         val observedAtMono = timeAnchor.observedAtMonotonicMs(observation.espUptimeMs)
         if (observedAtMono < 0L) return
+        val previousObservedAt = lastAcceptedObservedAtMonoMs
+        if (previousObservedAt != null &&
+            (observedAtMono <= previousObservedAt ||
+                observedAtMono - previousObservedAt > MAXIMUM_CONTINUOUS_GAP_MS)
+        ) {
+            classifier.resetTemporalState()
+            tracker.pause()
+        }
+        lastAcceptedObservedAtMonoMs = observedAtMono
         val classification = classifier.classify(observation, observedAtMono)
         val insights = tracker.observe(classification.state, observedAtMono)
         val update = PostureIngestionUpdate(classification, tracker.summaries(observedAtMono), insights)
@@ -148,6 +185,8 @@ class FaceObservationIngestor(
         classifier.reset()
         tracker.pause()
         calibration.clear()
+        lastCalibrationSampleMonoMs = null
+        lastAcceptedObservedAtMonoMs = null
         unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
         mtu = null
         resetRateWindow()
@@ -159,6 +198,8 @@ class FaceObservationIngestor(
         classifier.reset()
         tracker.reset()
         calibration.clear()
+        lastCalibrationSampleMonoMs = null
+        lastAcceptedObservedAtMonoMs = null
         anchor = null
         unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
         mtu = null
@@ -194,6 +235,8 @@ class FaceObservationIngestor(
 
     private companion object {
         const val CALIBRATION_SAMPLES = 20
+        const val CALIBRATION_MAXIMUM_GAP_MS = 1_500L
+        const val MAXIMUM_CONTINUOUS_GAP_MS = 3_000L
         const val DEFAULT_UNAVAILABLE_DETAIL = "Transport OK; camera/detector chưa sẵn sàng"
     }
 }

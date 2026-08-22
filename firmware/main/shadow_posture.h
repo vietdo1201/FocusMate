@@ -47,6 +47,7 @@ typedef struct {
     uint32_t too_close_ratio_q6;
     uint64_t slumped_minimum_ms;
     uint8_t stable_samples;
+    uint8_t baseline_revision;
 } focusmate_posture_thresholds_t;
 
 bool focusmate_shadow_posture_init(void);

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 
@@ -113,40 +114,79 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn('"raw_confidence"', dashboard)
         self.assertIn('"live_confidence"', dashboard)
         self.assertIn('"calibration_confidence"', dashboard)
+        self.assertIn('"baseline_revision"', dashboard)
+        self.assertIn("esp_web_geometry_v2_shadow", dashboard)
+        self.assertIn("watch_geometry_v2_experimental", kotlin)
         self.assertIn("rawConfidence", html)
 
-    def test_calibration_window_can_physically_collect_twenty_samples(self) -> None:
+    def test_calibration_uses_only_fresh_visible_continuous_samples(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
         html = read("firmware/main/web/index.html")
         self.assertIn("kCalibrationSamples = 20U", firmware)
-        self.assertIn("kCalibrationWindowMs = 8000U", firmware)
-        self.assertIn("kCalibrationPrebufferMaxAgeMs = 10000U", firmware)
-        self.assertIn("copy_recent_calibration", firmware)
-        self.assertIn("Hiệu chỉnh 20 mẫu", html)
+        self.assertIn("kCalibrationSettleMs = 1000U", firmware)
+        self.assertIn("kCalibrationCollectionMs = 15000U", firmware)
+        self.assertIn("kCalibrationMaximumGapMs = 1500U", firmware)
+        self.assertIn("calibration_bbox_fully_visible", firmware)
+        self.assertIn("runtime.calibrated = false", firmware)
+        self.assertIn("erase_baseline()", firmware)
+        self.assertIn('runtime.calibration_reason = "storage_error"', firmware)
+        self.assertNotIn("complete_not_persisted", firmware + html)
+        self.assertNotIn("recent_", firmware)
+        self.assertNotIn("copy_recent_calibration", firmware)
+        self.assertIn("Hiệu chỉnh lại khi ngồi thẳng", html)
         self.assertNotIn("Hiệu chỉnh 5 giây", html)
 
+    def test_subject_relative_horizontal_axis_invalidates_old_baseline(self) -> None:
+        firmware = read("firmware/main/shadow_posture.cpp")
+        kotlin = read(
+            "soucre_code/from_On_Hand_3_android_wear/app/src/main/kotlin/"
+            "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
+        )
+        self.assertIn("kBaselineRevision = 2U", firmware)
+        self.assertIn("kProfileFingerprint = 0x4A032182U", firmware)
+        self.assertIn("runtime.baseline_cx) - static_cast<int32_t>(result->cx_q6", firmware)
+        self.assertIn("baselineCxQ6 - observedCxQ6", kotlin)
+        self.assertIn("lateralQ6 * headDownDeltaQ6 >= dyQ6 * leanDeltaQ6", kotlin)
+        self.assertIn("medianQ6", kotlin)
+        self.assertIn("maximumContinuousGapMs", kotlin)
+        self.assertIn("UINT32_MAX", firmware)
+        self.assertIn("coerceAtMost(UINT32_MAX)", kotlin)
+        self.assertIn("lean_dominant", firmware)
+        self.assertIn("leanDominant", kotlin)
+
     def test_shared_geometry_vectors_follow_classifier_precedence(self) -> None:
-        fixture = ROOT / "tests/golden/posture_geometry_v1.tsv"
+        fixture = ROOT / "tests/golden/posture_geometry_v2.tsv"
         with fixture.open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle, delimiter="\t"))
         self.assertEqual(
             [row["expected"] for row in rows],
-            ["NORMAL", "HEAD_DOWN", "LEAN_LEFT", "LEAN_RIGHT", "TOO_CLOSE", "SLUMPED"],
+            [
+                "NORMAL", "HEAD_DOWN", "LEAN_LEFT", "LEAN_RIGHT", "TOO_CLOSE", "SLUMPED",
+                "LEAN_LEFT", "LEAN_RIGHT", "HEAD_DOWN", "LEAN_LEFT",
+            ],
         )
         for row in rows:
-            dx = float(row["dx"])
-            dy = float(row["dy"])
-            ratio = float(row["area_ratio"])
+            dx_q6 = int(Decimal(row["dx"]) * 1_000_000)
+            dy_q6 = int(Decimal(row["dy"]) * 1_000_000)
+            ratio_q6 = int(Decimal(row["area_ratio"]) * 1_000_000)
             hold = int(row["hold_ms"])
-            if ratio >= 1.60:
+            lateral_q6 = abs(dx_q6)
+            lean_candidate = lateral_q6 >= 150_000
+            head_candidate = dy_q6 >= 120_000
+            lean_dominant = lean_candidate and (
+                not head_candidate or lateral_q6 * 120_000 >= dy_q6 * 150_000
+            )
+            if ratio_q6 >= 1_600_000:
                 actual = "TOO_CLOSE"
-            elif dy >= 0.18:
+            elif lean_dominant:
+                actual = "LEAN_LEFT" if dx_q6 < 0 else "LEAN_RIGHT"
+            elif dy_q6 >= 180_000:
                 actual = "SLUMPED" if hold >= 5000 else "HEAD_DOWN"
-            elif dy >= 0.12:
+            elif dy_q6 >= 120_000:
                 actual = "HEAD_DOWN"
-            elif dx <= -0.15:
+            elif dx_q6 <= -150_000:
                 actual = "LEAN_LEFT"
-            elif dx >= 0.15:
+            elif dx_q6 >= 150_000:
                 actual = "LEAN_RIGHT"
             else:
                 actual = "NORMAL"
