@@ -23,15 +23,16 @@
 <body>
 <div id="login"><div class="card"><h2>Đăng nhập FocusMate</h2><p class="muted">Mật khẩu dashboard mặc định trùng mật khẩu AP thiết lập.</p><input id="loginPass" type="password" autocomplete="current-password" placeholder="Mật khẩu"><button id="loginButton">Mở dashboard</button><p id="loginError" class="note"></p></div></div>
 <main>
-  <div class="top"><div><h1>FocusMate Realtime</h1><div class="note">OV2640 · ESP32-S3 · shadow geometry</div></div><div id="online" class="pill">Đang kết nối…</div></div>
+  <div class="top"><div><h1>FocusMate Realtime</h1><div class="note">OV2640 · ESP32-S3 · MediaPipe Pose chạy local</div></div><div id="online" class="pill">Đang kết nối…</div></div>
   <div class="grid">
     <section>
       <div class="card video"><canvas id="video" width="320" height="240"></canvas></div>
       <div class="card" style="margin-top:16px">
         <h2>Chỉ số realtime</h2>
         <div class="stats">
-          <div class="stat"><span>Detector FPS</span><b id="captureFps">—</b></div><div class="stat"><span>Web FPS</span><b id="jpegFps">—</b></div>
-          <div class="stat"><span>Inference</span><b id="latency">—</b></div><div class="stat"><span>Face confidence</span><b id="faceConfidence">—</b></div>
+          <div class="stat"><span>Detector FPS</span><b id="captureFps">—</b></div><div class="stat"><span>Camera FPS</span><b id="jpegFps">—</b></div>
+          <div class="stat"><span>Face inference</span><b id="latency">—</b></div><div class="stat"><span>Face confidence</span><b id="faceConfidence">—</b></div>
+          <div class="stat"><span>Pose FPS</span><b id="poseFps">—</b></div><div class="stat"><span>Pose inference</span><b id="poseLatency">—</b></div>
           <div class="stat"><span>Wi-Fi</span><b id="wifi">—</b></div><div class="stat"><span>BLE Watch</span><b id="ble">—</b></div>
           <div class="stat"><span>Heap / PSRAM</span><b id="memory">—</b></div><div class="stat"><span>Notify failures</span><b id="notifyFailures">—</b></div>
         </div>
@@ -41,20 +42,20 @@
       <div class="card">
         <div id="passwordWarning" class="warning">Hãy đổi mật khẩu dashboard mặc định trong phần Cấu hình.</div>
         <div id="runtimeWarning" class="warning">Camera/detector đang chậm hoặc BLE có lỗi notify; hãy xem các chỉ số kỹ thuật.</div>
-        <h2>Shadow posture</h2>
+        <h2>Landmark posture</h2>
         <div id="posture" class="posture">UNKNOWN</div>
         <div class="stats">
           <div class="stat"><span>Confidence</span><b id="postureConfidence">—</b></div><div class="stat"><span>Ổn định</span><b id="stable">—</b></div>
-          <div class="stat"><span>dx</span><b id="dx">—</b></div><div class="stat"><span>dy</span><b id="dy">—</b></div>
-          <div class="stat"><span>Area ratio</span><b id="areaRatio">—</b></div><div class="stat"><span>Raw state</span><b id="rawState">—</b></div>
+          <div class="stat"><span>Head roll</span><b id="dx">—</b></div><div class="stat"><span>Torso lean</span><b id="dy">—</b></div>
+          <div class="stat"><span>Head drop</span><b id="areaRatio">—</b></div><div class="stat"><span>Raw state</span><b id="rawState">—</b></div>
           <div class="stat"><span>Raw confidence</span><b id="rawConfidence">—</b></div><div class="stat"><span>Ngưỡng live / calibrate</span><b id="confidenceGates">—</b></div>
-          <div class="stat"><span>Baseline cx / cy</span><b id="baselineCenter">—</b></div><div class="stat"><span>Baseline revision</span><b id="baselineRevision">—</b></div>
+          <div class="stat"><span>Nguồn</span><b id="baselineCenter">—</b></div><div class="stat"><span>Model</span><b id="baselineRevision">—</b></div>
         </div>
-        <p id="poseGuide" class="note">Hiệu chỉnh khi ngồi thẳng; sau đó giữ mỗi tư thế ít nhất ba khung hình.</p>
+        <p id="poseGuide" class="note">Hệ thống tự tìm tư thế ngồi thẳng ổn định; không cần thu dataset.</p>
         <p id="geometryThresholds" class="note"></p>
         <label>Calibration <span id="calibrationText">0/20</span></label><progress id="calibration" max="20" value="0"></progress>
-        <div id="calibrationReason" class="note">Ngồi thẳng, nhìn thẳng và để toàn bộ khuôn mặt nằm trong khung; hệ thống chỉ thu 20 mẫu mới sau khi bấm.</div>
-        <div class="row"><button id="calibrate">Hiệu chỉnh lại khi ngồi thẳng</button><button id="resetCalibration" class="secondary">Xóa baseline</button></div>
+        <div id="calibrationReason" class="note">Đang tải model local. Khi thấy rõ đầu và hai vai, hệ thống tự thu 20 frame ổn định.</div>
+        <button id="resetCalibration" class="secondary">Xóa baseline và tự hiệu chỉnh lại</button>
         <button id="export" class="secondary">Xuất telemetry JSON/CSV</button>
         <div class="privacy">Ảnh chỉ ở RAM · không lưu · không cloud · không tác động Rule Engine</div>
       </div>
@@ -80,30 +81,49 @@
 <script>
 const el=id=>document.getElementById(id), canvas=el("video"), ctx=canvas.getContext("2d");
 let authenticated=false,lastFrame=0,lastStatus=null,running=true,telemetry=[];
+let poseWorker=null,poseReady=false,poseBusy=false,poseFailed=false,poseResult=null,lastPoseLandmarks=null;
+const baselineKey="focusmate_pose_baseline_v1";
 ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
 el("displayMirror").checked=localStorage.getItem("focusmate_display_mirror_v2")==="true";el("displayFlip").checked=localStorage.getItem("focusmate_display_flip_v2")==="true";
 const viewerClient=(()=>{const existing=Number(sessionStorage.getItem("focusmate_viewer"));if(Number.isInteger(existing)&&existing>0)return existing;const values=new Uint32Array(1);crypto.getRandomValues(values);const created=values[0]||1;sessionStorage.setItem("focusmate_viewer",String(created));return created})();
 const labels={NORMAL:"NGỒI ĐÚNG",HEAD_DOWN:"CÚI ĐẦU",LEAN_LEFT:"NGHIÊNG TRÁI",LEAN_RIGHT:"NGHIÊNG PHẢI",TOO_CLOSE:"QUÁ GẦN",SLUMPED:"GÙ / SỤP",FACE_MISSING:"KHÔNG THẤY MẶT",UNKNOWN:"CHƯA XÁC ĐỊNH"};
-const guides={NORMAL:"Đã ở gần baseline.",HEAD_DOWN:"Tâm mặt đã dịch xuống đủ ngưỡng.",LEAN_LEFT:"Bạn đang nghiêng sang trái; phía camera nhìn thấy tâm mặt dịch sang phải.",LEAN_RIGHT:"Bạn đang nghiêng sang phải; phía camera nhìn thấy tâm mặt dịch sang trái.",TOO_CLOSE:"Diện tích mặt đã lớn hơn baseline đủ ngưỡng.",SLUMPED:"Mặt đã ở thấp liên tục đủ 5 giây.",FACE_MISSING:"Camera không thấy mặt trong ba mẫu liên tiếp.",UNKNOWN:"Confidence dưới ngưỡng live, dữ liệu stale, calibration đang chạy hoặc chưa có baseline."};
-const calibrationReasons={settling:"Giữ nguyên tư thế, bắt đầu thu sau 1 giây…",collecting:"Đang thu 20 mẫu mới; giữ thẳng và không di chuyển.",edge_clipped:"Khuôn mặt chạm mép vùng nhận diện; hãy lùi/căn camera để thấy trọn mặt.",low_confidence:"Mặt chưa đủ rõ; tránh ngược sáng và nhìn về camera.",no_face:"Chưa thấy mặt.",insufficient_valid_samples:"Không đủ 20 mẫu liên tục; hãy thử lại và giữ yên.",unstable:"Mẫu dao động quá nhiều; hãy thử lại.",profile_changed:"Baseline cũ đã bị hủy vì hệ trục nhận diện thay đổi.",invalid_persisted_baseline:"Baseline lưu trước đó không hợp lệ và đã bị hủy.",storage_error:"Không thể lưu baseline; hệ thống đã giữ trạng thái chưa hiệu chỉnh.",not_calibrated:"Chưa hiệu chỉnh.",complete:"Hiệu chỉnh hoàn tất."};
+const guides={NORMAL:"Đầu và thân đang ở trong vùng baseline tự động.",HEAD_DOWN:"Landmark đầu đã hạ và đổi góc so với hai vai.",LEAN_LEFT:"Đầu hoặc thân đang nghiêng về bên trái của bạn.",LEAN_RIGHT:"Đầu hoặc thân đang nghiêng về bên phải của bạn.",TOO_CLOSE:"Kích thước mặt/vai lớn hơn baseline.",SLUMPED:"Đầu hạ kèm co thân liên tục đủ 5 giây.",FACE_MISSING:"Cả Pose và detector ESP không thấy mặt.",UNKNOWN:"Chưa đủ landmark, model đang tải, dữ liệu stale hoặc các tín hiệu đang xung đột."};
 const toast=message=>{const node=el("toast");node.textContent=message;node.style.display="block";setTimeout(()=>node.style.display="none",3200)};
 async function api(url,options){const response=await fetch(url,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||response.statusText);return data}
 function number(value,digits=2){return Number.isFinite(value)?Number(value).toFixed(digits):"—"}
 function mb(value){return Number.isFinite(value)?(value/1048576).toFixed(1)+" MB":"—"}
 function showLogin(error=""){authenticated=false;el("login").classList.remove("hidden");el("loginError").textContent=error}
+function decodeFaceMeta(response){
+  const encoded=response.headers.get("X-FocusMate-Face-Meta-V1");
+  if(encoded){try{const normalized=encoded.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((encoded.length+3)%4),raw=atob(normalized),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));if(bytes.length===32){const view=new DataView(bytes.buffer),value=i=>view.getUint16(i*2,true)/65535,detected=(view.getUint16(0,true)&1)!==0,names=["leftEye","leftMouth","nose","rightEye","rightMouth"],points={};names.forEach((name,index)=>points[name]={x:value(6+index*2),y:value(7+index*2)});return{detected,confidence:value(1),cx:value(2),cy:value(3),width:value(4),height:value(5),points}}}catch(_){}}
+  const detected=response.headers.get("X-FocusMate-Face-Detected")==="true",box=(response.headers.get("X-FocusMate-Bbox")||"").split(",").map(Number);
+  return{detected,confidence:Number(response.headers.get("X-FocusMate-Confidence")||0),cx:box[0],cy:box[1],width:box[2],height:box[3],points:null};
+}
+function canonicalPoint(point){const mirror=el("displayMirror").checked,flip=el("displayFlip").checked;return{x:(mirror?1-point.x:point.x)*canvas.width,y:(flip?1-point.y:point.y)*canvas.height}}
+function drawPose(landmarks){
+  if(!Array.isArray(landmarks))return;const links=[[2,5],[7,8],[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
+  ctx.save();ctx.strokeStyle="#56a8ff";ctx.fillStyle="#56a8ff";ctx.lineWidth=2;
+  for(const [a,b] of links){const pa=landmarks[a],pb=landmarks[b];if(!pa||!pb||(pa.visibility??1)<.5||(pb.visibility??1)<.5)continue;const ca=canonicalPoint(pa),cb=canonicalPoint(pb);ctx.beginPath();ctx.moveTo(ca.x,ca.y);ctx.lineTo(cb.x,cb.y);ctx.stroke()}
+  for(const index of [0,2,5,7,8,11,12,13,14,15,16,23,24]){const point=landmarks[index];if(!point||(point.visibility??1)<.5)continue;const p=canonicalPoint(point);ctx.beginPath();ctx.arc(p.x,p.y,2.8,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+}
+function renderPose(p){
+  if(!p)return;const state=p.state||"UNKNOWN",features=p.features||{};el("posture").textContent=labels[state]||state;el("posture").className="posture "+(state==="NORMAL"?"good":(["UNKNOWN","FACE_MISSING"].includes(state)?"":"bad"));
+  el("postureConfidence").textContent=number((p.confidence||0)*100,1)+"%";el("stable").textContent=number((p.stableMs||0)/1000,1)+" s";el("dx").textContent=Number.isFinite(features.headRollDeg)?number(features.headRollDeg,1)+"°":"—";el("dy").textContent=Number.isFinite(features.torsoLeanDeg)?number(features.torsoLeanDeg,1)+"°":"—";el("areaRatio").textContent=Number.isFinite(features.headHeight)?number(features.headHeight,2):"—";el("rawState").textContent=labels[p.rawState]||p.rawState||"UNKNOWN";el("rawConfidence").textContent=number((p.confidence||0)*100,1)+"%";el("confidenceGates").textContent="70% / tự động";el("baselineCenter").textContent=p.source||"POSE_LOCAL";el("baselineRevision").textContent="Pose Lite v1";el("poseGuide").textContent=guides[state]||p.reason||"";
+  const progress=p.calibrationProgress||0,required=p.calibrationRequired||20;el("calibration").max=required;el("calibration").value=progress;el("calibrationText").textContent=progress+"/"+required;el("calibrationReason").textContent=p.calibrated?"Baseline landmark đã sẵn sàng và chỉ thích nghi chậm khi NORMAL ổn định.":(p.reason==="low_visibility"?"Cần thấy rõ đầu và hai vai để tự hiệu chỉnh.":"Đang tự thu frame ngồi thẳng ổn định; không cần bấm nút hoặc tạo dataset.");el("geometryThresholds").textContent="Trái/phải theo giải phẫu của bạn; mirror chỉ đổi hiển thị. Head roll ≥10°, torso lean ≥8°, quá gần ≥1,35×, gù giữ ≥5 giây.";
+}
+function startPoseWorker(){
+  try{poseWorker=new Worker("/assets/pose_worker_bootstrap.js?v=pose-worker-classic-2");poseWorker.onmessage=event=>{const m=event.data||{};if(m.type==="ready"){poseReady=true;poseFailed=false;el("baselineRevision").textContent="Pose Lite v1"}else if(m.type==="idle"){poseBusy=false}else if(m.type==="baseline"){if(m.baseline)localStorage.setItem(baselineKey,JSON.stringify(m.baseline));else localStorage.removeItem(baselineKey)}else if(m.type==="result"){poseResult=m.posture;lastPoseLandmarks=m.landmarks;el("poseFps").textContent=number(m.inferenceFps,1);el("poseLatency").textContent=number(m.inferenceMs,0)+" ms";renderPose(poseResult);if(m.sequence===lastFrame)drawPose(m.landmarks)}else if(m.type==="stale"){poseResult=m.posture;renderPose(poseResult)}else if(m.type==="error"){poseBusy=false;poseFailed=true;poseReady=false;el("poseFps").textContent="ERROR";el("poseLatency").textContent=m.stage||"model";el("poseLatency").title=m.error||"";console.error("FocusMate Pose",m.stage||"model",m.error||"unknown error");toast("Pose local lỗi: "+m.error)}};poseWorker.onerror=event=>{poseBusy=false;poseFailed=true;poseReady=false;console.error("FocusMate Pose Worker",event.message||"startup error");toast("Không khởi động được Pose local")};let baseline=null;try{baseline=JSON.parse(localStorage.getItem(baselineKey)||"null")}catch(_){localStorage.removeItem(baselineKey)}poseWorker.postMessage({type:"init",baseline})}catch(error){poseFailed=true;console.error("FocusMate Pose Worker",error);toast(String(error.message||error))}
+}
 function showStatus(s){
   lastStatus=s;authenticated=true;el("login").classList.add("hidden");el("online").textContent=s.wifi.ip+" · "+s.wifi.mdns;
   el("captureFps").textContent=number(s.camera.capture_fps,1);el("jpegFps").textContent=number(s.camera.jpeg_fps,1);el("latency").textContent=s.face.inference_ms+" ms";
   el("faceConfidence").textContent=s.face.confidence==null?"—":number(s.face.confidence*100,1)+"%";el("wifi").textContent=s.wifi.ssid+" "+s.wifi.rssi+" dBm";
   el("ble").textContent=s.ble.connected?(s.ble.subscribed?"LIVE · MTU "+s.ble.mtu:"CONNECTED"):"OFFLINE";el("memory").textContent=mb(s.memory.free_internal_heap)+" / "+mb(s.memory.free_psram);
-  el("notifyFailures").textContent=s.ble.notification_failures;const p=s.posture,state=p.state;el("posture").textContent=labels[state]||state;
-  el("posture").className="posture "+(state==="NORMAL"?"good":(["UNKNOWN","FACE_MISSING"].includes(state)?"":"bad"));
-  el("postureConfidence").textContent=number(p.confidence*100,1)+"%";el("stable").textContent=number(p.stable_ms/1000,1)+" s";el("dx").textContent=number(p.dx,3);el("dy").textContent=number(p.dy,3);
-  el("areaRatio").textContent=number(p.area_ratio,2)+"×";el("rawState").textContent=(labels[p.raw_state]||p.raw_state);el("rawConfidence").textContent=number((p.raw_confidence??p.confidence)*100,1)+"%";el("calibration").value=p.calibration_progress;el("calibrationText").textContent=p.calibration_progress+"/20";
-  const t=p.thresholds||{},base=p.baseline||{};el("confidenceGates").textContent=number((t.live_confidence??0)*100,0)+"% / "+number((t.calibration_confidence??0)*100,0)+"%";el("baselineCenter").textContent=p.calibrated?number(base.cx,3)+" / "+number(base.cy,3):"—";el("baselineRevision").textContent="v"+(base.revision??t.baseline_revision??"—");el("poseGuide").textContent=guides[state]||"";el("geometryThresholds").textContent="dx theo phía của bạn: âm = trái, dương = phải. Ngưỡng nghiêng |dx| ≥ "+number(t.lean_delta,2)+", cúi dy ≥ "+number(t.head_down_delta,2)+", gù dy ≥ "+number(t.slumped_delta,2)+" trong "+number((t.slumped_ms??0)/1000,0)+" s, quá gần ≥ "+number(t.too_close_ratio,2)+"×.";
-  el("calibrationReason").textContent=p.calibration_active?(calibrationReasons[p.calibration_reason]||p.calibration_reason):p.calibrated?"Baseline mới đã sẵn sàng. Web vẫn chỉ chạy shadow.":(calibrationReasons[p.calibration_reason]||p.calibration_reason);el("passwordWarning").classList.toggle("on",s.default_password);
-  el("runtimeWarning").classList.toggle("on",(s.camera.client_connected&&s.camera.jpeg_fps>0&&s.camera.jpeg_fps<2.5)||s.face.inference_ms>400||s.ble.notification_failures>0);
-  telemetry.push({at:new Date().toISOString(),posture:p,face:s.face,camera:s.camera,ble:s.ble,wifi:{rssi:s.wifi.rssi,mode:s.wifi.mode}});
+  el("notifyFailures").textContent=s.ble.notification_failures;el("passwordWarning").classList.toggle("on",s.default_password);
+  if(poseResult)renderPose(poseResult);else if(poseFailed){const fallback=s.posture||{},safeState=["FACE_MISSING","TOO_CLOSE"].includes(fallback.state)?fallback.state:"UNKNOWN";renderPose({state:safeState,rawState:safeState,confidence:fallback.confidence||0,stableMs:fallback.stable_ms||0,source:"BBOX_FALLBACK",reason:"pose_model_unavailable",calibrated:false,calibrationProgress:0,calibrationRequired:20,features:null})}else renderPose({state:"UNKNOWN",rawState:"UNKNOWN",confidence:0,stableMs:0,source:"POSE_LOCAL",reason:"model_loading",calibrated:false,calibrationProgress:0,calibrationRequired:20,features:null});
+  el("runtimeWarning").classList.toggle("on",poseFailed||(s.camera.client_connected&&s.camera.jpeg_fps>0&&s.camera.jpeg_fps<2.5)||s.face.inference_ms>400||s.ble.notification_failures>0);
+  telemetry.push({at:new Date().toISOString(),posture:poseResult||{state:"UNKNOWN",source:poseFailed?"BBOX_FALLBACK":"POSE_LOCAL"},face:s.face,camera:s.camera,ble:s.ble,wifi:{rssi:s.wifi.rssi,mode:s.wifi.mode}});
   const cutoff=Date.now()-120000;telemetry=telemetry.filter(row=>Date.parse(row.at)>=cutoff);
 }
 async function refresh(){
@@ -113,15 +133,15 @@ function drawPlaceholder(){ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,ca
 async function frameLoop(){
   while(running){if(!authenticated){await new Promise(r=>setTimeout(r,300));continue}
     try{const response=await fetch("/camera.jpg?after="+lastFrame+"&client="+viewerClient,{cache:"no-store"});if(response.status===401){showLogin();continue}if(response.status===409){toast("Camera đang được dashboard khác sử dụng");await new Promise(r=>setTimeout(r,1000));continue}if(response.status===204)continue;if(!response.ok)throw Error(response.statusText);
-      const blob=await response.blob(),bitmap=await createImageBitmap(blob),mirror=el("displayMirror").checked,flip=el("displayFlip").checked;lastFrame=Number(response.headers.get("X-FocusMate-Frame-Sequence")||lastFrame);ctx.save();ctx.translate(mirror?canvas.width:0,flip?canvas.height:0);ctx.scale(mirror?-1:1,flip?-1:1);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);ctx.restore();bitmap.close();
-      if(response.headers.get("X-FocusMate-Face-Detected")==="true"){const box=(response.headers.get("X-FocusMate-Bbox")||"").split(",").map(Number);if(box.length===4&&box.every(Number.isFinite)){let [cx,cy,w,h]=box;if(mirror)cx=1-cx;if(flip)cy=1-cy;ctx.strokeStyle="#35d39a";ctx.lineWidth=2;ctx.strokeRect((cx-w/2)*canvas.width,(cy-h/2)*canvas.height,w*canvas.width,h*canvas.height);ctx.fillStyle="#35d39a";ctx.fillText(number(Number(response.headers.get("X-FocusMate-Confidence"))*100,1)+"%",(cx-w/2)*canvas.width+4,Math.max(13,(cy-h/2)*canvas.height-4))}}
+      const blob=await response.blob(),bitmap=await createImageBitmap(blob),mirror=el("displayMirror").checked,flip=el("displayFlip").checked,faceMeta=decodeFaceMeta(response),sequence=Number(response.headers.get("X-FocusMate-Frame-Sequence")||lastFrame),captureUptimeMs=Number(response.headers.get("X-FocusMate-Observed-Uptime-Ms")||performance.now());lastFrame=sequence;ctx.save();ctx.translate(mirror?canvas.width:0,flip?canvas.height:0);ctx.scale(mirror?-1:1,flip?-1:1);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);ctx.restore();
+      if(faceMeta.detected&&[faceMeta.cx,faceMeta.cy,faceMeta.width,faceMeta.height].every(Number.isFinite)){let {cx,cy,width:w,height:h}=faceMeta;if(mirror)cx=1-cx;if(flip)cy=1-cy;ctx.strokeStyle="#35d39a";ctx.lineWidth=2;ctx.strokeRect((cx-w/2)*canvas.width,(cy-h/2)*canvas.height,w*canvas.width,h*canvas.height);ctx.fillStyle="#35d39a";ctx.fillText(number(faceMeta.confidence*100,1)+"%",(cx-w/2)*canvas.width+4,Math.max(13,(cy-h/2)*canvas.height-4))}
+      if(poseReady&&!poseBusy){poseBusy=true;poseWorker.postMessage({type:"frame",bitmap,sequence,captureUptimeMs,faceMeta},[bitmap])}else bitmap.close();
     }catch(error){await new Promise(r=>setTimeout(r,500))}
   }
 }
 el("loginButton").onclick=async()=>{try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:el("loginPass").value})});el("loginPass").value="";await refresh()}catch(error){showLogin(error.message)}};
 el("loginPass").onkeydown=event=>{if(event.key==="Enter")el("loginButton").click()};
-el("calibrate").onclick=async()=>{try{const result=await api("/api/posture/calibrate",{method:"POST"});if(!result.calibration_active)throw Error(calibrationReasons[result.calibration_reason]||result.calibration_reason||"Không thể bắt đầu hiệu chỉnh");toast("Đang thu 20 mẫu mới; ngồi thẳng, thấy trọn mặt và giữ yên tối đa 16 giây")}catch(error){toast(error.message)}};
-el("resetCalibration").onclick=async()=>{if(confirm("Xóa baseline shadow?"))try{const result=await api("/api/posture/reset",{method:"POST"});if(result.calibration_reason==="storage_error")throw Error(calibrationReasons.storage_error);toast("Đã xóa baseline")}catch(error){toast(error.message)}};
+el("resetCalibration").onclick=()=>{if(confirm("Xóa baseline landmark và để hệ thống tự hiệu chỉnh lại?")){localStorage.removeItem(baselineKey);poseResult=null;poseWorker?.postMessage({type:"reset"});toast("Đã xóa baseline; hãy ngồi thẳng tự nhiên trong khoảng 5 giây")}};
 el("scan").onclick=async()=>{try{const result=await api("/api/wifi/scan"),select=el("ssid");select.innerHTML="";result.networks.forEach(n=>select.add(new Option(n.ssid+" ("+n.rssi+" dBm)",n.ssid)));toast("Tìm thấy "+result.networks.length+" mạng")}catch(error){toast(error.message)}};
 el("connectWifi").onclick=async()=>{try{await api("/api/wifi/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ssid:el("ssid").value,password:el("wifiPass").value})});el("wifiPass").value="";toast("Đang kết nối Wi-Fi…")}catch(error){toast(error.message)}};
 el("resetWifi").onclick=async()=>{if(confirm("Xóa Wi-Fi đã lưu?"))try{await api("/api/wifi/reset",{method:"POST"});toast("Đã trở về AP FocusMate-Setup")}catch(error){toast(error.message)}};
@@ -129,7 +149,7 @@ el("saveAp").onclick=async()=>{try{await api("/api/wifi/ap-password",{method:"PO
 el("displayMirror").onchange=()=>localStorage.setItem("focusmate_display_mirror_v2",String(el("displayMirror").checked));el("displayFlip").onchange=()=>localStorage.setItem("focusmate_display_flip_v2",String(el("displayFlip").checked));
 el("changePassword").onclick=async()=>{try{await api("/api/auth/password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:el("oldPass").value,new_password:el("newPass").value})});showLogin("Đã đổi mật khẩu, hãy đăng nhập lại.")}catch(error){toast(error.message)}};
 el("export").onclick=()=>{const json=JSON.stringify({schema:1,images_saved:false,exported_at:new Date().toISOString(),samples:telemetry},null,2),csv=["at,state,raw_state,confidence,raw_confidence,dx,dy,area_ratio,face_confidence,inference_ms,ble_connected,notify_failures"].concat(telemetry.map(r=>[r.at,r.posture.state,r.posture.raw_state,r.posture.confidence,r.posture.raw_confidence??r.posture.confidence,r.posture.dx,r.posture.dy,r.posture.area_ratio,r.face.confidence??"",r.face.inference_ms,r.ble.connected,r.ble.notification_failures].join(","))).join("\n");for(const [name,data,type] of [["focusmate-telemetry.json",json,"application/json"],["focusmate-telemetry.csv",csv,"text/csv"]]){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}};
-drawPlaceholder();refresh();frameLoop();setInterval(refresh,1000);addEventListener("beforeunload",()=>{running=false;navigator.sendBeacon("/api/viewer/release",new Blob([JSON.stringify({client:viewerClient})],{type:"application/json"}))});
+drawPlaceholder();startPoseWorker();refresh();frameLoop();setInterval(refresh,1000);addEventListener("beforeunload",()=>{running=false;poseWorker?.terminate();navigator.sendBeacon("/api/viewer/release",new Blob([JSON.stringify({client:viewerClient})],{type:"application/json"}))});
 </script>
 </body>
 </html>
