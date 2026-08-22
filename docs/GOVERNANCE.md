@@ -8,11 +8,14 @@
 | Yêu cầu và an toàn | `help.md` |
 | Quyết định kiến trúc | ADR trong `docs/decisions/` |
 | Wire format và GATT profile | `docs/GATT_PROFILE.md` — normative, chốt bởi ADR 0004 |
+| Local frame, FaceMeta và pose labels | `docs/LOCAL_FRAME_V1.md` — normative, chốt bởi ADR 0006 |
+| HTTP dashboard browser | `docs/WEB_DASHBOARD.md` — chốt bởi ADR 0005/0006 |
 | Phạm vi release | `soucre_code/from_On_Hand_3_android_wear/ROADMAP.md` |
 | Definition of Done | `soucre_code/from_On_Hand_3_android_wear/IMPLEMENTATION_PLAN.md` |
 | Hành vi triển khai | Source code + automated tests |
 | Sơ đồ chân | `data/So_do_chan.md` — draft đến khi verified device |
-| Golden vectors | `tests/golden/` — byte-exact, sinh theo `docs/GATT_PROFILE.md` |
+| Golden vectors | `tests/golden/` — byte/label exact, sinh theo `docs/GATT_PROFILE.md` và `docs/LOCAL_FRAME_V1.md` |
+| Model/dependency provenance | `docs/LICENSING.md`, lockfile, verification metadata và generated asset manifest |
 | Báo cáo cũ | `CLEANUP_REPORT.md`, `reports/` — historical |
 
 Ưu tiên: an toàn/pháp lý → ADR accepted → yêu cầu sản phẩm → protocol version hóa → roadmap/plan → README/ví dụ. ADR mới thay thế ADR cũ bằng liên kết; không sửa mất lịch sử.
@@ -32,3 +35,4 @@ Quy tắc:
 - Ngưỡng geometry hiện là experimental, không phải release claim.
 - Thiếu capability phải báo unavailable; không tạo dữ liệu giả.
 - Mọi thay đổi protocol, privacy, license hoặc kiến trúc cần ADR và verification.
+- Test local, model tải đúng hash hoặc tài liệu Accepted không tự nâng local-frame/pose lên `VERIFIED_DEVICE`; chỉ report Watch + ESP thật mới được nâng hàng tương ứng.

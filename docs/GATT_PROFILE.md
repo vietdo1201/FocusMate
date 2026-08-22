@@ -1,6 +1,6 @@
 # GATT profile — FocusMate Face Observation
 
-Trạng thái: **normative spec**, chốt bởi [ADR 0004](decisions/0004-gatt-profile-and-canonical-framing.md).
+Trạng thái: **normative spec**, chốt bởi [ADR 0004](decisions/0004-gatt-profile-and-canonical-framing.md) và mở rộng bởi [ADR 0006](decisions/0006-local-frame-and-pose-posture.md).
 Implementation status của BLE/firmware nằm ở [STATUS.md](STATUS.md); tài liệu này mô tả contract phải triển khai, **không** phải bằng chứng đã triển khai.
 
 `protocol_version = 1`. `framing_version = 1`. `schema_version = focusmate_face_observation_v1`.
@@ -14,7 +14,7 @@ Implementation status của BLE/firmware nằm ở [STATUS.md](STATUS.md); tài 
 - ESP **CẤM** phát frame, crop, ảnh thumbnail, landmark, embedding, tên, MAC của thiết bị khác, hay bất kỳ identifier nào của người dùng qua profile này.
 - Chỉ bbox chuẩn hoá, confidence và quality flag trong danh sách đăng ký được phép.
 - `boot_id` là số random sinh mỗi lần boot, **CẤM** dẫn xuất từ MAC, eFuse, serial hay bất kỳ giá trị bền vững nào của chip.
-- Đường frame nén theo [ADR 0003](decisions/0003-optional-frame-transport-to-watch.md) là protocol opt-in **riêng**, không thuộc profile này.
+- Đường frame nén theo [LOCAL_FRAME_V1](LOCAL_FRAME_V1.md) là protocol opt-in **riêng**. Profile này chỉ chở capability, địa chỉ và token; byte ảnh không đi qua GATT.
 - Watch **CẤM** ghi payload thô ra log ở build release.
 
 ## 2. Advertising
@@ -31,11 +31,12 @@ Service UUID: `3a9190ce-8e4e-4792-830b-4a04f637446e` (primary)
 | Characteristic | UUID | Properties | Kích thước |
 |---|---|---|---|
 | Device Info / Capability | `8c441643-7770-406d-9ddc-9c0b15d5c138` | Read | 34 byte, cố định |
+| Frame Access Info V1 | `f26cf312-b841-46f5-a172-6b53713a37f3` | Read | 40 byte, cố định |
 | Face Observation | `f8c18a21-0a62-4a67-8b0d-c5efd5b81263` | Notify | ≤ (ATT MTU − 3) mỗi notification |
 | Control | `50bf0d4c-ce93-4d39-acce-a0b5b32f4049` | Write (with response) | 1–2 byte |
 
 - **CẤM** thêm characteristic chở dữ liệu ảnh vào service này.
-- Cả ba characteristic **PHẢI** yêu cầu link đã encrypt. Bonding: Just Works, LE Secure Connections; ESP **PHẢI** chấp nhận bond và **NÊN** giới hạn 1 bond.
+- Cả bốn characteristic **PHẢI** yêu cầu link đã encrypt. Bonding: Just Works, LE Secure Connections; ESP **PHẢI** chấp nhận bond và **NÊN** giới hạn 1 bond.
 - Face Observation **CẤM** hỗ trợ Read: dữ liệu chỉ có nghĩa khi tươi, đọc lại là replay.
 
 ## 4. Device Info / Capability (read)
@@ -62,12 +63,19 @@ Struct nhị phân **little-endian**, packed, tổng 34 byte. Không JSON. Khôn
 | 2 | ESP hỗ trợ `SET_RATE` |
 | 3 | ESP báo được `low_light` |
 | 4 | ESP báo được `unstable` |
-| 5–31 | reserved, **PHẢI** = 0 |
+| 5 | `CAP_LOCAL_FRAME_V1`: có characteristic Frame Access Info V1 |
+| 6–31 | reserved, **PHẢI** = 0 |
 
 - Watch **PHẢI** đọc characteristic này ngay sau khi kết nối và sau **mỗi** lần reconnect, **trước** khi bật notification.
 - `protocol_version` khác `1` → Watch **PHẢI** ngắt kết nối và báo `unavailable`; **CẤM** đoán layout.
 - Bit 0 hoặc bit 1 = 0 → Watch **PHẢI** báo `unavailable`, **CẤM** tạo dữ liệu giả (GOVERNANCE.md).
 - 34 byte vượt 20 byte của MTU mặc định, nên ESP **PHẢI** hỗ trợ ATT Read Blob (long read). Watch **NÊN** request MTU trước khi đọc.
+
+### 4.1 Frame Access Info V1 (read)
+
+Characteristic 40 byte này chỉ công bố endpoint/credential sidecar; không chứa JPEG hoặc landmark. Layout khóa là `[u8 version][u8 flags][u16_le port][4 byte IPv4 network order][16 byte boot_id][16 byte token]`. `boot_id` phải khớp Device Info; flags bit 0 = `LAN_READY`, bit 1 = `TOKEN_AUTH_REQUIRED`, bit 2 = `FACE_META_V1`, bit 3–7 reserved bằng 0.
+
+Watch chỉ đọc khi capability bit 5 bật, sau mỗi connect/reconnect và khi HTTP trả `401`. Parser, validation, token lifetime, endpoint và FaceMeta normative nằm ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md). Trạng thái `LAN_READY = 0` không làm BLE bbox unavailable.
 
 ## 5. Control (write with response)
 
@@ -261,12 +269,14 @@ Mỗi positive entry ghi kèm `crc16` để kiểm chứng framing. Ví dụ: `d
 | `STALE_THRESHOLD_MS` | 3000 |
 | `NOMINAL_RATE_DHZ` | 50 |
 | `PREFERRED_MTU` | 517 |
+| `FRAME_ACCESS_INFO_BYTES` | 40 |
+| `CAP_LOCAL_FRAME_V1` | bit 5 |
 
 Tất cả **PHẢI** là API public của `:protocol`; tác giả firmware đọc contract từ đây, không đoán.
 
 ## 14. Ngoài phạm vi profile này
 
-- Frame/ảnh nén (ADR 0003 — protocol opt-in riêng), landmark, embedding.
+- Byte frame/ảnh nén không đi qua GATT; sidecar opt-in nằm ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md). Embedding và identifier vẫn ngoài phạm vi tuyệt đối.
 - Yawn/PFLD: `deferred/unavailable`.
 - OTA, cloud, telemetry, nhiều detector cùng lúc.
 - Bất kỳ đường nào để posture ảnh hưởng quyết định break: Rule Engine `watch_rules_v2` vẫn là nguồn duy nhất (ADR 0002).

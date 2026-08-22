@@ -1,0 +1,22 @@
+{
+  "schema": "focusmate_face_meta_v1_golden",
+  "encoding": "32-byte packed uint16 little-endian; RFC 4648 base64url without padding",
+  "keypoint_order": ["left_eye", "left_mouth", "nose", "right_eye", "right_mouth"],
+  "vectors": [
+    {
+      "id": "no_face",
+      "wire_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "header": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "face_detected": false,
+      "valid": true
+    },
+    {
+      "id": "detected_byte_order",
+      "wire_hex": "0100ffff00800040ff7fffbf204e1027085230750080f055c8af1027e0ab3075",
+      "header": "AQD__wCAAED_f_-_IE4QJwhSMHUAgPBVyK8QJ-CrMHU",
+      "face_detected": true,
+      "valid": true,
+      "words": [1, 65535, 32768, 16384, 32767, 49151, 20000, 10000, 21000, 30000, 32768, 22000, 45000, 10000, 44000, 30000]
+    }
+  ]
+}

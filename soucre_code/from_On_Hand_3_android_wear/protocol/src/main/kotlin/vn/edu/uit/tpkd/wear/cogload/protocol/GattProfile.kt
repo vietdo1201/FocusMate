@@ -14,6 +14,7 @@ object GattProfile {
     const val DEVICE_INFO_UUID = "8c441643-7770-406d-9ddc-9c0b15d5c138"
     const val FACE_OBSERVATION_UUID = "f8c18a21-0a62-4a67-8b0d-c5efd5b81263"
     const val CONTROL_UUID = "50bf0d4c-ce93-4d39-acce-a0b5b32f4049"
+    const val FRAME_ACCESS_INFO_UUID = "f26cf312-b841-46f5-a172-6b53713a37f3"
 
     const val PREFERRED_MTU = 517
     const val DEFAULT_MTU = 23
@@ -21,6 +22,21 @@ object GattProfile {
 
     const val DEVICE_INFO_BYTES = 34
     const val BOOT_ID_BYTES = 16
+    const val FRAME_ACCESS_INFO_VERSION = 1
+    const val FRAME_ACCESS_INFO_BYTES = 40
+    const val FRAME_ACCESS_TOKEN_BYTES = 16
+
+    const val FRAME_ACCESS_FLAG_LAN_READY = 1 shl 0
+    const val FRAME_ACCESS_FLAG_TOKEN_AUTH_REQUIRED = 1 shl 1
+    const val FRAME_ACCESS_FLAG_FACE_META_V1 = 1 shl 2
+    const val FRAME_ACCESS_FLAG_RESERVED_MASK = 0xF8
+
+    const val FACE_META_V1_BYTES = 32
+    const val FACE_META_V1_HEADER_CHARS = 43
+    const val FACE_META_V1_KEYPOINTS = 5
+    const val FACE_META_V1_FLAG_FACE_DETECTED = 1
+    const val FACE_META_V1_FLAG_RESERVED_MASK = 0xFFFE
+    const val Q16_MAX = 0xFFFF
 
     const val NOMINAL_RATE_DHZ = 50
     const val MIN_RATE_DHZ = 10
@@ -35,7 +51,8 @@ object GattProfile {
     const val CAP_SET_RATE = 1 shl 2
     const val CAP_REPORTS_LOW_LIGHT = 1 shl 3
     const val CAP_REPORTS_UNSTABLE = 1 shl 4
-    const val CAP_RESERVED_MASK = 0xFFFF_FFE0.toInt()
+    const val CAP_LOCAL_FRAME_V1 = 1 shl 5
+    const val CAP_RESERVED_MASK = 0xFFFF_FFC0.toInt()
 
     const val OPCODE_START: Byte = 0x01
     const val OPCODE_STOP: Byte = 0x02

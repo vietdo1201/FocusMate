@@ -1,0 +1,27 @@
+{
+  "schema": "focusmate_frame_access_info_v1_golden",
+  "vectors": [
+    {
+      "id": "lan_ready_authenticated",
+      "wire_hex": "0107901fc0a80111000102030405060708090a0b0c0d0e0ff0e0d0c0b0a090807060504030201000",
+      "version": 1,
+      "flags": 7,
+      "http_port": 8080,
+      "ipv4": "192.168.1.17",
+      "boot_id": "000102030405060708090a0b0c0d0e0f",
+      "token": "f0e0d0c0b0a090807060504030201000",
+      "usable": true
+    },
+    {
+      "id": "lan_not_ready",
+      "wire_hex": "0106000000000000101112131415161718191a1b1c1d1e1f00112233445566778899aabbccddeeff",
+      "version": 1,
+      "flags": 6,
+      "http_port": 0,
+      "ipv4": "0.0.0.0",
+      "boot_id": "101112131415161718191a1b1c1d1e1f",
+      "token": "00112233445566778899aabbccddeeff",
+      "usable": false
+    }
+  ]
+}

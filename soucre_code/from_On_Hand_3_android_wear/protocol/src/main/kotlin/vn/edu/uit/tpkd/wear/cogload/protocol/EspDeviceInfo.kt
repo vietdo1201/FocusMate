@@ -24,6 +24,7 @@ data class EspDeviceInfo(
     val supportsSetRate: Boolean get() = capabilityBits and GattProfile.CAP_SET_RATE != 0
     val reportsLowLight: Boolean get() = capabilityBits and GattProfile.CAP_REPORTS_LOW_LIGHT != 0
     val reportsUnstable: Boolean get() = capabilityBits and GattProfile.CAP_REPORTS_UNSTABLE != 0
+    val supportsLocalFrameV1: Boolean get() = capabilityBits and GattProfile.CAP_LOCAL_FRAME_V1 != 0
 
     /** Byte layout và giới hạn mà decoder v1 có thể xử lý mà không phỏng đoán. */
     val transportCompatible: Boolean

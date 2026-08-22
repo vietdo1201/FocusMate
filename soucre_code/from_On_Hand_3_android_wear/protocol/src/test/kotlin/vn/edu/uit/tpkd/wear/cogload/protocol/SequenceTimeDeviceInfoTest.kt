@@ -45,13 +45,15 @@ class SequenceTimeDeviceInfoTest {
             maxQualityFlags = 4,
             maxFlagLength = 16,
             nominalRateDhz = 50,
-            capabilityBits = GattProfile.CAP_DETECTOR_READY or GattProfile.CAP_CAMERA_READY or GattProfile.CAP_SET_RATE,
+            capabilityBits = GattProfile.CAP_DETECTOR_READY or GattProfile.CAP_CAMERA_READY or
+                GattProfile.CAP_SET_RATE or GattProfile.CAP_LOCAL_FRAME_V1,
         )
         val parsed = EspDeviceInfo.parse(info.encode())
         assertEquals(info, parsed)
         assertTrue(parsed.usable)
         assertTrue(parsed.transportCompatible)
         assertTrue(parsed.supportsSetRate)
+        assertTrue(parsed.supportsLocalFrameV1)
 
         assertFalse(parsed.copy(maxQualityFlags = 8).transportCompatible)
         assertFalse(parsed.copy(maxFlagLength = 24).transportCompatible)
