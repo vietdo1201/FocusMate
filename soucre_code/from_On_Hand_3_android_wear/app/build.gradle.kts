@@ -24,8 +24,8 @@ android {
         applicationId   = "vn.edu.uit.tpkd.wear.cogload"
         minSdk          = 30
         targetSdk       = 35
-        versionCode     = 14
-        versionName     = "1.13-watch-rules-v2"
+        versionCode     = 15
+        versionName     = "1.14-posture-geometry"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

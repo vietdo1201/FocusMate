@@ -31,7 +31,8 @@ interface PostureShadowModel {
 }
 
 data class PostureGeometryConfig(
-    val minimumDetectorConfidence: Double = 0.70,
+    val minimumLiveDetectorConfidence: Double = 0.50,
+    val minimumCalibrationDetectorConfidence: Double = 0.70,
     val leanEnterDelta: Double = 0.15,
     val headDownEnterDelta: Double = 0.12,
     val slumpedEnterDelta: Double = 0.18,
@@ -48,11 +49,11 @@ class GeometryPostureClassifier(
     private val config: PostureGeometryConfig = PostureGeometryConfig(),
 ) : PostureClassifier {
     private var baseline: PostureBaseline? = null
-    private var headDownSinceMs: Long? = null
+    private var slumpedSinceMs: Long? = null
 
     fun isCalibrationCandidate(observation: FaceObservationV1): Boolean =
         observation.faceDetected &&
-            (observation.confidence ?: 0.0) >= config.minimumDetectorConfidence &&
+            (observation.confidence ?: 0.0) >= config.minimumCalibrationDetectorConfidence &&
             "unstable" !in observation.qualityFlags &&
             "low_light" !in observation.qualityFlags
 
@@ -70,7 +71,7 @@ class GeometryPostureClassifier(
             (areas.max() - areas.min()) / area > config.calibrationAreaSpreadRatio
         ) return false
         baseline = PostureBaseline(cx, cy, area)
-        headDownSinceMs = null
+        slumpedSinceMs = null
         return true
     }
 
@@ -81,41 +82,55 @@ class GeometryPostureClassifier(
     /** Baseline is session- and boot-scoped; never carry it across either boundary. */
     fun reset() {
         baseline = null
-        headDownSinceMs = null
+        slumpedSinceMs = null
     }
 
     override fun classify(observation: FaceObservationV1, observedAtMs: Long): PostureClassification {
         require(observedAtMs >= 0L)
         if (!observation.faceDetected) {
-            headDownSinceMs = null
+            slumpedSinceMs = null
             return result(PostureState.FACE_MISSING, observedAtMs, 1.0)
         }
         val detectorConfidence = observation.confidence ?: 0.0
-        if (detectorConfidence < config.minimumDetectorConfidence ||
+        if (detectorConfidence < config.minimumLiveDetectorConfidence ||
             "unstable" in observation.qualityFlags || "low_light" in observation.qualityFlags
         ) {
-            headDownSinceMs = null
+            slumpedSinceMs = null
             return result(PostureState.UNKNOWN, observedAtMs, detectorConfidence)
         }
-        val reference = baseline ?: return result(PostureState.UNKNOWN, observedAtMs, detectorConfidence)
+        val reference = baseline ?: run {
+            slumpedSinceMs = null
+            return result(PostureState.UNKNOWN, observedAtMs, detectorConfidence)
+        }
         val dx = requireNotNull(observation.centerX) - reference.centerX
         val dy = requireNotNull(observation.centerY) - reference.centerY
         val areaRatio = requireNotNull(observation.area) / reference.area
         val state = when {
-            areaRatio >= config.tooCloseAreaRatio -> PostureState.TOO_CLOSE
+            areaRatio >= config.tooCloseAreaRatio -> {
+                slumpedSinceMs = null
+                PostureState.TOO_CLOSE
+            }
             dy >= config.slumpedEnterDelta -> {
-                val since = headDownSinceMs ?: observedAtMs.also { headDownSinceMs = it }
+                val since = slumpedSinceMs ?: observedAtMs.also { slumpedSinceMs = it }
                 if (observedAtMs - since >= config.slumpedMinimumMs) PostureState.SLUMPED else PostureState.HEAD_DOWN
             }
             dy >= config.headDownEnterDelta -> {
-                if (headDownSinceMs == null) headDownSinceMs = observedAtMs
+                slumpedSinceMs = null
                 PostureState.HEAD_DOWN
             }
-            dx <= -config.leanEnterDelta -> PostureState.LEAN_LEFT
-            dx >= config.leanEnterDelta -> PostureState.LEAN_RIGHT
-            else -> PostureState.NORMAL
+            dx <= -config.leanEnterDelta -> {
+                slumpedSinceMs = null
+                PostureState.LEAN_LEFT
+            }
+            dx >= config.leanEnterDelta -> {
+                slumpedSinceMs = null
+                PostureState.LEAN_RIGHT
+            }
+            else -> {
+                slumpedSinceMs = null
+                PostureState.NORMAL
+            }
         }
-        if (state !in setOf(PostureState.HEAD_DOWN, PostureState.SLUMPED)) headDownSinceMs = null
         val geometryConfidence = when (state) {
             PostureState.TOO_CLOSE -> ((areaRatio - 1.0) / (config.tooCloseAreaRatio - 1.0)).coerceIn(0.0, 1.0)
             PostureState.HEAD_DOWN, PostureState.SLUMPED -> (dy / config.headDownEnterDelta).coerceIn(0.0, 1.0)

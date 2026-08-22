@@ -18,7 +18,12 @@ constexpr char kTag[] = "focusmate-posture";
 constexpr char kNvsNamespace[] = "focusmate_web";
 constexpr uint32_t kScale = 1000000U;
 constexpr uint32_t kProfileFingerprint = 0x4A032180U; // Direct JPEG QVGA, installed 180-degree sensor correction.
-constexpr uint32_t kMinimumConfidence = 700000U;
+// Calibration remains deliberately strict. Live tracking can use the lower
+// confidence bbox after a high-confidence baseline exists: the real OV2640 +
+// ESPDet path produced correct off-axis boxes around 0.59, which were
+// previously discarded as UNKNOWN before geometry was evaluated.
+constexpr uint32_t kCalibrationMinimumConfidence = 700000U;
+constexpr uint32_t kLiveMinimumConfidence = 500000U;
 constexpr int32_t kLeanDelta = 150000;
 constexpr int32_t kHeadDownDelta = 120000;
 constexpr int32_t kSlumpedDelta = 180000;
@@ -61,12 +66,13 @@ struct Runtime {
     focusmate_posture_state_t stable_state = FOCUSMATE_POSTURE_UNKNOWN;
     focusmate_posture_state_t candidate_state = FOCUSMATE_POSTURE_UNKNOWN;
     uint8_t candidate_count = 0;
-    uint32_t confidence = 0;
+    uint32_t raw_confidence = 0;
+    uint32_t stable_confidence = 0;
     int32_t dx = 0;
     int32_t dy = 0;
     uint32_t area_ratio = 0;
     uint64_t stable_since_ms = 0;
-    uint64_t head_down_since_ms = 0;
+    uint64_t slumped_since_ms = 0;
     uint64_t last_observed_ms = 0;
 };
 
@@ -122,29 +128,46 @@ uint32_t geometry_confidence(focusmate_posture_state_t state, int32_t dx, int32_
 }
 
 focusmate_posture_state_t classify_geometry(int32_t dx, int32_t dy, uint32_t area_ratio,
-                                             uint64_t at_ms, uint64_t &head_down_since_ms)
+                                             uint64_t at_ms, uint64_t &slumped_since_ms)
 {
     focusmate_posture_state_t state;
     if (area_ratio >= kTooCloseRatio) {
+        slumped_since_ms = 0;
         state = FOCUSMATE_POSTURE_TOO_CLOSE;
     } else if (dy >= kSlumpedDelta) {
-        if (head_down_since_ms == 0U) head_down_since_ms = at_ms;
-        state = at_ms - head_down_since_ms >= kSlumpedMinimumMs
+        if (slumped_since_ms == 0U) slumped_since_ms = at_ms;
+        state = at_ms - slumped_since_ms >= kSlumpedMinimumMs
             ? FOCUSMATE_POSTURE_SLUMPED : FOCUSMATE_POSTURE_HEAD_DOWN;
     } else if (dy >= kHeadDownDelta) {
-        if (head_down_since_ms == 0U) head_down_since_ms = at_ms;
+        slumped_since_ms = 0;
         state = FOCUSMATE_POSTURE_HEAD_DOWN;
     } else if (dx <= -kLeanDelta) {
-        head_down_since_ms = 0;
+        slumped_since_ms = 0;
         state = FOCUSMATE_POSTURE_LEAN_LEFT;
     } else if (dx >= kLeanDelta) {
-        head_down_since_ms = 0;
+        slumped_since_ms = 0;
         state = FOCUSMATE_POSTURE_LEAN_RIGHT;
     } else {
-        head_down_since_ms = 0;
+        slumped_since_ms = 0;
         state = FOCUSMATE_POSTURE_NORMAL;
     }
     return state;
+}
+
+bool advance_stable_state(focusmate_posture_state_t raw,
+                          focusmate_posture_state_t &stable,
+                          focusmate_posture_state_t &candidate,
+                          uint8_t &candidate_count)
+{
+    if (raw != candidate) {
+        candidate = raw;
+        candidate_count = 1U;
+    } else if (candidate_count < kStableSamples) {
+        ++candidate_count;
+    }
+    if (candidate_count < kStableSamples || stable == raw) return false;
+    stable = raw;
+    return true;
 }
 
 void geometry_self_test()
@@ -155,8 +178,27 @@ void geometry_self_test()
     assert(classify_geometry(-160000, 0, kScale, 3000, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
     assert(classify_geometry(160000, 0, kScale, 4000, since) == FOCUSMATE_POSTURE_LEAN_RIGHT);
     assert(classify_geometry(0, 0, 1600000, 5000, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
-    since = 1000;
-    assert(classify_geometry(0, 190000, kScale, 6000, since) == FOCUSMATE_POSTURE_SLUMPED);
+    assert(classify_geometry(0, 130000, kScale, 6000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(since == 0U);
+    assert(classify_geometry(0, 190000, kScale, 7000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, kScale, 11999, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, kScale, 12000, since) == FOCUSMATE_POSTURE_SLUMPED);
+    assert(classify_geometry(0, 190000, kTooCloseRatio, 12001, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
+    assert(since == 0U);
+    assert(classify_geometry(0, 190000, kScale, 12002, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+
+    focusmate_posture_state_t stable = FOCUSMATE_POSTURE_UNKNOWN;
+    focusmate_posture_state_t candidate = FOCUSMATE_POSTURE_UNKNOWN;
+    uint8_t count = 0;
+    assert(!advance_stable_state(FOCUSMATE_POSTURE_NORMAL, stable, candidate, count));
+    assert(!advance_stable_state(FOCUSMATE_POSTURE_NORMAL, stable, candidate, count));
+    assert(advance_stable_state(FOCUSMATE_POSTURE_NORMAL, stable, candidate, count));
+    assert(stable == FOCUSMATE_POSTURE_NORMAL);
+    assert(!advance_stable_state(FOCUSMATE_POSTURE_UNKNOWN, stable, candidate, count));
+    assert(stable == FOCUSMATE_POSTURE_NORMAL);
+    assert(!advance_stable_state(FOCUSMATE_POSTURE_UNKNOWN, stable, candidate, count));
+    assert(advance_stable_state(FOCUSMATE_POSTURE_UNKNOWN, stable, candidate, count));
+    assert(stable == FOCUSMATE_POSTURE_UNKNOWN);
 }
 
 void persist_baseline()
@@ -202,24 +244,28 @@ bool load_baseline()
 
 void set_raw_state(focusmate_posture_state_t state, uint32_t confidence, uint64_t at_ms)
 {
+    const focusmate_posture_state_t previous_raw = runtime.raw_state;
+    const focusmate_posture_state_t previous_stable = runtime.stable_state;
     runtime.raw_state = state;
-    runtime.confidence = confidence;
-    if (state == FOCUSMATE_POSTURE_UNKNOWN) {
-        runtime.stable_state = state;
-        runtime.candidate_state = state;
-        runtime.candidate_count = 0;
+    runtime.raw_confidence = confidence;
+    if (advance_stable_state(state, runtime.stable_state,
+                             runtime.candidate_state, runtime.candidate_count)) {
+        runtime.stable_confidence = confidence;
         runtime.stable_since_ms = at_ms;
-        return;
+    } else if (runtime.stable_state == state) {
+        runtime.stable_confidence = confidence;
     }
-    if (state != runtime.candidate_state) {
-        runtime.candidate_state = state;
-        runtime.candidate_count = 1U;
-    } else if (runtime.candidate_count < kStableSamples) {
-        ++runtime.candidate_count;
+    if (previous_raw != runtime.raw_state) {
+        ESP_LOGI(kTag, "raw=%s confidence_q6=%lu dx_q6=%ld dy_q6=%ld area_ratio_q6=%lu",
+                 focusmate_posture_state_name(runtime.raw_state),
+                 static_cast<unsigned long>(runtime.raw_confidence),
+                 static_cast<long>(runtime.dx), static_cast<long>(runtime.dy),
+                 static_cast<unsigned long>(runtime.area_ratio));
     }
-    if (runtime.candidate_count >= kStableSamples && runtime.stable_state != state) {
-        runtime.stable_state = state;
-        runtime.stable_since_ms = at_ms;
+    if (previous_stable != runtime.stable_state) {
+        ESP_LOGI(kTag, "stable=%s after=%u samples confidence_q6=%lu",
+                 focusmate_posture_state_name(runtime.stable_state), kStableSamples,
+                 static_cast<unsigned long>(runtime.stable_confidence));
     }
 }
 
@@ -275,10 +321,13 @@ void finish_calibration()
     runtime.baseline_area = area;
     runtime.calibrated = true;
     runtime.calibration_reason = "complete";
-    runtime.head_down_since_ms = 0;
+    runtime.slumped_since_ms = 0;
+    runtime.raw_state = FOCUSMATE_POSTURE_UNKNOWN;
     runtime.stable_state = FOCUSMATE_POSTURE_UNKNOWN;
     runtime.candidate_state = FOCUSMATE_POSTURE_UNKNOWN;
     runtime.candidate_count = 0;
+    runtime.raw_confidence = runtime.stable_confidence = 0;
+    runtime.stable_since_ms = now_ms();
     persist_baseline();
     ESP_LOGI(kTag, "calibration complete cx=%lu cy=%lu area=%lu",
              static_cast<unsigned long>(cx), static_cast<unsigned long>(cy), static_cast<unsigned long>(area));
@@ -294,7 +343,13 @@ extern "C" bool focusmate_shadow_posture_init(void)
     xSemaphoreTake(runtime.mutex, portMAX_DELAY);
     const bool loaded = load_baseline();
     xSemaphoreGive(runtime.mutex);
-    ESP_LOGI(kTag, "shadow classifier ready baseline=%s", loaded ? "persisted" : "required");
+    ESP_LOGI(kTag, "shadow classifier ready baseline=%s cx_q6=%lu cy_q6=%lu area_q6=%lu live_confidence_q6=%lu calibration_confidence_q6=%lu",
+             loaded ? "persisted" : "required",
+             static_cast<unsigned long>(runtime.baseline_cx),
+             static_cast<unsigned long>(runtime.baseline_cy),
+             static_cast<unsigned long>(runtime.baseline_area),
+             static_cast<unsigned long>(kLiveMinimumConfidence),
+             static_cast<unsigned long>(kCalibrationMinimumConfidence));
     return true;
 }
 
@@ -311,7 +366,7 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
     runtime.last_sample_ms = at_ms;
 
     const uint32_t observed_area = result->face_detected ? area_q6(*result) : 0U;
-    if (result->face_detected && result->confidence_q6 >= kMinimumConfidence && observed_area > 0U) {
+    if (result->face_detected && result->confidence_q6 >= kCalibrationMinimumConfidence && observed_area > 0U) {
         remember_recent(*result, observed_area, at_ms);
     }
 
@@ -319,7 +374,7 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
         if (at_ms > runtime.calibration_deadline_ms) {
             runtime.calibration_active = false;
             runtime.calibration_reason = runtime.sample_count == 0U ? "no_face" : "insufficient_valid_samples";
-        } else if (result->face_detected && result->confidence_q6 >= kMinimumConfidence) {
+        } else if (result->face_detected && result->confidence_q6 >= kCalibrationMinimumConfidence) {
             if (observed_area > 0U && runtime.sample_count < kCalibrationSamples) {
                 const size_t index = runtime.sample_count++;
                 runtime.xs[index] = result->cx_q6;
@@ -334,25 +389,30 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
     }
 
     if (!result->face_detected) {
-        runtime.head_down_since_ms = 0;
+        runtime.slumped_since_ms = 0;
         runtime.dx = runtime.dy = 0;
         runtime.area_ratio = 0;
         set_raw_state(FOCUSMATE_POSTURE_FACE_MISSING, kScale, at_ms);
         xSemaphoreGive(runtime.mutex);
         return;
     }
-    if (result->confidence_q6 < kMinimumConfidence || !runtime.calibrated) {
-        runtime.head_down_since_ms = 0;
+    if (runtime.calibrated && observed_area > 0U) {
+        runtime.dx = static_cast<int32_t>(result->cx_q6) - static_cast<int32_t>(runtime.baseline_cx);
+        runtime.dy = static_cast<int32_t>(result->cy_q6) - static_cast<int32_t>(runtime.baseline_cy);
+        runtime.area_ratio = ratio_q6(observed_area, runtime.baseline_area);
+    } else {
+        runtime.dx = runtime.dy = 0;
+        runtime.area_ratio = 0;
+    }
+    if (result->confidence_q6 < kLiveMinimumConfidence || !runtime.calibrated || observed_area == 0U) {
+        runtime.slumped_since_ms = 0;
         set_raw_state(FOCUSMATE_POSTURE_UNKNOWN, result->confidence_q6, at_ms);
         xSemaphoreGive(runtime.mutex);
         return;
     }
 
-    runtime.dx = static_cast<int32_t>(result->cx_q6) - static_cast<int32_t>(runtime.baseline_cx);
-    runtime.dy = static_cast<int32_t>(result->cy_q6) - static_cast<int32_t>(runtime.baseline_cy);
-    runtime.area_ratio = ratio_q6(area_q6(*result), runtime.baseline_area);
     const focusmate_posture_state_t state = classify_geometry(
-        runtime.dx, runtime.dy, runtime.area_ratio, at_ms, runtime.head_down_since_ms);
+        runtime.dx, runtime.dy, runtime.area_ratio, at_ms, runtime.slumped_since_ms);
     const uint32_t confidence = std::min(result->confidence_q6,
         geometry_confidence(state, runtime.dx, runtime.dy, runtime.area_ratio));
     set_raw_state(state, confidence, at_ms);
@@ -367,7 +427,7 @@ extern "C" void focusmate_shadow_posture_start_calibration(void)
     runtime.calibration_deadline_ms = now_ms() + kCalibrationWindowMs;
     runtime.sample_count = 0;
     runtime.calibration_reason = "waiting_for_face";
-    runtime.head_down_since_ms = 0;
+    runtime.slumped_since_ms = 0;
     if (copy_recent_calibration(now_ms())) finish_calibration();
     xSemaphoreGive(runtime.mutex);
 }
@@ -382,6 +442,9 @@ extern "C" void focusmate_shadow_posture_reset(void)
     runtime.calibration_reason = "not_calibrated";
     runtime.raw_state = runtime.stable_state = runtime.candidate_state = FOCUSMATE_POSTURE_UNKNOWN;
     runtime.candidate_count = 0;
+    runtime.raw_confidence = runtime.stable_confidence = 0;
+    runtime.slumped_since_ms = 0;
+    runtime.stable_since_ms = now_ms();
     runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = 0;
     runtime.dx = runtime.dy = 0;
     runtime.area_ratio = 0;
@@ -403,7 +466,8 @@ extern "C" void focusmate_shadow_posture_snapshot(focusmate_posture_snapshot_t *
         .calibration_reason = runtime.calibration_reason,
         .raw_state = stale ? FOCUSMATE_POSTURE_UNKNOWN : runtime.raw_state,
         .state = stale ? FOCUSMATE_POSTURE_UNKNOWN : runtime.stable_state,
-        .confidence_q6 = stale ? 0U : runtime.confidence,
+        .raw_confidence_q6 = stale ? 0U : runtime.raw_confidence,
+        .confidence_q6 = stale ? 0U : runtime.stable_confidence,
         .stable_ms = stale || current < runtime.stable_since_ms ? 0U : current - runtime.stable_since_ms,
         .dx_q6 = runtime.dx,
         .dy_q6 = runtime.dy,
@@ -413,6 +477,21 @@ extern "C" void focusmate_shadow_posture_snapshot(focusmate_posture_snapshot_t *
         .baseline_area_q6 = runtime.baseline_area,
     };
     xSemaphoreGive(runtime.mutex);
+}
+
+extern "C" void focusmate_shadow_posture_thresholds(focusmate_posture_thresholds_t *out)
+{
+    if (out == nullptr) return;
+    *out = {
+        .calibration_min_confidence_q6 = kCalibrationMinimumConfidence,
+        .live_min_confidence_q6 = kLiveMinimumConfidence,
+        .lean_delta_q6 = kLeanDelta,
+        .head_down_delta_q6 = kHeadDownDelta,
+        .slumped_delta_q6 = kSlumpedDelta,
+        .too_close_ratio_q6 = kTooCloseRatio,
+        .slumped_minimum_ms = kSlumpedMinimumMs,
+        .stable_samples = kStableSamples,
+    };
 }
 
 extern "C" const char *focusmate_posture_state_name(focusmate_posture_state_t state)

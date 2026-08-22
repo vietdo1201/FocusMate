@@ -30,11 +30,16 @@ Nếu chưa có frame mới trong 1 giây, server trả `204`. Chỉ một reque
 - `camera`: `healthy`, `width`, `height`, `format`, `capture_fps`, `jpeg_fps`, `average_jpeg_bytes`, `client_connected`, `encode_drops`, `errors`.
 - `ble`: `connected`, `subscribed`, `mtu`, `rate_hz`, `observations`, `notification_attempts`, `notification_failures`.
 - `face`: `detected`, bbox tùy chọn, `confidence`, `inference_ms`, `inference_count`, `observed_uptime_ms`, `age_ms`.
-- `posture`: `source`, `calibrated`, `calibration_progress`, `raw_state`, `state`, `confidence`, `stable_ms`, `dx`, `dy`, `area_ratio` và threshold hiện hành.
+- `posture`: `source`, `calibrated`, `calibration_progress`, `raw_state`, `state`, `raw_confidence`, `confidence`, `stable_ms`, `dx`, `dy`, `area_ratio` và threshold hiện hành. `raw_*` là mẫu mới nhất; `state`/`confidence` là nhãn đã ổn định nên luôn cùng nghĩa với nhau.
 - `memory`: `free_internal_heap`, `minimum_internal_heap`, `free_psram`.
 - `privacy`: `frame_in_ram_only`, `storage`, `cloud`, `shadow_only`.
 
 Posture vocabulary cố định: `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, `UNKNOWN`.
+
+- Calibration chỉ dùng bbox confidence ≥0,70. Sau khi có baseline, live classifier dùng bbox confidence ≥0,50; mốc này xuất phát từ bbox thật đúng ở confidence khoảng 0,59 khi mặt lệch trục. Mẫu dưới 0,50 vẫn là `UNKNOWN`.
+- Mọi nhãn live, kể cả `UNKNOWN` và `FACE_MISSING`, cần ba mẫu liên tiếp trước khi thay nhãn ổn định. Freshness quá 3 giây vẫn chuyển `UNKNOWN` ngay và không tái dùng bbox cũ.
+- Precedence: `TOO_CLOSE` → `SLUMPED`/`HEAD_DOWN` → `HEAD_DOWN` → `LEAN_LEFT` → `LEAN_RIGHT` → `NORMAL`. `SLUMPED` chỉ xuất hiện sau khi `dy ≥ 0,18` liên tục 5 giây; thời gian `HEAD_DOWN` nhẹ hoặc `TOO_CLOSE` không được cộng dồn.
+- Đây là geometry bbox: `LEAN_*` nghĩa là tâm mặt dịch ngang, `HEAD_DOWN`/`SLUMPED` nghĩa là tâm mặt dịch xuống và `TOO_CLOSE` nghĩa là diện tích bbox tăng. Không suy diễn góc vai, độ cong lưng hoặc landmark mà camera không cung cấp.
 
 ## Control
 

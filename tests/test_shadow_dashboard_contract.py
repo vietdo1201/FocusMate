@@ -57,7 +57,9 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("JPEG_IMAGE_SCALE_0", detector)
         self.assertIn("kDetectorLeft = (kCameraWidth - kDetectorWidth) / 2U", detector)
         self.assertIn("kDetectorScoreThreshold = 0.35F", detector)
-        self.assertIn("kMinimumConfidence = 700000U", read("firmware/main/shadow_posture.cpp"))
+        posture = read("firmware/main/shadow_posture.cpp")
+        self.assertIn("kCalibrationMinimumConfidence = 700000U", posture)
+        self.assertIn("kLiveMinimumConfidence = 500000U", posture)
 
     def test_safe_wifi_pending_promote_and_rollback_contract(self) -> None:
         source = read("firmware/main/dashboard.cpp")
@@ -82,7 +84,8 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
         )
         expected = {
-            "minimumDetectorConfidence": ("kMinimumConfidence", 0.70, 700000),
+            "minimumLiveDetectorConfidence": ("kLiveMinimumConfidence", 0.50, 500000),
+            "minimumCalibrationDetectorConfidence": ("kCalibrationMinimumConfidence", 0.70, 700000),
             "leanEnterDelta": ("kLeanDelta", 0.15, 150000),
             "headDownEnterDelta": ("kHeadDownDelta", 0.12, 120000),
             "slumpedEnterDelta": ("kSlumpedDelta", 0.18, 180000),
@@ -91,6 +94,26 @@ class ShadowDashboardContractTest(unittest.TestCase):
         for kotlin_name, (firmware_name, decimal, scaled) in expected.items():
             self.assertRegex(kotlin, rf"{kotlin_name}: Double = {decimal:.2f}")
             self.assertRegex(firmware, rf"{firmware_name} = {scaled}")
+
+    def test_live_confidence_debounce_and_slumped_timer_are_fail_safe(self) -> None:
+        firmware = read("firmware/main/shadow_posture.cpp")
+        kotlin = read(
+            "soucre_code/from_On_Hand_3_android_wear/app/src/main/kotlin/"
+            "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
+        )
+        dashboard = read("firmware/main/dashboard.cpp")
+        html = read("firmware/main/web/index.html")
+        self.assertIn("advance_stable_state", firmware)
+        self.assertIn("FOCUSMATE_POSTURE_UNKNOWN, stable, candidate, count", firmware)
+        self.assertNotIn("if (state == FOCUSMATE_POSTURE_UNKNOWN)", firmware)
+        self.assertIn("slumped_since_ms", firmware)
+        self.assertNotIn("head_down_since_ms", firmware)
+        self.assertIn("slumpedSinceMs", kotlin)
+        self.assertNotIn("headDownSinceMs", kotlin)
+        self.assertIn('"raw_confidence"', dashboard)
+        self.assertIn('"live_confidence"', dashboard)
+        self.assertIn('"calibration_confidence"', dashboard)
+        self.assertIn("rawConfidence", html)
 
     def test_calibration_window_can_physically_collect_twenty_samples(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")

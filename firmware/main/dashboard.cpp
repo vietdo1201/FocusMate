@@ -465,6 +465,8 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     const bool face_available = focusmate_face_detector_latest(&face);
     focusmate_posture_snapshot_t posture{};
     focusmate_shadow_posture_snapshot(&posture);
+    focusmate_posture_thresholds_t posture_thresholds{};
+    focusmate_shadow_posture_thresholds(&posture_thresholds);
     focusmate_frame_stats_t frames{};
     focusmate_frame_broker_stats(&frames);
     focusmate_ble_snapshot_t ble{};
@@ -537,14 +539,20 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddStringToObject(posture_json, "calibration_reason", posture.calibration_reason);
     cJSON_AddStringToObject(posture_json, "raw_state", focusmate_posture_state_name(posture.raw_state));
     cJSON_AddStringToObject(posture_json, "state", focusmate_posture_state_name(posture.state));
+    add_q6(posture_json, "raw_confidence", posture.raw_confidence_q6);
     add_q6(posture_json, "confidence", posture.confidence_q6);
     cJSON_AddNumberToObject(posture_json, "stable_ms", static_cast<double>(posture.stable_ms));
     add_q6(posture_json, "dx", posture.dx_q6); add_q6(posture_json, "dy", posture.dy_q6);
     add_q6(posture_json, "area_ratio", posture.area_ratio_q6);
     cJSON *thresholds = cJSON_AddObjectToObject(posture_json, "thresholds");
-    add_q6(thresholds, "lean_delta", 150000); add_q6(thresholds, "head_down_delta", 120000);
-    add_q6(thresholds, "slumped_delta", 180000); add_q6(thresholds, "too_close_ratio", 1600000);
-    cJSON_AddNumberToObject(thresholds, "slumped_ms", 5000);
+    add_q6(thresholds, "calibration_confidence", posture_thresholds.calibration_min_confidence_q6);
+    add_q6(thresholds, "live_confidence", posture_thresholds.live_min_confidence_q6);
+    add_q6(thresholds, "lean_delta", posture_thresholds.lean_delta_q6);
+    add_q6(thresholds, "head_down_delta", posture_thresholds.head_down_delta_q6);
+    add_q6(thresholds, "slumped_delta", posture_thresholds.slumped_delta_q6);
+    add_q6(thresholds, "too_close_ratio", posture_thresholds.too_close_ratio_q6);
+    cJSON_AddNumberToObject(thresholds, "slumped_ms", static_cast<double>(posture_thresholds.slumped_minimum_ms));
+    cJSON_AddNumberToObject(thresholds, "stable_samples", posture_thresholds.stable_samples);
 
     cJSON *memory = cJSON_AddObjectToObject(root, "memory");
     cJSON_AddNumberToObject(memory, "free_internal_heap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
