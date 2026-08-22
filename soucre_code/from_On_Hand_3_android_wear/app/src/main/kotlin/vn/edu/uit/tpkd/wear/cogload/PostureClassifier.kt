@@ -50,11 +50,14 @@ class GeometryPostureClassifier(
     private var baseline: PostureBaseline? = null
     private var headDownSinceMs: Long? = null
 
+    fun isCalibrationCandidate(observation: FaceObservationV1): Boolean =
+        observation.faceDetected &&
+            (observation.confidence ?: 0.0) >= config.minimumDetectorConfidence &&
+            "unstable" !in observation.qualityFlags &&
+            "low_light" !in observation.qualityFlags
+
     fun calibrate(observations: List<FaceObservationV1>): Boolean {
-        val valid = observations.filter {
-            it.faceDetected && (it.confidence ?: 0.0) >= config.minimumDetectorConfidence &&
-                "unstable" !in it.qualityFlags && "low_light" !in it.qualityFlags
-        }.takeLast(config.calibrationSamples)
+        val valid = observations.filter(::isCalibrationCandidate).takeLast(config.calibrationSamples)
         if (valid.size < config.calibrationSamples) return false
         val xs = valid.map { requireNotNull(it.centerX) }
         val ys = valid.map { requireNotNull(it.centerY) }

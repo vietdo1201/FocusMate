@@ -42,16 +42,18 @@ On the recorded ESP32-S3 rev 0.2 at 240 MHz, the model loaded from flash rodata
 and completed its first real inference in 47 ms. A roughly 8 minute 40 second
 observation window completed 3,900 inferences with zero inference failures and
 47.0–47.1 ms average model-path latency. Camera cadence remained about 7.45
-FPS. See [`../reports/2026-08-22-gate-c-face-detector.md`](../reports/2026-08-22-gate-c-face-detector.md).
+FPS. Later device runs confirmed the positive bbox path at roughly 55–57 ms
+with confidence up to about 0.99. See
+[`../reports/2026-08-22-gate-c-face-detector.md`](../reports/2026-08-22-gate-c-face-detector.md).
 
 ## Quality and limitations
 
 - Espressif reports mAP50-95 `0.367` for the combined MSR+MNP model on its
   custom validation set. That number is vendor context, not FocusMate device
   acceptance and not a guarantee for this camera placement.
-- This run verified model load, repeated no-face inference and transport. It
-  did not obtain a positive face/bbox sample, low-light dataset, demographic
-  evaluation, or calibrated posture threshold.
+- Device runs verified model load, repeated no-face inference, positive bbox
+  and transport. They did not obtain a stable per-posture baseline, low-light
+  dataset, demographic evaluation, or calibrated posture threshold.
 - Transient camera DMA overflow diagnostics were observed during the short
   engineering run without a failed inference; long-session stability remains
   an explicit acceptance gate.

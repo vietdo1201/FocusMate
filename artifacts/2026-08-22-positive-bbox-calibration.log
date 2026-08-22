@@ -1,0 +1,47 @@
+FocusMate Gate C positive-bbox and calibration excerpt
+Captured: 2026-08-22 Asia/Saigon
+Devices: ESP32-S3 N16R8 + OV2640 on COM4; Samsung Galaxy Watch 5 Pro SM-R925F
+
+Watch APK used for the 0/20 -> 5/20 device retest:
+app-debug.apk sha256=EFE0AFE9945764D278B78856CB4BA8DB7CE981978044F63B56E5CD4FFB01E060
+
+Final debug APK installed after the wording-only calibration hint and full gate:
+app-debug.apk bytes=12361247
+app-debug.apk sha256=1D875AE663C9B09869A16D2357E606F2DD4D028B8C95629AF44FA8CCFAA70159
+
+Firmware build installed on the ESP:
+focusmate_esp.bin bytes=2483840
+focusmate_esp.bin sha256=B221F4469B3FBE192F9BDF1CE952252B577036761FA22195A5BE5B856FA5DC24
+focusmate_esp.elf sha256=B4CEC48231A847E89E2273BBB4FA25BB0629C821C1F85B81B7914674D284F43D
+
+Privacy-safe detector excerpts (scaled 1e6; bbox order cx,cy,width,height):
+
+positive=1 bbox_q6=575000,366667,366667,441667 confidence_q6=990292 latency_ms=55
+positive=5 bbox_q6=572917,377083,362500,420833 confidence_q6=993307 latency_ms=55
+positive=20 bbox_q6=395833,347917,383333,487500 confidence_q6=966914 latency_ms=55
+positive=100 bbox_q6=500000,331250,400000,504167 confidence_q6=893309 latency_ms=56
+positive=400 bbox_q6=502083,383333,370833,458333 confidence_q6=914901 latency_ms=55
+
+No frame, crop, landmark, embedding or identifier was logged or transmitted.
+The samples span movement during an engineering run and are not a stable posture
+baseline or threshold dataset.
+
+Calibration defect reproduction and device retest:
+
+- Before the fix, twenty recent no-face notifications filled the ring and the
+  Watch displayed "ĐANG HIỆU CHỈNH • 20/20 mẫu".
+- The ring now accepts only face-positive observations with confidence >= 0.70
+  and without low_light/unstable flags.
+- With only no-face notifications, the installed fixed APK displayed
+  "ĐANG HIỆU CHỈNH • 0/20 mẫu" and "MTU 256 • 5.0 Hz".
+- After exactly five positive detector observations during the same subscribed
+  stream, the Watch displayed "ĐANG HIỆU CHỈNH • 5/20 mẫu".
+- Firmware transport remained loss-free through the check; for example,
+  observations=1250 notify_attempts=1250 notify_failures=0 mtu=256.
+- The targeted FaceObservationPipelineTest passed after adding an interleaved
+  20 no-face + 20 valid-face regression case.
+- The final full gate passed 103 tasks in 2m 48s. The final unsigned release APK
+  SHA-256 is 7812A487A6258C412D383AA815447FEC62FDFC4A1D9FA3FA8B856E2F82FCB63B.
+
+The run did not hold one stable pose long enough to reach LIVE. No whole-system
+VERIFIED_DEVICE claim is made from this artifact.

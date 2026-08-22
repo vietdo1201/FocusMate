@@ -34,6 +34,40 @@ class FaceObservationPipelineTest {
     }
 
     @Test
+    fun calibrationCountsValidFaceSamplesInsteadOfRecentNotifications() {
+        var mono = 10_000L
+        val updates = mutableListOf<PostureIngestionUpdate>()
+        val states = mutableListOf<PostureRuntimeSnapshot>()
+        val ingestor = FaceObservationIngestor(
+            wallClockMs = { 1_000_000L },
+            monotonicMs = { mono },
+            onUpdate = updates::add,
+            onRuntime = states::add,
+        )
+        ingestor.onDeviceInfo(deviceInfo(1_000L).encode()).getOrThrow()
+        val simulator = FaceObservationSimulator()
+        var halfwayDetail = ""
+        repeat(40) { index ->
+            mono = 10_000L + index * 100L
+            val observation = if (index % 2 == 0) {
+                FaceObservationV1(
+                    sequence = index.toLong(),
+                    espUptimeMs = 1_000L + index * 100L,
+                    faceDetected = false,
+                )
+            } else {
+                face(index.toLong(), 1_000L + index * 100L)
+            }
+            simulator.notifications(observation, 256).forEach(ingestor::onNotification)
+            if (index == 19) halfwayDetail = states.last().detail
+        }
+
+        assertEquals("10/20 mẫu", halfwayDetail)
+        assertEquals(PostureRuntimePhase.LIVE, states.last().phase)
+        assertEquals(PostureState.NORMAL, updates.single().classification.state)
+    }
+
+    @Test
     fun corruptCrcAndDegradedSamplesCannotReachLivePipeline() {
         var mono = 10_000L
         val updates = mutableListOf<PostureIngestionUpdate>()
@@ -56,6 +90,7 @@ class FaceObservationPipelineTest {
         }
         assertTrue(updates.isEmpty())
         assertEquals(PostureRuntimePhase.CALIBRATING, states.last().phase)
+        assertEquals("0/20 mẫu", states.last().detail)
     }
 
     @Test

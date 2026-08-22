@@ -120,12 +120,27 @@ void detector_task(void *)
     uint64_t total_inference_ms = 0U;
     uint32_t successful = 0U;
     uint32_t failures = 0U;
+    uint32_t positive_detections = 0U;
     while (true) {
         focusmate_face_result_t result = {};
         if (run_one_inference(&result)) {
             publish(result);
             total_inference_ms += result.inference_ms;
             ++successful;
+            if (result.face_detected) {
+                ++positive_detections;
+                if (positive_detections == 1U || positive_detections % 5U == 0U) {
+                    ESP_LOGI(kTag,
+                             "positive=%lu bbox_q6=%lu,%lu,%lu,%lu confidence_q6=%lu latency_ms=%lu",
+                             static_cast<unsigned long>(positive_detections),
+                             static_cast<unsigned long>(result.cx_q6),
+                             static_cast<unsigned long>(result.cy_q6),
+                             static_cast<unsigned long>(result.width_q6),
+                             static_cast<unsigned long>(result.height_q6),
+                             static_cast<unsigned long>(result.confidence_q6),
+                             static_cast<unsigned long>(result.inference_ms));
+                }
+            }
             if (successful % 25U == 0U) {
                 ESP_LOGI(kTag,
                          "benchmark inferences=%lu failures=%lu avg_ms=%.1f last_ms=%lu face=%d confidence_q6=%lu",

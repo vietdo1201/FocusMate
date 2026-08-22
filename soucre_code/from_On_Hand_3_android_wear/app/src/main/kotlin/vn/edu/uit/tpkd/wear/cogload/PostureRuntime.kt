@@ -122,10 +122,15 @@ class FaceObservationIngestor(
             return
         }
         if (!classifier.isCalibrated()) {
-            calibration.addLast(observation)
+            if (classifier.isCalibrationCandidate(observation)) calibration.addLast(observation)
             while (calibration.size > CALIBRATION_SAMPLES) calibration.removeFirst()
             if (!classifier.calibrate(calibration.toList())) {
-                publish(PostureRuntimePhase.CALIBRATING, "${calibration.size}/$CALIBRATION_SAMPLES mẫu")
+                val detail = if (calibration.size == CALIBRATION_SAMPLES) {
+                    "$CALIBRATION_SAMPLES/$CALIBRATION_SAMPLES mẫu; giữ tư thế ổn định"
+                } else {
+                    "${calibration.size}/$CALIBRATION_SAMPLES mẫu"
+                }
+                publish(PostureRuntimePhase.CALIBRATING, detail)
                 return
             }
         }

@@ -17,7 +17,7 @@
 
 ## Hành động tiếp theo
 
-1. Đặt mặt thật vào khung, thu bbox theo từng tư thế và chạy low-light acceptance.
+1. Giữ tư thế ổn định để đạt baseline `LIVE`, rồi thu bbox theo từng tư thế và chạy low-light acceptance.
 2. Chốt geometry threshold từ số đo thật; đo RAM/nhiệt/nguồn và xác nhận posture không đổi quyết định Rule Engine.
 3. Chạy phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 
@@ -42,9 +42,10 @@
 - Firmware `0.3.0-face-detector` dùng `human_face_detect 0.5.0` + `esp-dl 3.3.9`, model MSR+MNP S8; model card có license, source revision và hash byte.
 - Binary 2.483.664 byte chạy từ factory partition 4 MiB; NVS/bond giữ nguyên địa chỉ. Build còn 41% partition.
 - Trên ESP thật: integer geometry self-test pass, inference đầu 47 ms; cửa sổ khoảng 8 phút 40 giây đạt 3.900 inference, 0 lỗi, trung bình 47,0–47,1 ms.
-- Watch đọc capability `0x1f`, `usable=true`, MTU 256; 100/100 notify không lỗi ở 5 Hz và pipeline nhận 20/20 no-face hợp lệ.
-- Resolver xác nhận các version component đã ghim; firmware build pass với 41% app partition trống. Full `verify.ps1` pass 103 task trong 2 phút 54 giây.
-- Xem [Gate C detector report](reports/2026-08-22-gate-c-face-detector.md). Chưa có face-positive/bbox nên posture và `VERIFIED_DEVICE` toàn hệ thống vẫn bị chặn.
+- Watch đọc capability `0x1f`, `usable=true`, MTU 256; 100/100 notify không lỗi ở 5 Hz và pipeline nhận no-face hợp lệ.
+- Resolver xác nhận các version component đã ghim; firmware build pass với 41% app partition trống. Full `verify.ps1` cuối pass 103 task trong 2 phút 48 giây.
+- Positive bbox thật sau đó đã được xác nhận. Bài device test phát hiện calibration từng tính cả no-face; ring đã sửa chỉ đếm face-valid và Watch xác nhận đúng `0/20→5/20` ở 5 Hz.
+- Xem [Gate C detector report](reports/2026-08-22-gate-c-face-detector.md). Chưa đạt baseline `LIVE`/threshold nên posture và `VERIFIED_DEVICE` toàn hệ thống vẫn bị chặn.
 
 ## Resume
 
