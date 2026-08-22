@@ -1,0 +1,1 @@
+-keep class vn.edu.uit.tpkd.wear.cogload.** { *; }

@@ -1,0 +1,26 @@
+# Gradle and Android build output
+.gradle/
+**/build/
+captures/
+.cxx/
+
+# Machine-local Android configuration
+local.properties
+.idea/
+*.iml
+
+# Signing and secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Large or licensed model artifacts
+*.gguf
+*.tflite
+*.task
+*.espdl
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
