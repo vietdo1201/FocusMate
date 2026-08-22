@@ -8,14 +8,14 @@
 - Motion deterministic; thiếu `BODY_SENSORS` chỉ làm HR unavailable.
 - `PostureClassifier`, geometry calibration experimental, shadow-model interface.
 - Insight 180 giây hoặc 4 episode/15 phút; không prompt lúc học; break/end recommendations.
-- App standalone, một variant, source version `15 / 1.14-posture-geometry`.
+- App standalone, một variant, source version `16 / 1.15-posture-orientation`.
 
 ## Protocol/firmware còn lại
 
 1. GATT profile, golden vectors, simulator, Watch BLE client và ESP-IDF camera/detector đã có.
 2. Giữ payload bbox/quality; cấm frame, crop, landmark và identifier trên BLE.
 3. Hoàn tất test thật từng state, low-light và soak trước khi chốt threshold/`VERIFIED_DEVICE` posture.
-4. Cài APK version 15 lên Watch khi ADB trở lại; không suy diễn source build là device evidence.
+4. APK version 16 đã cài trên Watch thật và reconnect BLE; vẫn không suy diễn source build hoặc transport pass thành posture scenario evidence.
 
 ## Definition of Done cho đợt Watch v2
 

@@ -5,6 +5,8 @@
 - Phạm vi: sửa hiện tượng dashboard chủ yếu chỉ hiện `NORMAL`/`UNKNOWN`, đồng bộ raw classifier firmware/Watch và kiểm tra regression.
 - Gate: vẫn `IN_PROGRESS / UNVERIFIED` cho posture tổng thể; chưa có đủ scenario thật và soak 2 giờ.
 
+> **Đính chính bắt buộc (2026-08-23):** người dùng xác nhận observation `dy=0,167` bên dưới được ghi khi đang ngồi thẳng, không phải lúc cúi đầu. Baseline cũ bị lệch/tái dùng nên đó là false positive. Mọi tuyên bố “đã nhận HEAD_DOWN thật” trong bản report này bị rút lại; chỉ bằng chứng build, BLE và detector vẫn có giá trị. Bản sửa kế tiếp là firmware `0.4.2-posture-orientation`, baseline revision 2.
+
 ## Build cuối
 
 - ESP-IDF 5.5.5, firmware `0.4.1-shadow-posture`.
@@ -30,7 +32,7 @@
 - Watch tự reconnect sau reboot, link mã hóa/subscription hoạt động, MTU lên 256; log đạt ít nhất 150 observation sau final boot với 0 notification failure.
 - Self-test của final binary chạy trực tiếp trên ESP và assert đủ `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT`, `TOO_CLOSE`, `SLUMPED`, timer interruption và debounce `UNKNOWN`.
 - Final dashboard thật đạt khoảng 2,9 detector FPS, 296 ms/inference, BLE `LIVE / MTU 256 / 0 failure`; camera observation thật lên state ổn định `NORMAL` với confidence khoảng `0,766`.
-- Trước lần bump metadata/version cuối, cùng classifier patch đã phát state ổn định `HEAD_DOWN` từ camera thật: `dy=0,167`, confidence `0,86`, stable khoảng 14,8 giây; BLE vẫn MTU 256/0 failure. Artifact trung gian đó có SHA-256 `AE9DA2A6E4B9F1891825FE23F831B577C4DDC60E7D09597177D8AA94E06B14A3`; không dùng hash này làm build cuối.
+- Trước lần bump metadata/version cuối, classifier từng phát `HEAD_DOWN` với `dy=0,167`, confidence `0,86`, stable khoảng 14,8 giây. Kết quả posture này **không hợp lệ** vì người dùng thực tế đang ngồi thẳng; artifact trung gian SHA-256 `AE9DA2A6E4B9F1891825FE23F831B577C4DDC60E7D09597177D8AA94E06B14A3` chỉ được giữ để truy vết lỗi, không làm device evidence. BLE MTU 256/0 failure trong cùng run vẫn hợp lệ.
 - Final boot cũng chứng minh `FACE_MISSING` chỉ lên stable sau ba mẫu (`stable=FACE_MISSING after=3 samples`).
 
 ## Regression
@@ -49,6 +51,6 @@ Kotlin tests mới phủ live/calibration confidence boundary, toàn bộ geomet
 ## Phần còn thiếu trước `VERIFIED_DEVICE`
 
 - Chạy lại trên build cuối với người thật: `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT`, `TOO_CLOSE`, `SLUMPED`, low-light và face return/reconnect.
-- Recalibrate sau khi camera/ghế đổi vị trí; baseline NVS cũ không tự biết người hoặc camera đã di chuyển.
-- Cài APK 1.14 lên Watch khi ADB trở lại và xác nhận Watch raw classifier khớp dashboard.
+- Recalibrate sau khi camera/ghế đổi vị trí; baseline revision 2 không tái dùng pre-buffer và tự loại profile cũ.
+- Cài APK 1.15 lên Watch khi ADB trở lại và xác nhận Watch raw classifier khớp dashboard.
 - Soak Wi-Fi + BLE + detector 2 giờ và xác nhận posture không đổi Rule Engine.

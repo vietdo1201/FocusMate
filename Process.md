@@ -3,17 +3,26 @@
 ## Checkpoint hiện tại
 
 - Ngày cập nhật: 2026-08-23.
-- Watch source đã chuyển sang app standalone, một variant, `versionCode 15`, `1.14-posture-geometry`; APK mới chưa cài vì ADB hiện không thấy Watch.
+- Watch app standalone `versionCode 16`, `1.15-posture-orientation` đã được clean-build, cài và xác nhận bằng ADB trên Watch 5 Pro.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera, detector và một scenario `HEAD_DOWN` shadow có bằng chứng thiết bị thật, nhưng bộ posture/soak vẫn chưa đạt.
+- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera/detector có bằng chứng thiết bị thật, nhưng posture/soak vẫn chưa đạt.
 
-## Realtime posture retest (2026-08-23)
+## Orientation/baseline correction (2026-08-23)
+
+- Kết quả `HEAD_DOWN` với `dy=0,167` trong retest trước **không hợp lệ**: người dùng xác nhận lúc đó đang ngồi thẳng. Nguyên nhân là baseline NVS cũ/tái dùng pre-buffer và precedence dọc; không tính kết quả đó là device evidence.
+- Firmware `0.4.2-posture-orientation` dùng baseline revision 2, calibration nguyên tử chỉ từ mẫu sau khi bấm, loại bbox chạm biên và đổi trục X sang phía người ngồi. Mixed-axis dùng trục vượt chuẩn hóa mạnh hơn.
+- Flash COM4 thành công. ESP self-test pass, Wi-Fi P154/LAN `192.168.1.17`, Watch tự nối lại MTU 256 và 0 notify failure.
+- Pass correction đã đạt calibration 20/20 và khi người dùng ngồi thẳng trả `NORMAL`, baseline `cx=0,447`, `cy=0,404`, `dx=0,002`, `dy=-0,004`. Artifact hardening cuối đã flash lại và hiện chờ calibration mới; không chuyển evidence của pass trước thành scenario pass cho hash cuối.
+- Final APK v16 cài thành công; Watch reconnect bonded GATT, MTU 256, capability `0x1f`, subscribe và START 50 dHz. Full `verify.ps1` pass 103 task trong 2 phút 19 giây. Xem [orientation correction](reports/2026-08-23-posture-orientation-correction.md).
+- Chưa ghi pass `LEAN_LEFT/RIGHT`, `HEAD_DOWN`, `TOO_CLOSE` hoặc `SLUMPED` cho build này cho tới khi thấy chuyển động thật tương ứng.
+
+## Realtime posture retest 1.14 (đã bị supersede một phần, 2026-08-23)
 
 - Firmware `0.4.1-shadow-posture` tách gate confidence: calibration `0,70`, live `0,50`; mọi state live dùng ba mẫu ổn định và stale vẫn fail-closed ngay. Xem [device retest](reports/2026-08-23-posture-geometry-retest.md).
 - Timer `SLUMPED` chỉ đếm khi `dy ≥ 0,18` liên tục 5 giây; không tái dùng thời gian `HEAD_DOWN` nhẹ hoặc `TOO_CLOSE`.
-- Flash COM4 thành công; dashboard thật tại `focusmate.local` nhận `HEAD_DOWN` ổn định với `dy=0,167`, confidence `0,86`, BLE MTU 256 và 0 notify failure.
-- Đây chỉ là bằng chứng scenario `HEAD_DOWN`; `LEAN_LEFT/RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, low-light và soak vẫn phải chạy thật trước khi nâng posture.
+- Flash COM4 thành công; transport BLE MTU 256/0 notify failure vẫn là bằng chứng hợp lệ. Nhãn `HEAD_DOWN` với `dy=0,167` đã bị rút lại vì đó là false positive lúc người dùng ngồi thẳng.
+- `HEAD_DOWN`, `LEAN_LEFT/RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, low-light và soak vẫn phải chạy thật trước khi nâng posture.
 
 ## Gate A — nền tảng dev (đạt 2026-08-22)
 
@@ -24,7 +33,7 @@
 
 ## Hành động tiếp theo
 
-1. Giữ tư thế ổn định để đạt baseline `LIVE`, rồi thu bbox theo từng tư thế và chạy low-light acceptance.
+1. Trên baseline revision 2 đã đạt `NORMAL`, thu bbox thật cho trái, phải, cúi, quá gần và gù; chạy low-light acceptance.
 2. Chốt geometry threshold từ số đo thật; đo RAM/nhiệt/nguồn và xác nhận posture không đổi quyết định Rule Engine.
 3. Chạy phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 

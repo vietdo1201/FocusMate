@@ -1,5 +1,7 @@
 # Realtime shadow dashboard — device retest
 
+> **Lịch sử/superseded:** pre-buffer 10 giây và deadline 8 giây ghi trong report này đã bị loại ở firmware `0.4.2-posture-orientation`. Calibration hiện xóa baseline trước, chỉ lấy 20 mẫu sau khi bấm và loại bbox chạm biên. Không dùng cơ chế cũ làm contract hiện hành.
+
 - Ngày chạy: 2026-08-22 (Asia/Saigon)
 - Phần cứng: ESP32-S3 N16R8 rev 0.2 + OV2640 trên COM4; Galaxy Watch 5 Pro đã bond và subscribe BLE.
 - Phạm vi pass: camera đúng chiều, JPEG dashboard local, bbox mặt thật, Wi-Fi P154, mDNS, BLE chạy đồng thời và regression local.
