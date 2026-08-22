@@ -24,6 +24,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
+import vn.edu.uit.tpkd.wear.cogload.protocol.FrameAccessInfoV1
 import vn.edu.uit.tpkd.wear.cogload.protocol.GattProfile
 import java.util.UUID
 
@@ -34,6 +35,7 @@ import java.util.UUID
 class FaceObservationBleClient(
     context: Context,
     private val ingestor: FaceObservationIngestor,
+    private val onFrameAccess: (LocalFrameAccessEndpoint?) -> Unit = {},
 ) {
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
@@ -46,6 +48,8 @@ class FaceObservationBleClient(
     private var servicesRequested = false
     private var receiverRegistered = false
     private var activeDeviceAddress: String? = null
+    private var frameAccessReadContinuesObservation = false
+    private var cacheRefreshAttempted = false
     private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val scanTimeout = Runnable {
@@ -73,6 +77,7 @@ class FaceObservationBleClient(
         if (running) return
         running = true
         reconnectAttempt = 0
+        cacheRefreshAttempted = false
         registerBondReceiver()
         scan()
     }
@@ -91,7 +96,15 @@ class FaceObservationBleClient(
         }
         runCatching { current?.disconnect() }
         runCatching { current?.close() }
+        onFrameAccess(null)
         ingestor.disconnected("Đã dừng BLE")
+    }
+
+    fun refreshFrameAccessInfo() {
+        handler.post {
+            val current = gatt ?: return@post
+            if (running && hasConnectPermission()) readFrameAccessInfo(current, continueWithObservation = false)
+        }
     }
 
     private fun scan() {
@@ -228,7 +241,7 @@ class FaceObservationBleClient(
         @Deprecated("API 33 callback remains required on Wear OS 4")
         override fun onCharacteristicRead(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             if (gatt !== client) return
-            handleDeviceInfo(client, characteristic, characteristic.value.copyOf(), status)
+            handleCharacteristicRead(client, characteristic, characteristic.value.copyOf(), status)
         }
 
         override fun onCharacteristicRead(
@@ -242,7 +255,7 @@ class FaceObservationBleClient(
                 permissionRevoked(client)
                 return
             }
-            handleDeviceInfo(client, characteristic, value.copyOf(), status)
+            handleCharacteristicRead(client, characteristic, value.copyOf(), status)
         }
 
         @Deprecated("API 33 callback remains required on Wear OS 4")
@@ -281,6 +294,18 @@ class FaceObservationBleClient(
         }
     }
 
+    private fun handleCharacteristicRead(
+        client: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray,
+        status: Int,
+    ) {
+        when (characteristic.uuid) {
+            DEVICE_INFO_UUID -> handleDeviceInfo(client, characteristic, value, status)
+            FRAME_ACCESS_INFO_UUID -> handleFrameAccessInfo(client, value, status)
+        }
+    }
+
     private fun handleDeviceInfo(
         client: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
@@ -312,7 +337,26 @@ class FaceObservationBleClient(
                 "capabilities=0x${info.capabilityBits.toUInt().toString(16)} usable=${info.usable}",
         )
         preferences.edit().putString(PREF_DEVICE_ADDRESS, client.device.address).apply()
-        enableObservation(client)
+        if (info.supportsLocalFrameV1) {
+            readFrameAccessInfo(client, continueWithObservation = true)
+        } else {
+            onFrameAccess(null)
+            enableObservation(client)
+        }
+    }
+
+    private fun handleFrameAccessInfo(client: BluetoothGatt, value: ByteArray, status: Int) {
+        val continueWithObservation = frameAccessReadContinuesObservation
+        frameAccessReadContinuesObservation = false
+        val info = if (status == BluetoothGatt.GATT_SUCCESS) {
+            runCatching { FrameAccessInfoV1.parse(value) }.getOrNull()
+        } else {
+            null
+        }
+        val endpoint = info?.toLocalFrameAccessEndpointOrNull()
+        onFrameAccess(endpoint)
+        Log.i(TAG, "FrameAccess read status=$status usable=${endpoint != null}")
+        if (continueWithObservation) enableObservation(client)
     }
 
     private fun requestServices(client: BluetoothGatt) {
@@ -331,6 +375,45 @@ class FaceObservationBleClient(
         val readStarted = info != null && runCatching { client.readCharacteristic(info) }.getOrDefault(false)
         if (!readStarted) failConnection(client, "Thiếu Device Info")
     }
+
+    private fun readFrameAccessInfo(client: BluetoothGatt, continueWithObservation: Boolean) {
+        if (gatt !== client) return
+        frameAccessReadContinuesObservation = continueWithObservation
+        val access = client.getService(SERVICE_UUID)?.getCharacteristic(FRAME_ACCESS_INFO_UUID)
+        if (access == null && continueWithObservation && !cacheRefreshAttempted) {
+            cacheRefreshAttempted = true
+            frameAccessReadContinuesObservation = false
+            onFrameAccess(null)
+            if (refreshGattCache(client)) {
+                Log.w(TAG, "Frame Access absent from cached GATT database; refreshed once")
+                handler.postDelayed({
+                    if (gatt === client && running) {
+                        detachAndClose(client)
+                        ingestor.connecting()
+                        reconnectAttempt = 0
+                        scheduleReconnect()
+                    }
+                }, GATT_CACHE_SETTLE_MS)
+                return
+            }
+            Log.w(TAG, "Frame Access absent and platform GATT cache refresh unavailable")
+        }
+        val readStarted = access != null && runCatching { client.readCharacteristic(access) }.getOrDefault(false)
+        if (!readStarted) {
+            frameAccessReadContinuesObservation = false
+            onFrameAccess(null)
+            if (continueWithObservation) enableObservation(client)
+        }
+    }
+
+    /**
+     * One-shot compatibility path for a bonded Android device that retained
+     * the pre-LOCAL_FRAME_V1 attribute table. Normal connections never call it.
+     */
+    private fun refreshGattCache(client: BluetoothGatt): Boolean = runCatching {
+        val method = client.javaClass.getMethod("refresh")
+        method.invoke(client) == true
+    }.onFailure { Log.w(TAG, "BluetoothGatt.refresh unavailable", it) }.getOrDefault(false)
 
     private fun beginBonding(client: BluetoothGatt) {
         if (gatt !== client || !hasConnectPermission()) return
@@ -428,9 +511,11 @@ class FaceObservationBleClient(
         handler.removeCallbacks(connectTimeout)
         handler.removeCallbacks(bondTimeout)
         servicesRequested = false
+        frameAccessReadContinuesObservation = false
         activeDeviceAddress = null
         val current = gatt
         gatt = null
+        onFrameAccess(null)
         return current
     }
 
@@ -479,12 +564,14 @@ class FaceObservationBleClient(
         val DEVICE_INFO_UUID: UUID = UUID.fromString(GattProfile.DEVICE_INFO_UUID)
         val OBSERVATION_UUID: UUID = UUID.fromString(GattProfile.FACE_OBSERVATION_UUID)
         val CONTROL_UUID: UUID = UUID.fromString(GattProfile.CONTROL_UUID)
+        val FRAME_ACCESS_INFO_UUID: UUID = UUID.fromString(GattProfile.FRAME_ACCESS_INFO_UUID)
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val SCAN_TIMEOUT_MS = 15_000L
         const val CONNECT_TIMEOUT_MS = 10_000L
         const val BOND_TIMEOUT_MS = 45_000L
         const val RECONNECT_BASE_MS = 1_000L
         const val RECONNECT_MAX_MS = 30_000L
+        const val GATT_CACHE_SETTLE_MS = 500L
         const val GATT_INSUFFICIENT_AUTHENTICATION = 5
         const val GATT_INSUFFICIENT_ENCRYPTION = 15
     }

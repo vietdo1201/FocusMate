@@ -23,8 +23,10 @@ class SessionSensorService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var collectingSessionId: String? = null
     private val thresholdCalibrator = PersonalActivityThresholdCalibrator()
+    private lateinit var postureSourceCoordinator: PostureSourceCoordinator
     private lateinit var postureIngestor: FaceObservationIngestor
     private lateinit var postureBleClient: FaceObservationBleClient
+    private lateinit var localPosePipeline: LocalPosePosturePipeline
 
     private val heartRateTicker = object : Runnable {
         override fun run() {
@@ -60,17 +62,33 @@ class SessionSensorService : Service() {
                 }
             },
         )
-        postureIngestor = FaceObservationIngestor(
-            wallClockMs = System::currentTimeMillis,
-            monotonicMs = SystemClock::elapsedRealtime,
+        postureSourceCoordinator = PostureSourceCoordinator(
             onUpdate = { update ->
                 repository.activeSession()?.sessionId?.let { sessionId ->
                     repository.updateActivePosture(sessionId, update.summaries, update.insights)
                 }
             },
+            onSource = PostureRuntimeStore::updateSelectedSource,
+        )
+        postureIngestor = FaceObservationIngestor(
+            wallClockMs = System::currentTimeMillis,
+            monotonicMs = SystemClock::elapsedRealtime,
+            onUpdate = { update -> postureSourceCoordinator.acceptGeometry(update.classification) },
             onRuntime = PostureRuntimeStore::update,
         )
-        postureBleClient = FaceObservationBleClient(this, postureIngestor)
+        localPosePipeline = LocalPosePosturePipeline(
+            context = this,
+            sourceCoordinator = postureSourceCoordinator,
+            onRuntime = PostureRuntimeStore::updateLocalPose,
+            requestFrameAccessRefresh = {
+                if (::postureBleClient.isInitialized) postureBleClient.refreshFrameAccessInfo()
+            },
+        )
+        postureBleClient = FaceObservationBleClient(
+            context = this,
+            ingestor = postureIngestor,
+            onFrameAccess = localPosePipeline::updateFrameAccess,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -100,6 +118,7 @@ class SessionSensorService : Service() {
         }
         handler.removeCallbacks(heartRateTicker)
         handler.post(heartRateTicker)
+        localPosePipeline.start()
         postureBleClient.start()
         return START_STICKY
     }
@@ -109,7 +128,9 @@ class SessionSensorService : Service() {
         motionCollector.stop()
         heartRateCollector.stop()
         postureBleClient.stop()
+        localPosePipeline.stop()
         postureIngestor.reset()
+        postureSourceCoordinator.reset()
         collectingSessionId = null
         if (::repository.isInitialized && shouldReleaseStudyDnd(repository.activeSession(), System.currentTimeMillis())) {
             StudyDndController.disable(this)

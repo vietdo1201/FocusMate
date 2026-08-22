@@ -27,6 +27,10 @@ android {
         versionCode     = 16
         versionName     = "1.15-posture-orientation"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // Device-locked build for the current SM-R925F test image.
+            abiFilters += "armeabi-v7a"
+        }
     }
 
     signingConfigs {
@@ -52,6 +56,11 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 
+    androidResources {
+        // MediaPipe maps the task bundle from AssetManager; keep it seekable.
+        noCompress += "task"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -72,6 +81,7 @@ dependencies {
     implementation("androidx.wear:wear-ongoing:1.1.0")
     implementation("androidx.health:health-services-client:1.0.0")
     implementation("com.google.guava:guava:31.1-android")
+    implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")

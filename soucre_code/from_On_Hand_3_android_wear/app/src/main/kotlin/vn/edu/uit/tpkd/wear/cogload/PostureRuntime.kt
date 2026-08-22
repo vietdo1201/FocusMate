@@ -17,12 +17,45 @@ enum class PostureRuntimePhase {
     UNAVAILABLE,
 }
 
+enum class PostureSource {
+    NONE,
+    BLE_GEOMETRY,
+    MEDIAPIPE_POSE_LITE,
+}
+
+enum class LocalPosePhase {
+    STOPPED,
+    WAITING_FRAME_ACCESS,
+    WAITING_WIFI,
+    LOADING_MODEL,
+    CALIBRATING,
+    LIVE,
+    PAUSED_THERMAL,
+    MODEL_MISSING,
+    ERROR,
+}
+
+enum class PostureThermalState {
+    UNKNOWN,
+    NOMINAL,
+    LIGHT,
+    MODERATE,
+    SEVERE,
+    CRITICAL,
+    EMERGENCY,
+    SHUTDOWN,
+}
+
 data class PostureRuntimeSnapshot(
     val phase: PostureRuntimePhase,
     val detail: String = "",
     val mtu: Int? = null,
     val notificationRateHz: Double? = null,
     val classification: PostureClassification? = null,
+    val source: PostureSource = PostureSource.NONE,
+    val localPosePhase: LocalPosePhase = LocalPosePhase.STOPPED,
+    val thermalState: PostureThermalState = PostureThermalState.UNKNOWN,
+    val localPoseDetail: String = "",
 )
 
 /** Process-local UI projection. Persistent posture data remains in StudySessionRepository. */
@@ -31,11 +64,44 @@ object PostureRuntimeStore {
     var snapshot = PostureRuntimeSnapshot(PostureRuntimePhase.DISCONNECTED)
         private set
 
+    @Synchronized
     fun update(value: PostureRuntimeSnapshot) {
-        snapshot = value
+        val previous = snapshot
+        snapshot = value.copy(
+            classification = if (previous.source == PostureSource.MEDIAPIPE_POSE_LITE) {
+                previous.classification
+            } else {
+                value.classification
+            },
+            source = previous.source,
+            localPosePhase = previous.localPosePhase,
+            thermalState = previous.thermalState,
+            localPoseDetail = previous.localPoseDetail,
+        )
     }
 
-    fun reset() = update(PostureRuntimeSnapshot(PostureRuntimePhase.DISCONNECTED))
+    @Synchronized
+    fun updateLocalPose(
+        phase: LocalPosePhase,
+        thermalState: PostureThermalState,
+        detail: String,
+    ) {
+        snapshot = snapshot.copy(
+            localPosePhase = phase,
+            thermalState = thermalState,
+            localPoseDetail = detail,
+        )
+    }
+
+    @Synchronized
+    fun updateSelectedSource(source: PostureSource, classification: PostureClassification? = null) {
+        snapshot = snapshot.copy(source = source, classification = classification)
+    }
+
+    @Synchronized
+    fun reset() {
+        snapshot = PostureRuntimeSnapshot(PostureRuntimePhase.DISCONNECTED)
+    }
 }
 
 data class PostureIngestionUpdate(
@@ -64,6 +130,7 @@ class FaceObservationIngestor(
     private var notificationCount = 0L
     private var rateWindowStartedMs = -1L
     private var lastCalibrationSampleMonoMs: Long? = null
+    private var lastUniqueEspUptimeMs: Long? = null
     private var lastAcceptedObservedAtMonoMs: Long? = null
     private var unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL
 
@@ -99,6 +166,7 @@ class FaceObservationIngestor(
             tracker.reset()
             calibration.clear()
             lastCalibrationSampleMonoMs = null
+            lastUniqueEspUptimeMs = null
             lastAcceptedObservedAtMonoMs = null
         }
         anchor = EspTimeAnchor.from(info, wallClockMs(), monotonicMs())
@@ -132,6 +200,15 @@ class FaceObservationIngestor(
             publish(PostureRuntimePhase.STALE, "Không có observation mới")
             return
         }
+        // The ESP transport can notify faster than the detector produces a new
+        // result. Keep those notifications in link-rate telemetry, but never
+        // count the same detector timestamp twice for calibration, posture, or
+        // temporal tracking. A lower uptime is already rejected by
+        // FaceSequenceGate; reconnect on the same boot retains this gate,
+        // while a boot_id change or full pipeline reset clears it.
+        val previousUniqueUptime = lastUniqueEspUptimeMs
+        if (previousUniqueUptime != null && observation.espUptimeMs <= previousUniqueUptime) return
+        lastUniqueEspUptimeMs = observation.espUptimeMs
         if (!classifier.isCalibrated()) {
             if (classifier.isCalibrationCandidate(observation)) {
                 val previous = lastCalibrationSampleMonoMs
@@ -199,6 +276,7 @@ class FaceObservationIngestor(
         tracker.reset()
         calibration.clear()
         lastCalibrationSampleMonoMs = null
+        lastUniqueEspUptimeMs = null
         lastAcceptedObservedAtMonoMs = null
         anchor = null
         unavailableDetail = DEFAULT_UNAVAILABLE_DETAIL

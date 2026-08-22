@@ -547,11 +547,25 @@ class MainActivity : Activity() {
         val link = buildList {
             snapshot.mtu?.let { add("MTU $it") }
             snapshot.notificationRateHz?.let { add("%.1f Hz".format(Locale.US, it)) }
+            add(
+                when (snapshot.source) {
+                    PostureSource.NONE -> "nguồn chưa sẵn sàng"
+                    PostureSource.BLE_GEOMETRY -> "bbox BLE"
+                    PostureSource.MEDIAPIPE_POSE_LITE -> "Pose Lite local"
+                },
+            )
+            add("nhiệt ${snapshot.thermalState.name.lowercase(Locale.US)}")
         }.joinToString(" • ")
+        val detail = buildList {
+            add(snapshot.detail.ifBlank { "Chưa có chi tiết" })
+            if (snapshot.localPosePhase != LocalPosePhase.STOPPED || snapshot.localPoseDetail.isNotBlank()) {
+                add("Pose ${snapshot.localPosePhase.name}: ${snapshot.localPoseDetail.ifBlank { "chưa có chi tiết" }}")
+            }
+        }.joinToString("\n")
         tvPostureRuntimeStatus.text = getString(
             R.string.posture_runtime_value,
             phase,
-            snapshot.detail.ifBlank { "Chưa có chi tiết" },
+            detail,
             link.ifBlank { "chưa đo link" },
         )
     }
