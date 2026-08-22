@@ -52,10 +52,13 @@ class FaceObservationV1Test {
     @Test
     fun duplicateSequenceIsRejectedAndEspRebootResetsGate() {
         val gate = FaceSequenceGate()
+        assertTrue(gate.onDeviceInfo("00000000000000000000000000000001"))
         val first = FaceObservationCodec.decode(FaceObservationCodec.encode(FaceObservationV1(9, 100, false)))
         val duplicate = FaceObservationCodec.decode(FaceObservationCodec.encode(FaceObservationV1(9, 101, false)))
         assertTrue(gate.accept(first))
         assertFalse(gate.accept(duplicate))
+        assertFalse(gate.accept(FaceObservationV1(0, 1, false)))
+        assertTrue(gate.onDeviceInfo("00000000000000000000000000000002"))
         assertTrue(gate.accept(FaceObservationV1(0, 1, false)))
     }
 

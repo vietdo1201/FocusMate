@@ -1,8 +1,13 @@
 package vn.edu.uit.tpkd.wear.cogload.protocol
 
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlin.math.roundToLong
 
+/**
+ * Bbox-only observation phát bởi ESP32-S3 detector.
+ *
+ * Wire format canonical được chốt ở ADR 0004 và đặc tả ở `docs/GATT_PROFILE.md`.
+ * Class này tuyệt đối không chở frame, crop, landmark, embedding hay identifier.
+ */
 data class FaceObservationV1(
     val sequence: Long,
     val espUptimeMs: Long,
@@ -16,18 +21,21 @@ data class FaceObservationV1(
     val qualityFlags: Set<String> = emptySet(),
 ) {
     init {
-        require(sequence >= 0L) { "sequence must be non-negative" }
-        require(espUptimeMs >= 0L) { "espUptimeMs must be non-negative" }
+        require(sequence in 0L..MAX_SEQUENCE) { "sequence must be in 0..$MAX_SEQUENCE" }
+        require(espUptimeMs in 0L..MAX_UPTIME_MS) { "espUptimeMs must be in 0..$MAX_UPTIME_MS" }
         require(qualityFlags.size <= MAX_QUALITY_FLAGS) { "too many quality flags" }
         qualityFlags.forEach {
             require(it.matches(QUALITY_FLAG_PATTERN)) { "invalid quality flag" }
         }
+        EXCLUSIVE_QUALITY_FLAG_PAIRS.forEach { (a, b) ->
+            require(!(a in qualityFlags && b in qualityFlags)) { "mutually exclusive flags: $a + $b" }
+        }
         if (faceDetected) {
             requireNotNull(centerX).requireUnit("centerX")
             requireNotNull(centerY).requireUnit("centerY")
-            requireNotNull(width).requirePositiveUnit("width")
-            requireNotNull(height).requirePositiveUnit("height")
-            requireNotNull(area).requirePositiveUnit("area")
+            requireNotNull(width).requireEdge("width")
+            requireNotNull(height).requireEdge("height")
+            requireNotNull(area).requireArea()
             requireNotNull(confidence).requireUnit("confidence")
             require(kotlin.math.abs(area - width * height) <= AREA_TOLERANCE) {
                 "area must match normalized width * height"
@@ -39,93 +47,112 @@ data class FaceObservationV1(
         }
     }
 
+    /**
+     * Dạng canonical: mọi số thực quantize về [NUMBER_SCALE] chữ số thập phân và
+     * `area` được **dẫn xuất** từ width/height đã quantize. Idempotent.
+     */
+    fun canonical(): FaceObservationV1 {
+        if (!faceDetected) return this
+        val quantizedWidth = quantize(requireNotNull(width))
+        val quantizedHeight = quantize(requireNotNull(height))
+        return copy(
+            centerX = quantize(requireNotNull(centerX)),
+            centerY = quantize(requireNotNull(centerY)),
+            width = quantizedWidth,
+            height = quantizedHeight,
+            area = deriveArea(quantizedWidth, quantizedHeight),
+            confidence = quantize(requireNotNull(confidence)),
+        )
+    }
+
+    val isCanonical: Boolean get() = this == canonical()
+
+    /** Flag duy nhất có ý nghĩa hành vi cho classifier. Flag khác chỉ là metadata. */
+    val isDegraded: Boolean get() = qualityFlags.any { it in BEHAVIORAL_QUALITY_FLAGS }
+
     private fun Double.requireUnit(name: String) {
         require(isFinite() && this in 0.0..1.0) { "$name must be in 0..1" }
     }
 
-    private fun Double.requirePositiveUnit(name: String) {
-        require(isFinite() && this > 0.0 && this <= 1.0) { "$name must be in (0,1]" }
+    private fun Double.requireEdge(name: String) {
+        require(isFinite() && this >= MIN_BBOX_EDGE && this <= 1.0) {
+            "$name must be in [$MIN_BBOX_EDGE, 1]"
+        }
+    }
+
+    private fun Double.requireArea() {
+        require(isFinite() && this >= MIN_BBOX_AREA && this <= 1.0) {
+            "area must be in [$MIN_BBOX_AREA, 1]"
+        }
     }
 
     companion object {
         const val SCHEMA_VERSION = "focusmate_face_observation_v1"
         const val MAX_PAYLOAD_BYTES = 512
-        private const val MAX_QUALITY_FLAGS = 8
-        private const val AREA_TOLERANCE = 0.000_001
-        private val QUALITY_FLAG_PATTERN = Regex("[a-z0-9_]{1,32}")
-    }
-}
 
-object FaceObservationCodec {
-    fun encode(observation: FaceObservationV1): ByteArray {
-        val root = JSONObject().apply {
-            put("schema_version", FaceObservationV1.SCHEMA_VERSION)
-            put("sequence", observation.sequence)
-            put("esp_uptime_ms", observation.espUptimeMs)
-            put("face_detected", observation.faceDetected)
-            if (observation.faceDetected) {
-                put("cx", observation.centerX)
-                put("cy", observation.centerY)
-                put("width", observation.width)
-                put("height", observation.height)
-                put("area", observation.area)
-                put("confidence", observation.confidence)
-            }
-            put("quality_flags", JSONArray(observation.qualityFlags.sorted()))
-        }
-        val payload = root.toString().toByteArray(Charsets.UTF_8)
-        require(payload.size <= FaceObservationV1.MAX_PAYLOAD_BYTES) { "payload too large" }
-        return payload
-    }
+        /** Ngân sách flag chốt ở ADR 0004: 8x32 cho worst case 521 byte, vượt cap 512. */
+        const val MAX_QUALITY_FLAGS = 4
+        const val MAX_QUALITY_FLAG_LENGTH = 16
 
-    fun decode(payload: ByteArray): FaceObservationV1 {
-        require(payload.size in 1..FaceObservationV1.MAX_PAYLOAD_BYTES) { "invalid payload size" }
-        val root = JSONObject(payload.toString(Charsets.UTF_8))
-        require(root.getString("schema_version") == FaceObservationV1.SCHEMA_VERSION) {
-            "unsupported schema"
-        }
-        val allowed = setOf(
+        /** Số chữ số thập phân cố định của mọi trường bbox/confidence trên wire. */
+        const val NUMBER_SCALE = 6
+        const val AREA_TOLERANCE = 0.000_001
+
+        /** Cạnh bbox nhỏ nhất để `deriveArea` không quantize về 0. */
+        const val MIN_BBOX_EDGE = 0.001
+        const val MIN_BBOX_AREA = 0.000_001
+
+        /** `sequence` là uint32 monotonic ở tầng GATT. */
+        const val MAX_SEQUENCE = 4_294_967_295L
+
+        /** ~31,7 năm uptime; chặn để kích thước payload chứng minh được. */
+        const val MAX_UPTIME_MS = 999_999_999_999L
+
+        val QUALITY_FLAG_PATTERN = Regex("[a-z0-9_]{1,$MAX_QUALITY_FLAG_LENGTH}")
+
+        /** Chỉ hai flag này đổi hành vi classifier. Xem `docs/GATT_PROFILE.md` mục 7.5. */
+        val BEHAVIORAL_QUALITY_FLAGS = setOf("unstable", "low_light")
+
+        val REGISTERED_QUALITY_FLAGS = setOf(
+            "stable", "unstable", "well_lit", "low_light",
+            "motion_blur", "partial_face", "multi_face", "sensor_warmup",
+        )
+
+        val EXCLUSIVE_QUALITY_FLAG_PAIRS = listOf(
+            "stable" to "unstable",
+            "well_lit" to "low_light",
+        )
+
+        val CANONICAL_KEY_ORDER = listOf(
             "schema_version", "sequence", "esp_uptime_ms", "face_detected",
             "cx", "cy", "width", "height", "area", "confidence", "quality_flags",
         )
-        require(root.keys().asSequence().all { it in allowed }) { "unknown field" }
-        val detected = root.getBoolean("face_detected")
-        val flags = root.optJSONArray("quality_flags") ?: JSONArray()
-        return FaceObservationV1(
-            sequence = root.getLong("sequence"),
-            espUptimeMs = root.getLong("esp_uptime_ms"),
-            faceDetected = detected,
-            centerX = root.optionalDouble("cx", detected),
-            centerY = root.optionalDouble("cy", detected),
-            width = root.optionalDouble("width", detected),
-            height = root.optionalDouble("height", detected),
-            area = root.optionalDouble("area", detected),
-            confidence = root.optionalDouble("confidence", detected),
-            qualityFlags = buildSet {
-                for (index in 0 until flags.length()) add(flags.getString(index))
-            },
-        )
-    }
 
-    private fun JSONObject.optionalDouble(key: String, required: Boolean): Double? =
-        if (required) getDouble(key) else {
-            require(!has(key) || isNull(key)) { "$key must be absent without a face" }
-            null
+        /** Chuyển unit value thành micro-unit nguyên bằng round-half-up. */
+        fun toScaledUnit(value: Double): Long {
+            require(value.isFinite() && value in 0.0..1.0) { "value must be in 0..1" }
+            return (value * WIRE_SCALE).roundToLong().coerceIn(0L, WIRE_SCALE)
         }
-}
 
-/** Rejects replayed/out-of-order observations while allowing a reset after ESP reboot. */
-class FaceSequenceGate {
-    private var lastSequence: Long? = null
-    private var lastUptimeMs: Long? = null
+        fun quantize(value: Double): Double = toScaledUnit(value).toDouble() / WIRE_SCALE
 
-    fun accept(observation: FaceObservationV1): Boolean {
-        val previousSequence = lastSequence
-        val previousUptime = lastUptimeMs
-        val rebooted = previousUptime != null && observation.espUptimeMs < previousUptime
-        if (!rebooted && previousSequence != null && observation.sequence <= previousSequence) return false
-        lastSequence = observation.sequence
-        lastUptimeMs = observation.espUptimeMs
-        return true
+        /** Chuỗi canonical luôn có đúng [NUMBER_SCALE] chữ số thập phân. */
+        fun formatUnit(value: Double): String = formatScaledUnit(toScaledUnit(value))
+
+        fun formatScaledUnit(scaled: Long): String {
+            require(scaled in 0L..WIRE_SCALE) { "scaled unit must be in 0..$WIRE_SCALE" }
+            val whole = scaled / WIRE_SCALE
+            val fraction = (scaled % WIRE_SCALE).toString().padStart(NUMBER_SCALE, '0')
+            return "$whole.$fraction"
+        }
+
+        fun deriveArea(width: Double, height: Double): Double {
+            val widthScaled = toScaledUnit(width)
+            val heightScaled = toScaledUnit(height)
+            val areaScaled = (widthScaled * heightScaled + WIRE_SCALE / 2) / WIRE_SCALE
+            return areaScaled.toDouble() / WIRE_SCALE
+        }
+
+        const val WIRE_SCALE = 1_000_000L
     }
 }

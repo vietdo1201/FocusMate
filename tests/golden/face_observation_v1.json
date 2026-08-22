@@ -1,0 +1,327 @@
+{
+  "schema_version": "focusmate_face_observation_v1",
+  "spec": "docs/GATT_PROFILE.md",
+  "decision": "docs/decisions/0004-gatt-profile-and-canonical-framing.md",
+  "note": "Byte-exact. payload la chuoi JSON de trailing newline va .gitattributes khong doi byte.",
+  "crc16_algorithm": "CRC-16/CCITT-FALSE poly=0x1021 init=0xFFFF no-reflect no-xorout",
+  "positive": [
+    {
+      "id": "no_face_min",
+      "description": "Bien duoi: sequence 0, uptime 0, khong flag",
+      "byte_length": 122,
+      "crc16": "0xA536",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[]}",
+      "observation": {
+        "sequence": 0,
+        "esp_uptime_ms": 0,
+        "face_detected": false,
+        "quality_flags": []
+      }
+    },
+    {
+      "id": "no_face_max_digits",
+      "description": "sequence uint32 max + uptime 12 chu so + 2 flag behavioral",
+      "byte_length": 164,
+      "crc16": "0x48EF",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":4294967295,\"esp_uptime_ms\":999999999999,\"face_detected\":false,\"quality_flags\":[\"low_light\",\"unstable\"]}",
+      "observation": {
+        "sequence": 4294967295,
+        "esp_uptime_ms": 999999999999,
+        "face_detected": false,
+        "quality_flags": [
+          "low_light",
+          "unstable"
+        ]
+      }
+    },
+    {
+      "id": "detected_typical",
+      "description": "Mau tham chieu cua docs/Vi_du.md",
+      "byte_length": 246,
+      "crc16": "0xD073",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}",
+      "observation": {
+        "sequence": 42,
+        "esp_uptime_ms": 12345,
+        "cx": 0.5,
+        "cy": 0.4,
+        "width": 0.2,
+        "height": 0.3,
+        "confidence": 0.91,
+        "quality_flags": [
+          "stable",
+          "well_lit"
+        ],
+        "face_detected": true,
+        "area": 0.06
+      }
+    },
+    {
+      "id": "detected_max_flags",
+      "description": "Du 4 flag registered, da sap xep",
+      "byte_length": 280,
+      "crc16": "0xC24A",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":1000,\"esp_uptime_ms\":200000,\"face_detected\":true,\"cx\":0.512345,\"cy\":0.487654,\"width\":0.234567,\"height\":0.345678,\"area\":0.081085,\"confidence\":0.765432,\"quality_flags\":[\"motion_blur\",\"multi_face\",\"partial_face\",\"stable\"]}",
+      "observation": {
+        "sequence": 1000,
+        "esp_uptime_ms": 200000,
+        "cx": 0.512345,
+        "cy": 0.487654,
+        "width": 0.234567,
+        "height": 0.345678,
+        "confidence": 0.765432,
+        "quality_flags": [
+          "motion_blur",
+          "multi_face",
+          "partial_face",
+          "stable"
+        ],
+        "face_detected": true,
+        "area": 0.081085
+      }
+    },
+    {
+      "id": "detected_worst_size",
+      "description": "Worst case hop le: 10 + 12 chu so, 4 flag x 16 ky tu",
+      "byte_length": 317,
+      "crc16": "0xC052",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":4294967295,\"esp_uptime_ms\":999999999999,\"face_detected\":true,\"cx\":0.999999,\"cy\":0.999999,\"width\":0.999999,\"height\":0.999999,\"area\":0.999998,\"confidence\":0.999999,\"quality_flags\":[\"reserved_flag_00\",\"reserved_flag_01\",\"reserved_flag_02\",\"reserved_flag_03\"]}",
+      "observation": {
+        "sequence": 4294967295,
+        "esp_uptime_ms": 999999999999,
+        "cx": 0.999999,
+        "cy": 0.999999,
+        "width": 0.999999,
+        "height": 0.999999,
+        "confidence": 0.999999,
+        "quality_flags": [
+          "reserved_flag_00",
+          "reserved_flag_01",
+          "reserved_flag_02",
+          "reserved_flag_03"
+        ],
+        "face_detected": true,
+        "area": 0.999998
+      }
+    },
+    {
+      "id": "detected_bounds",
+      "description": "cx/cy = 0, confidence = 1, canh bbox = MIN_BBOX_EDGE",
+      "byte_length": 233,
+      "crc16": "0x14B8",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":1,\"esp_uptime_ms\":1,\"face_detected\":true,\"cx\":0.000000,\"cy\":0.000000,\"width\":0.001000,\"height\":0.001000,\"area\":0.000001,\"confidence\":1.000000,\"quality_flags\":[\"low_light\"]}",
+      "observation": {
+        "sequence": 1,
+        "esp_uptime_ms": 1,
+        "cx": 0,
+        "cy": 0,
+        "width": 0.001,
+        "height": 0.001,
+        "confidence": 1,
+        "quality_flags": [
+          "low_light"
+        ],
+        "face_detected": true,
+        "area": 0.000001
+      }
+    }
+  ],
+  "negative": [
+    {
+      "id": "n01_empty_payload",
+      "reject_row": 1,
+      "caught_by": "size check",
+      "description": "Payload rong",
+      "payload": ""
+    },
+    {
+      "id": "n01b_oversized_payload",
+      "reject_row": 1,
+      "caught_by": "size check",
+      "description": "513 byte, vuot MAX_PAYLOAD_BYTES",
+      "payload": "{                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               }"
+    },
+    {
+      "id": "n02_invalid_utf8",
+      "reject_row": 2,
+      "caught_by": "UTF-8 strict decode",
+      "description": "Payload hop le + mot byte 0xFF",
+      "payload_base64": "eyJzY2hlbWFfdmVyc2lvbiI6ImZvY3VzbWF0ZV9mYWNlX29ic2VydmF0aW9uX3YxIiwic2VxdWVuY2UiOjAsImVzcF91cHRpbWVfbXMiOjAsImZhY2VfZGV0ZWN0ZWQiOmZhbHNlLCJxdWFsaXR5X2ZsYWdzIjpbXX3/"
+    },
+    {
+      "id": "n03_truncated_json",
+      "reject_row": 3,
+      "caught_by": "parse",
+      "description": "Mat dau } cuoi",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]"
+    },
+    {
+      "id": "n04_trailing_garbage",
+      "reject_row": 4,
+      "caught_by": "canonical check",
+      "description": "Byte rac sau }",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}x"
+    },
+    {
+      "id": "n05_duplicate_key",
+      "reject_row": 5,
+      "caught_by": "parse hoac canonical check",
+      "description": "sequence xuat hien hai lan",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"sequence\":1,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n06_json_comment",
+      "reject_row": 6,
+      "caught_by": "parse hoac canonical check",
+      "description": "Comment /* */ trong JSON",
+      "payload": "{/* c */\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n07_wrong_schema",
+      "reject_row": 7,
+      "caught_by": "so sanh truc tiep",
+      "description": "schema_version khac",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v2\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n08_unknown_key",
+      "reject_row": 8,
+      "caught_by": "allow-list",
+      "description": "Key la image bi cam",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"image\":\"forbidden\",\"quality_flags\":[]}"
+    },
+    {
+      "id": "n09_missing_required_key",
+      "reject_row": 9,
+      "caught_by": "contract",
+      "description": "Thieu face_detected",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n10_boolean_as_string",
+      "reject_row": 10,
+      "caught_by": "type check",
+      "description": "face_detected la string",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":\"false\",\"quality_flags\":[]}"
+    },
+    {
+      "id": "n11_sequence_out_of_range",
+      "reject_row": 11,
+      "caught_by": "range check",
+      "description": "sequence = 2^32",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":4294967296,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n11b_uptime_negative",
+      "reject_row": 11,
+      "caught_by": "range check",
+      "description": "esp_uptime_ms am",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":-1,\"face_detected\":false,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n12_number_not_canonical",
+      "reject_row": 12,
+      "caught_by": "canonical check",
+      "description": "cx chi mot chu so thap phan",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.5,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n12b_number_exponent",
+      "reject_row": 12,
+      "caught_by": "canonical check",
+      "description": "cx dang exponent",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":5.0E-1,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n13_area_mismatch",
+      "reject_row": 13,
+      "caught_by": "contract",
+      "description": "area lech width*height",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.500000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n14_unit_out_of_range",
+      "reject_row": 14,
+      "caught_by": "contract",
+      "description": "confidence > 1",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":1.500000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n14b_zero_edge",
+      "reject_row": 14,
+      "caught_by": "contract",
+      "description": "width = 0",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.000000,\"height\":0.300000,\"area\":0.000000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n15_bbox_without_face",
+      "reject_row": 15,
+      "caught_by": "contract",
+      "description": "cx co mat khi face_detected = false",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"cx\":0.500000,\"quality_flags\":[]}"
+    },
+    {
+      "id": "n16_flags_not_array",
+      "reject_row": 16,
+      "caught_by": "type check",
+      "description": "quality_flags la string",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":\"stable\"}"
+    },
+    {
+      "id": "n16b_flag_element_not_string",
+      "reject_row": 16,
+      "caught_by": "type check",
+      "description": "Phan tu flag la so",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[42]}"
+    },
+    {
+      "id": "n17_too_many_flags",
+      "reject_row": 17,
+      "caught_by": "contract",
+      "description": "5 flag",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[\"aa\",\"bb\",\"cc\",\"dd\",\"ee\"]}"
+    },
+    {
+      "id": "n17b_flag_too_long",
+      "reject_row": 17,
+      "caught_by": "contract",
+      "description": "Flag 17 ky tu",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[\"reserved_flag_000\"]}"
+    },
+    {
+      "id": "n17c_flag_bad_pattern",
+      "reject_row": 17,
+      "caught_by": "contract",
+      "description": "Flag co chu hoa",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[\"Stable\"]}"
+    },
+    {
+      "id": "n17d_flag_duplicate",
+      "reject_row": 17,
+      "caught_by": "parse",
+      "description": "Flag trung",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[\"stable\",\"stable\"]}"
+    },
+    {
+      "id": "n17e_flags_unsorted",
+      "reject_row": 17,
+      "caught_by": "canonical check",
+      "description": "Flag khong sap xep",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cx\":0.500000,\"cy\":0.400000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"well_lit\",\"stable\"]}"
+    },
+    {
+      "id": "n18_key_order",
+      "reject_row": 18,
+      "caught_by": "canonical check",
+      "description": "cy truoc cx",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":42,\"esp_uptime_ms\":12345,\"face_detected\":true,\"cy\":0.400000,\"cx\":0.500000,\"width\":0.200000,\"height\":0.300000,\"area\":0.060000,\"confidence\":0.910000,\"quality_flags\":[\"stable\",\"well_lit\"]}"
+    },
+    {
+      "id": "n19_exclusive_flags",
+      "reject_row": 19,
+      "caught_by": "contract",
+      "description": "stable + unstable cung xuat hien",
+      "payload": "{\"schema_version\":\"focusmate_face_observation_v1\",\"sequence\":0,\"esp_uptime_ms\":0,\"face_detected\":false,\"quality_flags\":[\"stable\",\"unstable\"]}"
+    }
+  ]
+}

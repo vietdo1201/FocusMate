@@ -15,3 +15,7 @@ kotlin {
         jvmTarget.set(JvmTarget.JVM_17)
     }
 }
+
+tasks.test {
+    systemProperty("focusmate.vectors", rootProject.file("../../tests").absolutePath)
+}
