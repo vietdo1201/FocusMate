@@ -838,13 +838,13 @@ void Dashboard::on_event(esp_event_base_t base, int32_t id, void *data)
 {
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const auto *event = static_cast<ip_event_got_ip_t *>(data);
-        char ip[16];
+        char ip[sizeof(wifi_.ip)]{};
         std::snprintf(ip, sizeof ip, IPSTR, IP2STR(&event->ip_info.ip));
         wifi_ap_record_t record{};
         xSemaphoreTake(mutex_, portMAX_DELAY);
         station_associated_ = true;
         wifi_.station_online = true;
-        std::strncpy(wifi_.ip, ip, sizeof(wifi_.ip) - 1U);
+        std::memcpy(wifi_.ip, ip, sizeof(wifi_.ip));
         wifi_config_t station{};
         if (esp_wifi_get_config(WIFI_IF_STA, &station) == ESP_OK)
             std::strncpy(wifi_.ssid, reinterpret_cast<const char *>(station.sta.ssid), sizeof(wifi_.ssid) - 1U);
