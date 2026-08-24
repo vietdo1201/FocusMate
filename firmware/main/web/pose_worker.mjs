@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 import {FaceLandmarker, FilesetResolver, PoseLandmarker} from "/assets/vision_bundle.mjs?v=tasks-vision-1.0.1-classic-1";
 import {PosePostureClassifier, POSE_CLASSIFIER_VERSION} from "/assets/pose_classifier.mjs?v=classifier-3";
 import {YawnClassifier, YAWN_CLASSIFIER_VERSION} from "/assets/yawn_classifier.mjs?v=yawn-3";
@@ -201,17 +203,30 @@ onmessage = async event => {
     const elapsedMs = performance.now() - startedAt;
     inferenceFps = inferenceFps === 0 ? 1000 / Math.max(1, elapsedMs)
       : inferenceFps * 0.85 + (1000 / Math.max(1, elapsedMs)) * 0.15;
+    const yawnForMessage = lastYawn;
     postMessage({
       type: "result",
       sequence: message.sequence,
+      captureUptimeMs: message.captureUptimeMs,
       landmarks: displayLandmarks,
       posture,
-      yawn: lastYawn,
+      yawn: yawnForMessage,
       mouthLandmarks: lastMouthLandmarks,
       inferenceMs: elapsedMs,
       inferenceCount,
       inferenceFps,
     });
+    // A face inference can be reused by several faster Pose results. Event
+    // flags are edge-triggered and must be emitted only once, otherwise one
+    // physical yawn creates several Web outbox entries.
+    if (lastYawn?.eventJustCounted || lastYawn?.alertJustTriggered || lastYawn?.persistenceChanged) {
+      lastYawn = {
+        ...lastYawn,
+        eventJustCounted: false,
+        alertJustTriggered: false,
+        persistenceChanged: false,
+      };
+    }
     if (posture.baselineChanged) postMessage({type: "baseline", baseline: poseClassifier.persistedBaseline()});
   } catch (error) {
     postMessage({type: "error", stage: "inference", error: String(error?.message || error), sequence: message.sequence});

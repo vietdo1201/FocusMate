@@ -1,4 +1,5 @@
 /*
+ * SPDX-FileCopyrightText: 2026 vietdo1201
  * SPDX-License-Identifier: MIT
  */
 #include "focusmate_dns.h"

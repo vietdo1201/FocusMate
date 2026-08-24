@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 #include "dashboard.h"
 
 #include <algorithm>
@@ -29,6 +31,7 @@
 #include "nvs.h"
 #include "shadow_posture.h"
 #include "web_assets.h"
+#include "yawn_sync_broker.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -59,7 +62,7 @@ struct WifiStatus {
     int rssi = 0;
 };
 
-struct YawnSyncSnapshot {
+struct LegacyYawnSyncSnapshot {
     uint32_t sequence = 0;
     uint32_t client = 0;
     uint32_t total = 0;
@@ -71,6 +74,14 @@ class Dashboard {
 public:
     bool start();
     bool frame_access_snapshot(uint8_t ipv4[4], uint16_t *port, uint8_t token[16], uint8_t *flags);
+    bool yawn_ble_resume(const uint8_t session[16], uint32_t checkpoint_total,
+                         const uint16_t *recent_ages_seconds, uint8_t recent_count,
+                         focusmate_yawn_ble_state_t *state);
+    bool yawn_ble_event(const uint8_t session[16], uint32_t client, uint32_t event_id,
+                        uint32_t frame_sequence, uint64_t observed_uptime_ms,
+                        focusmate_yawn_ble_state_t *state);
+    bool yawn_ble_state(focusmate_yawn_ble_state_t *state);
+    bool yawn_ble_end(const uint8_t session[16]);
     static esp_err_t dispatch(httpd_req_t *request);
 
 private:
@@ -82,6 +93,9 @@ private:
     esp_err_t camera(httpd_req_t *request);
     esp_err_t watch_camera(httpd_req_t *request);
     esp_err_t yawn_event(httpd_req_t *request);
+    esp_err_t watch_yawn_state(httpd_req_t *request);
+    esp_err_t watch_yawn_session(httpd_req_t *request);
+    esp_err_t watch_yawn_event(httpd_req_t *request);
     esp_err_t viewer_release(httpd_req_t *request);
     esp_err_t status(httpd_req_t *request);
     esp_err_t posture(httpd_req_t *request, bool calibrate);
@@ -101,7 +115,7 @@ private:
     void rollback_pending();
     WifiStatus wifi_status();
     bool watch_authenticated(httpd_req_t *request) const;
-    YawnSyncSnapshot yawn_sync_snapshot();
+    YawnSyncStateV2 yawn_sync_snapshot();
 
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;
@@ -118,7 +132,8 @@ private:
     uint64_t pending_deadline_ms_ = 0;
     uint64_t pending_switch_at_ms_ = 0;
     uint64_t last_reconnect_ms_ = 0;
-    YawnSyncSnapshot yawn_sync_{};
+    YawnSyncBroker yawn_broker_{};
+    LegacyYawnSyncSnapshot legacy_yawn_sync_{};
     uint32_t yawn_event_id_ = 0;
 };
 
@@ -159,6 +174,56 @@ esp_err_t json_error(httpd_req_t *request, const char *status, const char *messa
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "error", message);
     return send_json(request, root);
+}
+
+bool valid_yawn_session(const std::string &value);
+
+std::string session_hex(const uint8_t session[FOCUSMATE_YAWN_BLE_SESSION_BYTES])
+{
+    constexpr char alphabet[] = "0123456789abcdef";
+    std::string value(FOCUSMATE_YAWN_BLE_SESSION_BYTES * 2U, '0');
+    for (size_t index = 0; index < FOCUSMATE_YAWN_BLE_SESSION_BYTES; ++index) {
+        value[index * 2U] = alphabet[session[index] >> 4U];
+        value[index * 2U + 1U] = alphabet[session[index] & 0x0fU];
+    }
+    return value;
+}
+
+bool copy_yawn_ble_state(const YawnSyncStateV2 &source, focusmate_yawn_ble_state_t *target)
+{
+    if (target == nullptr || !source.active || !valid_yawn_session(source.session) ||
+        source.window > UINT8_MAX) return false;
+    *target = {};
+    target->active = true;
+    for (size_t index = 0; index < FOCUSMATE_YAWN_BLE_SESSION_BYTES; ++index) {
+        const std::string byte = source.session.substr(index * 2U, 2U);
+        target->session[index] = static_cast<uint8_t>(std::strtoul(byte.c_str(), nullptr, 16));
+    }
+    target->revision = source.revision;
+    target->total = source.total;
+    target->window = static_cast<uint8_t>(source.window);
+    return true;
+}
+
+bool valid_yawn_session(const std::string &value)
+{
+    return value.size() == 32U && std::all_of(value.begin(), value.end(), [](char character) {
+        return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
+    });
+}
+
+cJSON *yawn_state_json(const YawnSyncStateV2 &state)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "schema", 2);
+    cJSON_AddBoolToObject(root, "active", state.active);
+    if (state.active) cJSON_AddStringToObject(root, "session", state.session.c_str());
+    else cJSON_AddNullToObject(root, "session");
+    cJSON_AddNumberToObject(root, "revision", state.revision);
+    cJSON_AddNumberToObject(root, "total_count", state.total);
+    cJSON_AddNumberToObject(root, "window_count", state.window);
+    cJSON_AddNumberToObject(root, "last_event_uptime_ms", static_cast<double>(state.last_event_uptime_ms));
+    return root;
 }
 
 std::string json_string(cJSON *root, const char *key)
@@ -246,7 +311,8 @@ std::string face_meta_header(const focusmate_face_meta_v1_t &meta)
 }
 
 esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view,
-                    const YawnSyncSnapshot *yawn_sync = nullptr)
+                    const YawnSyncStateV2 *yawn_sync = nullptr,
+                    const LegacyYawnSyncSnapshot *legacy_yawn_sync = nullptr)
 {
     char sequence[16], uptime[24], confidence[16], bbox[96];
     std::snprintf(sequence, sizeof sequence, "%" PRIu32, view.sequence);
@@ -263,17 +329,29 @@ esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view,
     const std::string encoded_meta = face_meta_header(view.meta);
     httpd_resp_set_hdr(request, "X-FocusMate-Face-Meta-V1", encoded_meta.c_str());
     char yawn_sequence[16], yawn_client[16], yawn_total[16], yawn_window[16], yawn_uptime[24];
-    if (yawn_sync != nullptr && yawn_sync->sequence != 0U) {
-        std::snprintf(yawn_sequence, sizeof yawn_sequence, "%" PRIu32, yawn_sync->sequence);
-        std::snprintf(yawn_client, sizeof yawn_client, "%" PRIu32, yawn_sync->client);
-        std::snprintf(yawn_total, sizeof yawn_total, "%" PRIu32, yawn_sync->total);
-        std::snprintf(yawn_window, sizeof yawn_window, "%" PRIu32, yawn_sync->window);
-        std::snprintf(yawn_uptime, sizeof yawn_uptime, "%" PRIu64, yawn_sync->observed_uptime_ms);
+    const bool v2_active = yawn_sync != nullptr && yawn_sync->active;
+    const bool legacy_active = !v2_active && legacy_yawn_sync != nullptr && legacy_yawn_sync->sequence != 0U;
+    if (v2_active || legacy_active) {
+        const uint32_t revision = v2_active ? yawn_sync->revision : legacy_yawn_sync->sequence;
+        const uint32_t client = v2_active ? 1U : legacy_yawn_sync->client;
+        const uint32_t total = v2_active ? yawn_sync->total : legacy_yawn_sync->total;
+        const uint32_t window = v2_active ? yawn_sync->window : legacy_yawn_sync->window;
+        const uint64_t observed = v2_active ? yawn_sync->last_event_uptime_ms : legacy_yawn_sync->observed_uptime_ms;
+        std::snprintf(yawn_sequence, sizeof yawn_sequence, "%" PRIu32, revision);
+        std::snprintf(yawn_client, sizeof yawn_client, "%" PRIu32, client);
+        std::snprintf(yawn_total, sizeof yawn_total, "%" PRIu32, total);
+        std::snprintf(yawn_window, sizeof yawn_window, "%" PRIu32, window);
+        std::snprintf(yawn_uptime, sizeof yawn_uptime, "%" PRIu64, observed);
         httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Sequence", yawn_sequence);
         httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Client", yawn_client);
         httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Total", yawn_total);
         httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Window", yawn_window);
         httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Observed-Uptime-Ms", yawn_uptime);
+    }
+    if (v2_active) {
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Schema", "2");
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Session", yawn_sync->session.c_str());
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Revision", yawn_sequence);
     }
     if (view.face.face_detected) {
         std::snprintf(bbox, sizeof bbox,
@@ -292,6 +370,7 @@ esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view,
 
 bool Dashboard::start()
 {
+    yawn_sync_broker_self_test();
     mutex_ = xSemaphoreCreateMutex();
     if (mutex_ == nullptr || !initialize_identity()) return false;
     focusmate_web_assets_mount();
@@ -389,7 +468,7 @@ bool Dashboard::initialize_server()
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     config.max_resp_headers = 16;
     config.max_open_sockets = 6;
     config.lru_purge_enable = true;
@@ -401,6 +480,9 @@ bool Dashboard::initialize_server()
         {"/assets/*", HTTP_GET, dispatch, this},
         {"/camera.jpg", HTTP_GET, dispatch, this},
         {"/api/watch/frame", HTTP_GET, dispatch, this},
+        {"/api/watch/yawn/state", HTTP_GET, dispatch, this},
+        {"/api/watch/yawn/session", HTTP_POST, dispatch, this},
+        {"/api/watch/yawn/event", HTTP_POST, dispatch, this},
         {"/api/yawn/event", HTTP_POST, dispatch, this},
         {"/api/viewer/release", HTTP_POST, dispatch, this},
         {"/api/status", HTTP_GET, dispatch, this},
@@ -430,6 +512,9 @@ esp_err_t Dashboard::handle(httpd_req_t *request)
     if (uri == "/") return root(request);
     if (uri.rfind("/assets/", 0U) == 0U) return focusmate_web_assets_serve(request, uri.c_str());
     if (uri == "/api/watch/frame") return watch_camera(request);
+    if (uri == "/api/watch/yawn/state") return watch_yawn_state(request);
+    if (uri == "/api/watch/yawn/session") return watch_yawn_session(request);
+    if (uri == "/api/watch/yawn/event") return watch_yawn_event(request);
     if (uri == "/api/yawn/event") return yawn_event(request);
     if (uri == "/camera.jpg") return camera(request);
     if (uri == "/api/viewer/release") return viewer_release(request);
@@ -515,7 +600,11 @@ esp_err_t Dashboard::camera(httpd_req_t *request)
         httpd_resp_set_status(request, "204 No Content");
         return httpd_resp_send(request, nullptr, 0);
     }
-    const esp_err_t result = send_jpeg(request, view);
+    const YawnSyncStateV2 yawn_sync = yawn_sync_snapshot();
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const LegacyYawnSyncSnapshot legacy_yawn_sync = legacy_yawn_sync_;
+    xSemaphoreGive(mutex_);
+    const esp_err_t result = send_jpeg(request, view, &yawn_sync, &legacy_yawn_sync);
     focusmate_frame_broker_release(&view);
     return result;
 }
@@ -545,8 +634,11 @@ esp_err_t Dashboard::watch_camera(httpd_req_t *request)
         httpd_resp_set_status(request, "204 No Content");
         return httpd_resp_send(request, nullptr, 0);
     }
-    const YawnSyncSnapshot yawn_sync = yawn_sync_snapshot();
-    const esp_err_t result = send_jpeg(request, view, &yawn_sync);
+    const YawnSyncStateV2 yawn_sync = yawn_sync_snapshot();
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const LegacyYawnSyncSnapshot legacy_yawn_sync = legacy_yawn_sync_;
+    xSemaphoreGive(mutex_);
+    const esp_err_t result = send_jpeg(request, view, &yawn_sync, &legacy_yawn_sync);
     focusmate_frame_broker_release(&view);
     return result;
 }
@@ -555,6 +647,81 @@ esp_err_t Dashboard::yawn_event(httpd_req_t *request)
 {
     const std::string body = read_body(request);
     cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
+    cJSON *schema_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "schema");
+    if (cJSON_IsNumber(schema_item) && schema_item->valueint == 2) {
+        const std::string session = json_string(root, "session");
+        const std::string action = json_string(root, "action");
+        if (action == "resume") {
+            cJSON *checkpoint_item = cJSON_GetObjectItemCaseSensitive(root, "checkpoint_total");
+            cJSON *ages_item = cJSON_GetObjectItemCaseSensitive(root, "recent_event_ages_ms");
+            const bool checkpoint_valid = valid_yawn_session(session) && cJSON_IsNumber(checkpoint_item) &&
+                checkpoint_item->valuedouble >= 0.0 && checkpoint_item->valuedouble <= 1000000.0 &&
+                cJSON_IsArray(ages_item) && cJSON_GetArraySize(ages_item) >= 0 &&
+                cJSON_GetArraySize(ages_item) <= static_cast<int>(YawnSyncBroker::MAX_RECENT_EVENTS) &&
+                cJSON_GetArraySize(ages_item) <= checkpoint_item->valuedouble;
+            if (!checkpoint_valid) {
+                cJSON_Delete(root);
+                return json_error(request, "400 Bad Request", "invalid Web yawn checkpoint");
+            }
+            std::vector<uint32_t> ages;
+            for (int index = 0; index < cJSON_GetArraySize(ages_item); ++index) {
+                cJSON *item = cJSON_GetArrayItem(ages_item, index);
+                if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+                    item->valuedouble > YawnSyncBroker::WINDOW_MS) {
+                    cJSON_Delete(root);
+                    return json_error(request, "400 Bad Request", "invalid Web yawn event age");
+                }
+                ages.push_back(static_cast<uint32_t>(item->valuedouble));
+            }
+            YawnSyncStateV2 state{};
+            bool matched = false;
+            xSemaphoreTake(mutex_, portMAX_DELAY);
+            const YawnSyncStateV2 current = yawn_broker_.snapshot(now_ms());
+            if (current.active && current.session == session) {
+                state = yawn_broker_.start_or_resume(session,
+                    static_cast<uint32_t>(checkpoint_item->valuedouble), ages, now_ms());
+                matched = true;
+            }
+            xSemaphoreGive(mutex_);
+            cJSON_Delete(root);
+            if (!matched) return json_error(request, "409 Conflict", "yawn session is not active");
+            return send_json(request, yawn_state_json(state));
+        }
+        cJSON *client_item = cJSON_GetObjectItemCaseSensitive(root, "client");
+        cJSON *event_item = cJSON_GetObjectItemCaseSensitive(root, "event");
+        cJSON *frame_item = cJSON_GetObjectItemCaseSensitive(root, "frame_sequence");
+        cJSON *uptime_item = cJSON_GetObjectItemCaseSensitive(root, "observed_uptime_ms");
+        const bool valid = valid_yawn_session(session) && cJSON_IsNumber(client_item) &&
+            client_item->valuedouble >= 1.0 && client_item->valuedouble <= UINT32_MAX &&
+            cJSON_IsNumber(event_item) && event_item->valuedouble >= 0.0 &&
+            event_item->valuedouble <= UINT32_MAX && cJSON_IsNumber(frame_item) &&
+            frame_item->valuedouble >= 0.0 && frame_item->valuedouble <= UINT32_MAX &&
+            cJSON_IsNumber(uptime_item) && uptime_item->valuedouble >= 0.0;
+        if (!valid) {
+            cJSON_Delete(root);
+            return json_error(request, "400 Bad Request", "invalid yawn event v2");
+        }
+        YawnSyncEventV2 event{};
+        event.source = YawnSyncSource::WEB;
+        event.client = static_cast<uint32_t>(client_item->valuedouble);
+        event.event_id = static_cast<uint32_t>(event_item->valuedouble);
+        event.frame_sequence = static_cast<uint32_t>(frame_item->valuedouble);
+        event.observed_uptime_ms = static_cast<uint64_t>(uptime_item->valuedouble);
+        YawnSyncStateV2 state{};
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+        const bool accepted = yawn_broker_.submit(session, event, now_ms(), &state);
+        xSemaphoreGive(mutex_);
+        cJSON_Delete(root);
+        if (!accepted) {
+            ESP_LOGW(kTag,
+                "rejected Web yawn: active=%d session_match=%d client=%" PRIu32
+                " event=%" PRIu32 " observed=%" PRIu64 " now=%" PRIu64,
+                state.active, state.session == session, event.client, event.event_id,
+                event.observed_uptime_ms, now_ms());
+            return json_error(request, "409 Conflict", "yawn event clock/session rejected");
+        }
+        return send_json(request, yawn_state_json(state));
+    }
     cJSON *client_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "client");
     cJSON *event_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "event");
     cJSON *total_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "total_count");
@@ -573,19 +740,19 @@ esp_err_t Dashboard::yawn_event(httpd_req_t *request)
     const uint32_t client = static_cast<uint32_t>(client_item->valuedouble);
     const uint32_t event = static_cast<uint32_t>(event_item->valuedouble);
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    const bool changed = yawn_sync_.client != client || yawn_event_id_ != event ||
-        yawn_sync_.total != static_cast<uint32_t>(total_item->valuedouble) ||
-        yawn_sync_.window != static_cast<uint32_t>(window_item->valuedouble);
+    const bool changed = legacy_yawn_sync_.client != client || yawn_event_id_ != event ||
+        legacy_yawn_sync_.total != static_cast<uint32_t>(total_item->valuedouble) ||
+        legacy_yawn_sync_.window != static_cast<uint32_t>(window_item->valuedouble);
     if (changed) {
-        ++yawn_sync_.sequence;
-        if (yawn_sync_.sequence == 0U) ++yawn_sync_.sequence;
-        yawn_sync_.client = client;
+        ++legacy_yawn_sync_.sequence;
+        if (legacy_yawn_sync_.sequence == 0U) ++legacy_yawn_sync_.sequence;
+        legacy_yawn_sync_.client = client;
         yawn_event_id_ = event;
-        yawn_sync_.total = static_cast<uint32_t>(total_item->valuedouble);
-        yawn_sync_.window = static_cast<uint32_t>(window_item->valuedouble);
-        yawn_sync_.observed_uptime_ms = static_cast<uint64_t>(uptime_item->valuedouble);
+        legacy_yawn_sync_.total = static_cast<uint32_t>(total_item->valuedouble);
+        legacy_yawn_sync_.window = static_cast<uint32_t>(window_item->valuedouble);
+        legacy_yawn_sync_.observed_uptime_ms = static_cast<uint64_t>(uptime_item->valuedouble);
     }
-    const YawnSyncSnapshot snapshot = yawn_sync_;
+    const LegacyYawnSyncSnapshot snapshot = legacy_yawn_sync_;
     xSemaphoreGive(mutex_);
     cJSON_Delete(root);
     cJSON *response = cJSON_CreateObject();
@@ -595,10 +762,120 @@ esp_err_t Dashboard::yawn_event(httpd_req_t *request)
     return send_json(request, response);
 }
 
-YawnSyncSnapshot Dashboard::yawn_sync_snapshot()
+esp_err_t Dashboard::watch_yawn_state(httpd_req_t *request)
+{
+    if (!watch_authenticated(request))
+        return json_error(request, "401 Unauthorized", "invalid yawn sync credential");
+    return send_json(request, yawn_state_json(yawn_sync_snapshot()));
+}
+
+esp_err_t Dashboard::watch_yawn_session(httpd_req_t *request)
+{
+    if (!watch_authenticated(request))
+        return json_error(request, "401 Unauthorized", "invalid yawn sync credential");
+    const std::string body = read_body(request);
+    cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
+    const std::string session = root == nullptr ? "" : json_string(root, "session");
+    const std::string action = root == nullptr ? "" : json_string(root, "action");
+    cJSON *schema_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "schema");
+    cJSON *checkpoint_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "checkpoint_total");
+    const bool common_valid = cJSON_IsNumber(schema_item) && schema_item->valueint == 2 &&
+        valid_yawn_session(session) && (action == "start" || action == "resume" || action == "end");
+    if (!common_valid) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "invalid yawn session command");
+    }
+
+    YawnSyncStateV2 state{};
+    if (action == "end") {
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+        state = yawn_broker_.end(session, now_ms());
+        xSemaphoreGive(mutex_);
+        cJSON_Delete(root);
+        return send_json(request, yawn_state_json(state));
+    }
+
+    if (!cJSON_IsNumber(checkpoint_item) || checkpoint_item->valuedouble < 0.0 ||
+        checkpoint_item->valuedouble > 1000000.0) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "invalid yawn checkpoint");
+    }
+    std::vector<uint32_t> ages;
+    cJSON *ages_item = cJSON_GetObjectItemCaseSensitive(root, "recent_event_ages_ms");
+    if (ages_item != nullptr && !cJSON_IsArray(ages_item)) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "invalid yawn event ages");
+    }
+    if (ages_item != nullptr) {
+        const int count = cJSON_GetArraySize(ages_item);
+        if (count < 0 || count > static_cast<int>(YawnSyncBroker::MAX_RECENT_EVENTS)) {
+            cJSON_Delete(root);
+            return json_error(request, "400 Bad Request", "too many yawn event ages");
+        }
+        for (int index = 0; index < count; ++index) {
+            cJSON *item = cJSON_GetArrayItem(ages_item, index);
+            if (!cJSON_IsNumber(item) || item->valuedouble < 0.0 ||
+                item->valuedouble > YawnSyncBroker::WINDOW_MS) {
+                cJSON_Delete(root);
+                return json_error(request, "400 Bad Request", "invalid yawn event age");
+            }
+            ages.push_back(static_cast<uint32_t>(item->valuedouble));
+        }
+    }
+    if (ages.size() > static_cast<size_t>(checkpoint_item->valuedouble)) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "yawn window exceeds checkpoint total");
+    }
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    state = yawn_broker_.start_or_resume(session,
+        static_cast<uint32_t>(checkpoint_item->valuedouble), ages, now_ms());
+    xSemaphoreGive(mutex_);
+    cJSON_Delete(root);
+    return send_json(request, yawn_state_json(state));
+}
+
+esp_err_t Dashboard::watch_yawn_event(httpd_req_t *request)
+{
+    if (!watch_authenticated(request))
+        return json_error(request, "401 Unauthorized", "invalid yawn sync credential");
+    const std::string body = read_body(request);
+    cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
+    const std::string session = root == nullptr ? "" : json_string(root, "session");
+    cJSON *schema_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "schema");
+    cJSON *client_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "client");
+    cJSON *event_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "event");
+    cJSON *frame_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "frame_sequence");
+    cJSON *uptime_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "observed_uptime_ms");
+    const bool valid = cJSON_IsNumber(schema_item) && schema_item->valueint == 2 &&
+        valid_yawn_session(session) && cJSON_IsNumber(client_item) && client_item->valuedouble >= 1.0 &&
+        client_item->valuedouble <= UINT32_MAX && cJSON_IsNumber(event_item) &&
+        event_item->valuedouble >= 0.0 && event_item->valuedouble <= UINT32_MAX &&
+        cJSON_IsNumber(frame_item) && frame_item->valuedouble >= 0.0 &&
+        frame_item->valuedouble <= UINT32_MAX && cJSON_IsNumber(uptime_item) &&
+        uptime_item->valuedouble >= 0.0;
+    if (!valid) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "invalid Watch yawn event");
+    }
+    YawnSyncEventV2 event{};
+    event.source = YawnSyncSource::WATCH;
+    event.client = static_cast<uint32_t>(client_item->valuedouble);
+    event.event_id = static_cast<uint32_t>(event_item->valuedouble);
+    event.frame_sequence = static_cast<uint32_t>(frame_item->valuedouble);
+    event.observed_uptime_ms = static_cast<uint64_t>(uptime_item->valuedouble);
+    YawnSyncStateV2 state{};
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const bool accepted = yawn_broker_.submit(session, event, now_ms(), &state);
+    xSemaphoreGive(mutex_);
+    cJSON_Delete(root);
+    if (!accepted) return json_error(request, "409 Conflict", "yawn session is not active");
+    return send_json(request, yawn_state_json(state));
+}
+
+YawnSyncStateV2 Dashboard::yawn_sync_snapshot()
 {
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    const YawnSyncSnapshot snapshot = yawn_sync_;
+    const YawnSyncStateV2 snapshot = yawn_broker_.snapshot(now_ms());
     xSemaphoreGive(mutex_);
     return snapshot;
 }
@@ -1072,8 +1349,69 @@ bool Dashboard::frame_access_snapshot(uint8_t ipv4[4], uint16_t *port,
     std::memcpy(token, watch_token_.data(), watch_token_.size());
     constexpr uint8_t kTokenRequired = 1U << 1U;
     constexpr uint8_t kFaceMetaV1 = 1U << 2U;
-    *flags = static_cast<uint8_t>((wifi.station_online ? 1U : 0U) | kTokenRequired | kFaceMetaV1);
+    // The HTTP sidecar is reachable through the always-on setup AP even when
+    // the station has not joined an infrastructure network. Bit 0 describes
+    // reachability of the advertised address, not STA association; leaving it
+    // clear in AP-only mode made Watch discard the valid 192.168.4.1 endpoint.
+    constexpr uint8_t kAdvertisedEndpointReady = 1U << 0U;
+    *flags = static_cast<uint8_t>(kAdvertisedEndpointReady | kTokenRequired | kFaceMetaV1);
     return true;
+}
+
+bool Dashboard::yawn_ble_resume(const uint8_t session[16], uint32_t checkpoint_total,
+                                const uint16_t *recent_ages_seconds, uint8_t recent_count,
+                                focusmate_yawn_ble_state_t *state)
+{
+    if (session == nullptr || state == nullptr || checkpoint_total > 1000000U ||
+        recent_count > FOCUSMATE_YAWN_BLE_MAX_RECENT_EVENTS ||
+        recent_count > checkpoint_total || (recent_count > 0U && recent_ages_seconds == nullptr)) return false;
+    std::vector<uint32_t> ages;
+    ages.reserve(recent_count);
+    for (uint8_t index = 0; index < recent_count; ++index) {
+        const uint32_t age_ms = static_cast<uint32_t>(recent_ages_seconds[index]) * 1000U;
+        if (age_ms > YawnSyncBroker::WINDOW_MS) return false;
+        ages.push_back(age_ms);
+    }
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const YawnSyncStateV2 result = yawn_broker_.start_or_resume(
+        session_hex(session), checkpoint_total, ages, now_ms());
+    xSemaphoreGive(mutex_);
+    return copy_yawn_ble_state(result, state);
+}
+
+bool Dashboard::yawn_ble_event(const uint8_t session[16], uint32_t client, uint32_t event_id,
+                               uint32_t frame_sequence, uint64_t observed_uptime_ms,
+                               focusmate_yawn_ble_state_t *state)
+{
+    if (session == nullptr || state == nullptr || client == 0U) return false;
+    YawnSyncEventV2 event{};
+    event.source = YawnSyncSource::WATCH;
+    event.client = client;
+    event.event_id = event_id;
+    event.frame_sequence = frame_sequence;
+    event.observed_uptime_ms = observed_uptime_ms;
+    YawnSyncStateV2 result{};
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const bool accepted = yawn_broker_.submit(session_hex(session), event, now_ms(), &result);
+    xSemaphoreGive(mutex_);
+    return accepted && copy_yawn_ble_state(result, state);
+}
+
+bool Dashboard::yawn_ble_state(focusmate_yawn_ble_state_t *state)
+{
+    if (state == nullptr) return false;
+    return copy_yawn_ble_state(yawn_sync_snapshot(), state);
+}
+
+bool Dashboard::yawn_ble_end(const uint8_t session[16])
+{
+    if (session == nullptr) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const YawnSyncStateV2 before = yawn_broker_.snapshot(now_ms());
+    const bool matched = before.active && before.session == session_hex(session);
+    if (matched) (void)yawn_broker_.end(before.session, now_ms());
+    xSemaphoreGive(mutex_);
+    return matched;
 }
 
 extern "C" bool focusmate_dashboard_start(void)
@@ -1085,4 +1423,33 @@ extern "C" bool focusmate_dashboard_frame_access_snapshot(uint8_t ipv4[4], uint1
                                                               uint8_t token[16], uint8_t *flags)
 {
     return dashboard.frame_access_snapshot(ipv4, port, token, flags);
+}
+
+extern "C" bool focusmate_dashboard_yawn_ble_resume(
+    const uint8_t session[FOCUSMATE_YAWN_BLE_SESSION_BYTES], uint32_t checkpoint_total,
+    const uint16_t *recent_event_ages_seconds, uint8_t recent_event_count,
+    focusmate_yawn_ble_state_t *state)
+{
+    return dashboard.yawn_ble_resume(session, checkpoint_total, recent_event_ages_seconds,
+                                     recent_event_count, state);
+}
+
+extern "C" bool focusmate_dashboard_yawn_ble_event(
+    const uint8_t session[FOCUSMATE_YAWN_BLE_SESSION_BYTES], uint32_t client,
+    uint32_t event_id, uint32_t frame_sequence, uint64_t observed_uptime_ms,
+    focusmate_yawn_ble_state_t *state)
+{
+    return dashboard.yawn_ble_event(session, client, event_id, frame_sequence,
+                                    observed_uptime_ms, state);
+}
+
+extern "C" bool focusmate_dashboard_yawn_ble_state(focusmate_yawn_ble_state_t *state)
+{
+    return dashboard.yawn_ble_state(state);
+}
+
+extern "C" bool focusmate_dashboard_yawn_ble_end(
+    const uint8_t session[FOCUSMATE_YAWN_BLE_SESSION_BYTES])
+{
+    return dashboard.yawn_ble_end(session);
 }

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 export const POSTURE_STATES = Object.freeze([
   "NORMAL",
   "HEAD_DOWN",

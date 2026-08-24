@@ -1,6 +1,9 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
 idf_component_register(
     SRCS "focusmate_main.c" "face_observation.c" "camera_smoke.c" "face_detector.cpp"
          "shadow_posture.cpp" "frame_broker.cpp" "dashboard.cpp" "web_assets.cpp"
+         "yawn_sync_broker.cpp"
     INCLUDE_DIRS "."
     EMBED_TXTFILES "web/index.html"
     REQUIRES bt nvs_flash esp_timer esp32-camera human_face_detect esp_http_server

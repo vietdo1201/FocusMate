@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 #include "face_observation.h"
 
 #include <inttypes.h>

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 // MediaPipe Tasks 1.0.1 ships an Emscripten loader that expects classic
 // Worker semantics (global `var` bindings and importScripts). Keep this tiny
 // bootstrap classic, then load our application code as an ES module.

@@ -12,7 +12,8 @@ Không suy luận chán nản, không tự sửa fatigue và không gọi `Watch
 
 ## Ranh giới
 
-- Không đổi HTTP API, GATT UUID, BLE payload hay `FaceObservationV1`.
+- Không đổi GATT UUID, BLE payload hay `FaceObservationV1`. HTTP local có broker
+  event V2 tùy chọn theo phiên; firmware/app cũ tiếp tục dùng summary legacy.
 - Frame và landmark chỉ ở RAM; storage chỉ chứa baseline số trên Web và count,
   duration, alert count cùng timestamp cửa sổ gần nhất trong phiên Watch.
 - Tính năng là advisory thử nghiệm, không phải chẩn đoán y tế và không được ghi

@@ -19,6 +19,8 @@ Device Info `capability_bits` bit 5 (`CAP_LOCAL_FRAME_V1`) báo characteristic s
 
 Characteristic `Frame Access Info V1`:
 
+Trong chế độ AP-only, endpoint `192.168.4.1` vẫn đặt cờ `lan_ready` vì HTTP sidecar hoạt động trên setup AP. Watch và Web phải cùng tham gia `FocusMate-Setup` khi ESP chưa kết nối Wi-Fi hạ tầng.
+
 - UUID: `f26cf312-b841-46f5-a172-6b53713a37f3`.
 - Property: encrypted **Read**, không Notify/Write.
 - Value: packed đúng 40 byte, không padding.
@@ -73,10 +75,12 @@ Response `200` **PHẢI** có `Content-Type: image/jpeg`, `Cache-Control: no-sto
 - `X-FocusMate-Frame-Sequence`: uint32 decimal.
 - `X-FocusMate-Observed-Uptime-Ms`: monotonic ESP uptime decimal.
 - `X-FocusMate-Face-Meta-V1`: Base64URL canonical của sidecar public 32 byte ở mục 4.
-- Nhóm tùy chọn `X-FocusMate-Yawn-Sequence`, `-Client`, `-Total`, `-Window`
-  và `-Observed-Uptime-Ms` phải xuất hiện cùng nhau. Watch dùng tổng lớn hơn
-  giữa Web và local để hội tụ mà không cộng đôi cùng một lần ngáp. Nếu nhóm
-  tùy chọn thiếu/hỏng, Watch bỏ riêng summary này nhưng vẫn xử lý JPEG/Pose.
+- Nhóm tùy chọn legacy `X-FocusMate-Yawn-Sequence`, `-Client`, `-Total`,
+  `-Window` và `-Observed-Uptime-Ms` phải xuất hiện cùng nhau. Schema 2 thêm
+  `Schema=2`, `Session` và `Revision`; tổng/window legacy phản chiếu state
+  canonical của broker theo phiên. Watch mới phát hiện V2 qua HTTP, không thêm
+  capability bit hoặc UUID. Route V2 `404` bắt buộc fallback legacy và chỉ bỏ
+  riêng sync metadata nếu header hỏng; JPEG/Pose vẫn được xử lý.
 
 JPEG tối đa 512 KiB, bắt đầu `FF D8`, kết thúc `FF D9`. Watch reject body/header hỏng, quá lớn, sequence replay/out-of-order hoặc uptime lùi trong cùng `boot_id`. Sequence so modular như `FaceSequenceGate`; frame bỏ qua vì backpressure là gap hợp lệ. Header sequence/uptime và FaceMeta **PHẢI** thuộc đúng cùng một snapshot JPEG.
 

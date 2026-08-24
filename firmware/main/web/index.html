@@ -1,3 +1,5 @@
+<!-- SPDX-FileCopyrightText: 2026 vietdo1201 -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!doctype html>
 <html lang="vi">
 <head>
@@ -10,7 +12,6 @@
     main{max-width:1100px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{margin:4px 0;font-size:24px}.muted,.note{color:var(--muted)}.note{font-size:12px}
     .pill{padding:7px 11px;border:1px solid var(--line);border-radius:999px}.grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:16px;margin-top:16px}
     .card{background:#101d2df2;border:1px solid var(--line);border-radius:16px;padding:15px;box-shadow:0 16px 45px #0005}.video{padding:8px;position:relative}
-    .framing-warning{display:none;position:absolute;left:18px;right:18px;bottom:18px;padding:8px 10px;border-radius:9px;background:#4b3509e8;color:#ffe5a5;text-align:center;font-size:12px;font-weight:750;pointer-events:none}.framing-warning.on{display:block}
     canvas{display:block;width:100%;aspect-ratio:4/3;background:#000;border-radius:11px}.posture{font-size:26px;font-weight:900;padding:13px;border-radius:11px;background:#091524;margin-bottom:9px}.posture.bad{background:#542427;color:#ffd8d8}.posture.good{background:#103a32;color:#c8ffe9}.yawn-state{font-size:20px;font-weight:900;padding:11px;border-radius:11px;background:#091524;margin-bottom:9px}.yawn-state.active{background:#49320c;color:#ffe1a0}.yawn-state.alert{background:#5a281e;color:#ffd3bc}
     .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat{background:#091524;border-radius:10px;padding:9px}.stat span{display:block;color:var(--muted);font-size:11px}.stat b{font-size:16px}
     h2{font-size:16px;margin:2px 0 12px}button,input,select{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#091524;color:var(--text)}button{border:0;background:var(--accent);font-weight:800;cursor:pointer;margin-top:9px}.secondary{background:#253b56}.danger{background:#bb3f51}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:block;margin-top:10px;color:var(--muted)}label.check{display:flex;align-items:center;gap:8px}label.check input{width:auto}
@@ -25,7 +26,7 @@
   <div class="top"><div><h1>FocusMate Realtime</h1><div class="note">OV2640 · ESP32-S3 · MediaPipe Pose chạy local</div></div><div id="online" class="pill">Đang kết nối…</div></div>
   <div class="grid">
     <section>
-      <div class="card video"><canvas id="video" width="320" height="240"></canvas><div id="framingWarning" class="framing-warning">Muốn tay chính xác hơn: lùi camera để thấy trọn hai khuỷu và cổ tay.</div></div>
+      <div class="card video"><canvas id="video" width="320" height="240"></canvas></div>
       <div class="card" style="margin-top:16px">
         <h2>Chỉ số realtime</h2>
         <div class="stats">
@@ -92,19 +93,21 @@ const el=id=>document.getElementById(id), canvas=el("video"), ctx=canvas.getCont
 let lastFrame=0,lastStatus=null,running=true,telemetry=[];
 let poseWorker=null,poseReady=false,poseBusy=false,poseFailed=false,poseResult=null,lastPoseLandmarks=null,yawnResult=null,lastMouthLandmarks=null;
 let poseRetryTimer=null,poseRetryCount=0;
-let pendingYawnSync=null,yawnSyncBusy=false,lastYawnSyncSignature="";
+let pendingYawnSync=null,yawnSyncBusy=false,yawnCheckpointBusy=false,canonicalYawnSync=null,lastEspUptimeMs=null,espBootEpoch=0,lastQueuedLocalYawnTotal=0;
 const baselineKey="focusmate_pose_baseline_v2";
 const yawnBaselineKey="focusmate_yawn_baseline_v2";
 ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
 el("displayMirror").checked=localStorage.getItem("focusmate_display_mirror_v2")==="true";el("displayFlip").checked=localStorage.getItem("focusmate_display_flip_v2")==="true";
 const viewerClient=(()=>{const existing=Number(sessionStorage.getItem("focusmate_viewer"));if(Number.isInteger(existing)&&existing>0)return existing;const values=new Uint32Array(1);crypto.getRandomValues(values);const created=values[0]||1;sessionStorage.setItem("focusmate_viewer",String(created));return created})();
+let nextYawnEventId=Number(sessionStorage.getItem("focusmate_yawn_event_id_v2")||0)>>>0;
+try{pendingYawnSync=JSON.parse(sessionStorage.getItem("focusmate_yawn_outbox_v2")||"null")}catch(_){sessionStorage.removeItem("focusmate_yawn_outbox_v2")}
 const labels={NORMAL:"NGỒI ĐÚNG",HEAD_DOWN:"CÚI ĐẦU",LEAN_LEFT:"NGHIÊNG TRÁI",LEAN_RIGHT:"NGHIÊNG PHẢI",TOO_CLOSE:"QUÁ GẦN",SLUMPED:"GÙ / SỤP",FACE_MISSING:"KHÔNG THẤY MẶT",UNKNOWN:"CHƯA XÁC ĐỊNH"};
 const guides={NORMAL:"Đầu và thân đang ở trong vùng baseline cá nhân.",HEAD_DOWN:"Landmark đầu đã hạ và đổi góc so với hai vai.",LEAN_LEFT:"Đầu hoặc thân đang nghiêng về bên trái của bạn.",LEAN_RIGHT:"Đầu hoặc thân đang nghiêng về bên phải của bạn.",TOO_CLOSE:"Kích thước mặt/vai lớn hơn baseline.",SLUMPED:"Đầu hạ kèm co thân liên tục đủ 5 giây.",FACE_MISSING:"Cả Pose và detector ESP không thấy mặt.",UNKNOWN:"Đang chờ landmark đủ rõ hoặc dữ liệu mới từ camera."};
 const calibrationReasons={auto_calibrating:"Đang tự thu tư thế ổn định",manual_calibrating:"Đang dùng tư thế hiện tại làm chuẩn",moving_too_much:"Bạn đang di chuyển; hãy giữ yên tự nhiên",low_visibility:"Cần thấy rõ đầu, hai mắt và hai vai",pose_missing:"Chưa đủ landmark đầu và vai",invalid_geometry:"Khung người chưa đủ rõ để tạo baseline",baseline_ready:"Baseline cá nhân đã sẵn sàng"};
 const yawnLabels={CALIBRATING:"ĐANG HIỆU CHỈNH",IDLE:"KHÔNG NGÁP",MOUTH_OPEN:"ĐANG MỞ MIỆNG",YAWNING:"ĐANG NGÁP",UNAVAILABLE:"KHÔNG ĐỦ DỮ LIỆU"};
 const yawnReasons={collecting_closed_mouth:"Giữ miệng khép tự nhiên để tạo baseline cá nhân.",mouth_moving:"Miệng đang di chuyển; frame này không được tính vào baseline.",baseline_ready:"Baseline miệng đã sẵn sàng.",face_missing:"Chưa thấy đủ landmark môi.",stale:"Dữ liệu khuôn mặt đã cũ.",model_unavailable:"Model ngáp chưa sẵn sàng; Pose vẫn tiếp tục hoạt động.",repeated_yawn:"Ngáp lặp lại; có dấu hiệu buồn ngủ hoặc mệt.",live:"Đang theo dõi chu kỳ mở và khép miệng."};
 const toast=message=>{const node=el("toast");node.textContent=message;node.style.display="block";setTimeout(()=>node.style.display="none",3200)};
-async function api(url,options){const response=await fetch(url,options);const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||response.statusText);return data}
+async function api(url,options){const response=await fetch(url,options),data=await response.json().catch(()=>({}));if(!response.ok){const error=Error(data.error||response.statusText);error.status=response.status;throw error}return data}
 function number(value,digits=2){return Number.isFinite(value)?Number(value).toFixed(digits):"—"}
 function mb(value){return Number.isFinite(value)?(value/1048576).toFixed(1)+" MB":"—"}
 function decodeFaceMeta(response){
@@ -115,11 +118,6 @@ function decodeFaceMeta(response){
 }
 function canonicalPoint(point){const mirror=el("displayMirror").checked,flip=el("displayFlip").checked;return{x:(mirror?1-point.x:point.x)*canvas.width,y:(flip?1-point.y:point.y)*canvas.height}}
 function landmarkQuality(point){return Math.min(point?.visibility??1,point?.presence??1)}
-function updateFramingGuide(landmarks){
-  if(!Array.isArray(landmarks)){el("framingWarning").classList.remove("on");return}
-  const armsInFrame=[13,14,15,16].every(index=>{const point=landmarks[index];return point&&landmarkQuality(point)>=.65&&point.x>=.03&&point.x<=.97&&point.y>=.03&&point.y<=.98});
-  el("framingWarning").classList.toggle("on",!armsInFrame);
-}
 function drawPose(landmarks){
   if(!Array.isArray(landmarks))return;const links=[[2,5],[7,8],[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
   ctx.save();ctx.strokeStyle="#56a8ff";ctx.fillStyle="#56a8ff";ctx.lineWidth=2;
@@ -137,16 +135,24 @@ function renderPose(p){
   const progress=p.calibrationProgress||0,required=p.calibrationRequired||20,stableSeconds=number((p.calibrationStableMs||0)/1000,1);el("calibration").max=required;el("calibration").value=progress;el("calibrationText").textContent=progress+"/"+required+" · "+stableSeconds+" s";el("calibrationReason").textContent=p.calibrated?"Baseline cá nhân đã sẵn sàng và chỉ thích nghi chậm khi NGỒI ĐÚNG ổn định.":(calibrationReasons[p.reason]||"Đang chờ một đoạn tư thế ổn định; không cần giữ đầu thẳng tuyệt đối.");el("geometryThresholds").textContent="Nhãn so với baseline cá nhân; mirror chỉ đổi hiển thị. Đổi nhãn sau khoảng 1 giây, quá gần ≥1,35×, gù giữ ≥5 giây.";
 }
 function renderYawn(y){
-  if(!y)return;const state=y.state||"UNAVAILABLE",required=y.calibrationRequired||20,progress=y.calibrationProgress||0;el("yawnState").textContent=yawnLabels[state]||state;el("yawnState").className="yawn-state "+(y.advisory?"alert":(["MOUTH_OPEN","YAWNING"].includes(state)?"active":""));el("jawOpen").textContent=Number.isFinite(y.jawOpen)?number(y.jawOpen*100,1)+"%":"—";el("mouthRatio").textContent=number(y.mar,3);el("yawnTotal").textContent=String(y.totalCount||0);el("yawnWindow").textContent=(y.eventsInWindow||0)+" / 3";el("yawnCalibration").max=required;el("yawnCalibration").value=progress;el("yawnCalibrationText").textContent=progress+"/"+required+" · "+number((y.calibrationSpanMs||0)/1000,1)+" s";el("yawnReason").textContent=yawnReasons[y.reason]||"Đang theo dõi ngáp local.";el("yawnWarning").textContent="Bạn hơi buồn ngủ rồi hả? Đã ngáp "+(y.eventsInWindow||0)+" lần trong 10 phút.";el("yawnWarning").classList.toggle("on",Boolean(y.advisory));
+  if(!y)return;const state=y.state||"UNAVAILABLE",required=y.calibrationRequired||20,progress=y.calibrationProgress||0,total=canonicalYawnSync?.total_count??y.totalCount??0,windowCount=canonicalYawnSync?.window_count??y.eventsInWindow??0,advisory=windowCount>=3;el("yawnState").textContent=yawnLabels[state]||state;el("yawnState").className="yawn-state "+(advisory?"alert":(["MOUTH_OPEN","YAWNING"].includes(state)?"active":""));el("jawOpen").textContent=Number.isFinite(y.jawOpen)?number(y.jawOpen*100,1)+"%":"—";el("mouthRatio").textContent=number(y.mar,3);el("yawnTotal").textContent=String(total);el("yawnWindow").textContent=windowCount+" / 3";el("yawnCalibration").max=required;el("yawnCalibration").value=progress;el("yawnCalibrationText").textContent=progress+"/"+required+" · "+number((y.calibrationSpanMs||0)/1000,1)+" s";el("yawnReason").textContent=yawnReasons[y.reason]||"Đang theo dõi ngáp local.";el("yawnWarning").textContent="Bạn hơi buồn ngủ rồi hả? Đã ngáp "+windowCount+" lần trong 10 phút.";el("yawnWarning").classList.toggle("on",advisory);
 }
-function queueYawnSync(y,frameSequence){
-  if(!y||!y.calibrated)return;const signature=(y.totalCount||0)+":"+(y.eventsInWindow||0);if(signature===lastYawnSyncSignature)return;lastYawnSyncSignature=signature;
-  pendingYawnSync={client:viewerClient,event:Number(frameSequence)>>>0,total_count:y.totalCount||0,window_count:y.eventsInWindow||0,observed_uptime_ms:Math.max(0,Number(y.timestampMs)||0)};flushYawnSync();
+function applyCanonicalYawn(value){
+  if(!value||value.schema!==2||!value.active||typeof value.session!=="string")return;canonicalYawnSync=value;if(yawnResult)renderYawn(yawnResult)
+}
+function readCanonicalYawn(response){
+  if(response.headers.get("X-FocusMate-Yawn-Schema")!=="2")return;const session=response.headers.get("X-FocusMate-Yawn-Session"),revision=Number(response.headers.get("X-FocusMate-Yawn-Revision")),total=Number(response.headers.get("X-FocusMate-Yawn-Total")),windowCount=Number(response.headers.get("X-FocusMate-Yawn-Window"));if(session&&Number.isFinite(revision)&&Number.isFinite(total)&&Number.isFinite(windowCount)){if(canonicalYawnSync?.session!==session||revision>=canonicalYawnSync.revision)applyCanonicalYawn({schema:2,active:true,session,revision,total_count:total,window_count:windowCount});resumeWebYawnCheckpoint();if(pendingYawnSync&&pendingYawnSync.session!==session){pendingYawnSync=null;sessionStorage.removeItem("focusmate_yawn_outbox_v2")}else if(pendingYawnSync)flushYawnSync()}
+}
+async function resumeWebYawnCheckpoint(){
+  const localTotal=Number(yawnResult?.totalCount||0),localWindow=Math.min(Number(yawnResult?.eventsInWindow||0),localTotal,64);if(yawnCheckpointBusy||!canonicalYawnSync?.session||localTotal<=canonicalYawnSync.total_count)return;yawnCheckpointBusy=true;const epoch=espBootEpoch,ages=Array.from({length:localWindow},(_,index)=>Math.min(600000,index*2000));try{const state=await api("/api/yawn/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:2,action:"resume",session:canonicalYawnSync.session,checkpoint_total:localTotal,recent_event_ages_ms:ages})});if(epoch===espBootEpoch)applyCanonicalYawn(state)}catch(_){}finally{yawnCheckpointBusy=false}
+}
+function queueYawnSync(y,frameSequence,captureUptimeMs){
+  const localTotal=Number(y?.totalCount)||0;if(!y?.calibrated||!y.eventJustCounted||!canonicalYawnSync?.session||localTotal<=lastQueuedLocalYawnTotal)return;lastQueuedLocalYawnTotal=localTotal;nextYawnEventId=(nextYawnEventId+1)>>>0;sessionStorage.setItem("focusmate_yawn_event_id_v2",String(nextYawnEventId));pendingYawnSync={schema:2,session:canonicalYawnSync.session,client:viewerClient,event:nextYawnEventId,frame_sequence:Number(frameSequence)>>>0,observed_uptime_ms:Math.max(0,Number(captureUptimeMs)||Number(lastEspUptimeMs)||0)};sessionStorage.setItem("focusmate_yawn_outbox_v2",JSON.stringify(pendingYawnSync));flushYawnSync();
 }
 async function flushYawnSync(){
-  if(yawnSyncBusy||!pendingYawnSync)return;yawnSyncBusy=true;const value=pendingYawnSync;
-  try{await api("/api/yawn/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});if(pendingYawnSync===value)pendingYawnSync=null}
-  catch(_){setTimeout(flushYawnSync,1000)}finally{yawnSyncBusy=false;if(pendingYawnSync&&pendingYawnSync!==value)flushYawnSync()}
+  if(yawnSyncBusy||!pendingYawnSync)return;yawnSyncBusy=true;const value=pendingYawnSync,epoch=espBootEpoch;
+  try{const state=await api("/api/yawn/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});if(epoch===espBootEpoch){applyCanonicalYawn(state);if(pendingYawnSync===value){pendingYawnSync=null;sessionStorage.removeItem("focusmate_yawn_outbox_v2")}}}
+  catch(error){if(error.status===409&&pendingYawnSync===value&&!value.clock_retry&&Number(lastEspUptimeMs)>0){pendingYawnSync={...value,observed_uptime_ms:Number(lastEspUptimeMs),clock_retry:true};sessionStorage.setItem("focusmate_yawn_outbox_v2",JSON.stringify(pendingYawnSync))}setTimeout(flushYawnSync,1000)}finally{yawnSyncBusy=false;if(pendingYawnSync&&pendingYawnSync!==value)flushYawnSync()}
 }
 function schedulePoseWorkerRetry(stage,error){
   poseWorker?.terminate();poseWorker=null;poseBusy=false;poseReady=false;poseFailed=true;poseRetryCount+=1;clearTimeout(poseRetryTimer);
@@ -157,12 +163,13 @@ function startPoseWorker(){
   clearTimeout(poseRetryTimer);poseRetryTimer=null;
   try{
     poseWorker=new Worker("/assets/pose_worker_bootstrap.js?v=vision-worker-pose-stability-3");
-    poseWorker.onmessage=event=>{const m=event.data||{};if(m.type==="ready"){poseReady=true;poseFailed=false;poseRetryCount=0;el("baselineRevision").textContent=m.yawnAvailable?"Pose Lite v2 + Face v1":"Pose Lite v2"}else if(m.type==="idle"){poseBusy=false}else if(m.type==="baseline"){if(m.baseline)localStorage.setItem(baselineKey,JSON.stringify(m.baseline));else localStorage.removeItem(baselineKey)}else if(m.type==="yawnBaseline"){if(m.baseline)localStorage.setItem(yawnBaselineKey,JSON.stringify(m.baseline));else localStorage.removeItem(yawnBaselineKey)}else if(m.type==="yawnUnavailable"){yawnResult={state:"UNAVAILABLE",reason:"model_unavailable",calibrated:false,calibrationProgress:0,calibrationRequired:20};renderYawn(yawnResult);console.warn("FocusMate Yawn unavailable",m.error||"")}else if(m.type==="result"){poseResult=m.posture;if(m.yawn)yawnResult=m.yawn;lastPoseLandmarks=m.landmarks;lastMouthLandmarks=m.mouthLandmarks;updateFramingGuide(m.landmarks);queueYawnSync(yawnResult,m.sequence);el("poseFps").textContent=number(m.inferenceFps,1);el("poseLatency").textContent=number(m.inferenceMs,0)+" ms";renderPose(poseResult);renderYawn(yawnResult);if(m.sequence===lastFrame){drawPose(m.landmarks);drawMouth(m.mouthLandmarks)}}else if(m.type==="stale"){poseResult=m.posture;if(m.yawn)yawnResult=m.yawn;renderPose(poseResult);renderYawn(yawnResult)}else if(m.type==="error"){schedulePoseWorkerRetry(m.stage,m.error)}};
+    poseWorker.onmessage=event=>{const m=event.data||{};if(m.type==="ready"){poseReady=true;poseFailed=false;poseRetryCount=0;el("baselineRevision").textContent=m.yawnAvailable?"Pose Lite v2 + Face v1":"Pose Lite v2"}else if(m.type==="idle"){poseBusy=false}else if(m.type==="baseline"){if(m.baseline)localStorage.setItem(baselineKey,JSON.stringify(m.baseline));else localStorage.removeItem(baselineKey)}else if(m.type==="yawnBaseline"){if(m.baseline)localStorage.setItem(yawnBaselineKey,JSON.stringify(m.baseline));else localStorage.removeItem(yawnBaselineKey)}else if(m.type==="yawnUnavailable"){yawnResult={state:"UNAVAILABLE",reason:"model_unavailable",calibrated:false,calibrationProgress:0,calibrationRequired:20};renderYawn(yawnResult);console.warn("FocusMate Yawn unavailable",m.error||"")}else if(m.type==="result"){poseResult=m.posture;if(m.yawn)yawnResult=m.yawn;lastPoseLandmarks=m.landmarks;lastMouthLandmarks=m.mouthLandmarks;queueYawnSync(yawnResult,m.sequence,m.captureUptimeMs);el("poseFps").textContent=number(m.inferenceFps,1);el("poseLatency").textContent=number(m.inferenceMs,0)+" ms";renderPose(poseResult);renderYawn(yawnResult);if(m.sequence===lastFrame){drawPose(m.landmarks);drawMouth(m.mouthLandmarks)}}else if(m.type==="stale"){poseResult=m.posture;if(m.yawn)yawnResult=m.yawn;renderPose(poseResult);renderYawn(yawnResult)}else if(m.type==="error"){schedulePoseWorkerRetry(m.stage,m.error)}};
     poseWorker.onerror=event=>schedulePoseWorkerRetry("worker",event.message||"startup error");
     let baseline=null,yawnBaseline=null;try{baseline=JSON.parse(localStorage.getItem(baselineKey)||"null")}catch(_){localStorage.removeItem(baselineKey)}try{yawnBaseline=JSON.parse(localStorage.getItem(yawnBaselineKey)||"null")}catch(_){localStorage.removeItem(yawnBaselineKey)}poseWorker.postMessage({type:"init",baseline,yawnBaseline})
   }catch(error){schedulePoseWorkerRetry("worker",String(error.message||error))}
 }
 function showStatus(s){
+  const currentUptime=Number(s.uptime_ms);if(Number.isFinite(currentUptime)){if(lastEspUptimeMs!==null&&currentUptime+2000<lastEspUptimeMs){espBootEpoch+=1;canonicalYawnSync=null;pendingYawnSync=null;lastQueuedLocalYawnTotal=0;sessionStorage.removeItem("focusmate_yawn_outbox_v2");lastFrame=0;poseWorker?.terminate();poseWorker=null;poseBusy=false;poseReady=false;poseResult=null;yawnResult=null;startPoseWorker()}lastEspUptimeMs=currentUptime}
   lastStatus=s;el("online").textContent=s.wifi.ip+" · "+s.wifi.mdns;
   el("captureFps").textContent=number(s.camera.capture_fps,1);el("jpegFps").textContent=number(s.camera.jpeg_fps,1);el("latency").textContent=s.face.inference_ms+" ms";
   el("faceConfidence").textContent=s.face.confidence==null?"—":number(s.face.confidence*100,1)+"%";el("wifi").textContent=s.wifi.ssid+" "+s.wifi.rssi+" dBm";
@@ -179,7 +186,7 @@ async function refresh(){
 function drawPlaceholder(){ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#91a7c0";ctx.textAlign="center";ctx.fillText("Đang chờ camera…",canvas.width/2,canvas.height/2)}
 async function frameLoop(){
   while(running){
-    try{const response=await fetch("/camera.jpg?after="+lastFrame+"&client="+viewerClient,{cache:"no-store"});if(response.status===409){toast("Camera đang được dashboard khác sử dụng");await new Promise(r=>setTimeout(r,1000));continue}if(response.status===204)continue;if(!response.ok)throw Error(response.statusText);
+    try{const response=await fetch("/camera.jpg?after="+lastFrame+"&client="+viewerClient,{cache:"no-store"});if(response.status===409){toast("Camera đang được dashboard khác sử dụng");await new Promise(r=>setTimeout(r,1000));continue}if(response.status===204)continue;if(!response.ok)throw Error(response.statusText);readCanonicalYawn(response);
       const blob=await response.blob(),bitmap=await createImageBitmap(blob),mirror=el("displayMirror").checked,flip=el("displayFlip").checked,faceMeta=decodeFaceMeta(response),sequence=Number(response.headers.get("X-FocusMate-Frame-Sequence")||lastFrame),captureUptimeMs=Number(response.headers.get("X-FocusMate-Observed-Uptime-Ms")||performance.now());lastFrame=sequence;ctx.save();ctx.translate(mirror?canvas.width:0,flip?canvas.height:0);ctx.scale(mirror?-1:1,flip?-1:1);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);ctx.restore();
       if(faceMeta.detected&&[faceMeta.cx,faceMeta.cy,faceMeta.width,faceMeta.height].every(Number.isFinite)){let {cx,cy,width:w,height:h}=faceMeta;if(mirror)cx=1-cx;if(flip)cy=1-cy;ctx.strokeStyle="#35d39a";ctx.lineWidth=2;ctx.strokeRect((cx-w/2)*canvas.width,(cy-h/2)*canvas.height,w*canvas.width,h*canvas.height);ctx.fillStyle="#35d39a";ctx.fillText(number(faceMeta.confidence*100,1)+"%",(cx-w/2)*canvas.width+4,Math.max(13,(cy-h/2)*canvas.height-4))}
       if(poseReady&&!poseBusy){poseBusy=true;poseWorker.postMessage({type:"frame",bitmap,sequence,captureUptimeMs,faceMeta},[bitmap])}else bitmap.close();

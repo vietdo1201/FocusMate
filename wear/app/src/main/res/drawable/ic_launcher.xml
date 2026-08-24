@@ -1,0 +1,40 @@
+<!-- SPDX-FileCopyrightText: 2026 vietdo1201 -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Nền xanh đen -->
+    <path
+        android:fillColor="#0B1728"
+        android:pathData="M24,2A22,22 0,1 0,24 46A22,22 0,1 0,24 2" />
+
+    <!-- Chữ H -->
+    <path
+        android:strokeColor="#42A5FF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M11,18v12M18,18v12M11,24h7" />
+
+    <!-- Chữ Ọ -->
+    <path
+        android:strokeColor="#42A5FF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M25,18C21,18 21,30 25,30C29,30 29,18 25,18" />
+
+    <!-- Dấu nặng -->
+    <path
+        android:fillColor="#42A5FF"
+        android:pathData="M25,32m-1.5,0a1.5,1.5 0,1 0,3 0a1.5,1.5 0,1 0,-3 0" />
+
+    <!-- Chữ C -->
+    <path
+        android:strokeColor="#42A5FF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M38,20C32,15 30,21 30,24C30,28 33,33 38,28" />
+
+</vector>

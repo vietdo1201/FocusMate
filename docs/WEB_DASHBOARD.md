@@ -29,8 +29,18 @@ Nếu chưa có frame mới trong 1 giây, server trả `204`. Chỉ một reque
 
 Watch dùng đúng `GET /api/watch/frame?after=<uint32>` với `Authorization: FocusMate <32 lowercase hex token>`. Không POST, cookie, mDNS URL hoặc redirect. `200` trả JPEG + ba header `X-FocusMate-Frame-Sequence`, `X-FocusMate-Observed-Uptime-Ms`, `X-FocusMate-Face-Meta-V1`; `204` là chưa có frame mới; `401` buộc đọc lại Frame Access Info qua BLE. Watch và browser có lease độc lập. Toàn bộ validation, status và privacy ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md).
 
-Dashboard gửi summary ngáp bằng `POST /api/yawn/event`; ESP chỉ
-giữ giá trị mới nhất trong RAM và piggyback vào frame Watch.
+Dashboard V2 chỉ gửi khi classifier tạo một event ngáp mới bằng
+`POST /api/yawn/event`. Event mang session 128-bit ngẫu nhiên, client, event id,
+frame sequence và uptime capture của ESP; retry cùng event là idempotent. ESP
+giữ broker theo phiên trong RAM, gộp event Web/Watch cách nhau không quá 1,5
+giây và piggyback state canonical qua nhóm header
+`X-FocusMate-Yawn-Schema/Session/Revision/Total/Window`. Payload và header
+legacy vẫn được giữ để tương thích dần.
+
+Watch quản lý vòng đời phiên qua `GET /api/watch/yawn/state`,
+`POST /api/watch/yawn/session` và `POST /api/watch/yawn/event`; cả ba dùng token
+Frame Access. Checkpoint chỉ chứa tổng số cùng tuổi các event trong cửa sổ 10
+phút, cho phép re-seed sau ESP reboot mà không lưu frame hoặc landmark.
 
 ## Status schema 1
 

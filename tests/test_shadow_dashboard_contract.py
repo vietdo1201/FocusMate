@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 import csv
@@ -21,6 +23,9 @@ class ShadowDashboardContractTest(unittest.TestCase):
         for route in (
             "/camera.jpg",
             "/api/watch/frame",
+            "/api/watch/yawn/state",
+            "/api/watch/yawn/session",
+            "/api/watch/yawn/event",
             "/assets/*",
             "/api/status",
             "/api/viewer/release",
@@ -45,6 +50,53 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("worker-src 'self'", source)
         self.assertIn("X-FocusMate-Face-Meta-V1", source)
         self.assertIn("Authorization", source)
+
+    def test_yawn_sync_v2_is_session_scoped_idempotent_and_legacy_compatible(self) -> None:
+        dashboard = read("firmware/main/dashboard.cpp")
+        broker = read("firmware/main/yawn_sync_broker.cpp")
+        broker_header = read("firmware/main/yawn_sync_broker.h")
+        html = read("firmware/main/web/index.html")
+        watch = read(
+            "wear/app/src/main/kotlin/"
+            "vn/edu/uit/tpkd/wear/cogload/YawnSyncClient.kt"
+        )
+        for token in (
+            "X-FocusMate-Yawn-Schema",
+            "X-FocusMate-Yawn-Session",
+            "X-FocusMate-Yawn-Revision",
+            "legacy_yawn_sync_",
+            "watch_authenticated",
+        ):
+            self.assertIn(token, dashboard)
+        self.assertIn("CROSS_SOURCE_DEDUPE_MS = 1500U", broker_header)
+        self.assertIn("existing.event_id == event.event_id", broker)
+        self.assertIn("yawn_sync_broker_self_test", dashboard + broker)
+        self.assertIn("focusmate_yawn_outbox_v2", html)
+        self.assertIn("captureUptimeMs", html)
+        self.assertNotIn("observed_uptime_ms:Math.max(0,Number(y.timestampMs)", html)
+        self.assertIn("lastQueuedLocalYawnTotal", html)
+        self.assertIn("error.status===409", html)
+        self.assertIn("clock_retry:true", html)
+        self.assertIn("lastEspUptimeMs", html)
+        self.assertIn("espBootEpoch", html)
+        self.assertIn("currentUptime+2000<lastEspUptimeMs", html)
+        self.assertIn(
+            "canonicalYawnSync=null;pendingYawnSync=null;"
+            'lastQueuedLocalYawnTotal=0;sessionStorage.removeItem("focusmate_yawn_outbox_v2");lastFrame=0',
+            html,
+        )
+        self.assertIn("checkpoint_total", watch)
+        self.assertIn("recent_event_ages_ms", watch)
+        self.assertIn("HTTP_NOT_FOUND", watch)
+        self.assertIn("YAWN_BLE_OPCODE_SESSION_RESUME", read("firmware/main/focusmate_main.c"))
+        self.assertIn("YawnBleV2.resumeCommand", read(
+            "wear/app/src/main/kotlin/"
+            "vn/edu/uit/tpkd/wear/cogload/FaceObservationBleClient.kt"
+        ))
+        self.assertIn('action:"resume"', html)
+        worker = read("firmware/main/web/pose_worker.mjs")
+        self.assertIn("const yawnForMessage = lastYawn", worker)
+        self.assertIn("eventJustCounted: false", worker)
 
     def test_direct_jpeg_camera_and_bounded_broker_are_preserved(self) -> None:
         camera = read("firmware/main/camera_smoke.c")
@@ -100,11 +152,13 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("DNS_TYPE_A", dns)
         self.assertIn('"302 Found"', source)
         self.assertIn('"http://focusmate.local/"', source)
+        self.assertIn("kAdvertisedEndpointReady = 1U << 0U", source)
+        self.assertNotIn("(wifi.station_online ? 1U : 0U) | kTokenRequired", source)
 
     def test_kotlin_and_firmware_thresholds_match(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
         kotlin = read(
-            "soucre_code/from_On_Hand_3_android_wear/app/src/main/kotlin/"
+            "wear/app/src/main/kotlin/"
             "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
         )
         expected = {
@@ -122,7 +176,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
     def test_live_confidence_debounce_and_slumped_timer_are_fail_safe(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
         kotlin = read(
-            "soucre_code/from_On_Hand_3_android_wear/app/src/main/kotlin/"
+            "wear/app/src/main/kotlin/"
             "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
         )
         dashboard = read("firmware/main/dashboard.cpp")
@@ -194,8 +248,9 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("minTrackingConfidence: 0.65", worker)
         self.assertIn("smoothLandmarksForDisplay", worker)
         self.assertIn("posture classification continues to use raw landmarks", worker)
-        self.assertIn('id="framingWarning"', read("firmware/main/web/index.html"))
-        self.assertIn("landmarkQuality(point)>=.65", read("firmware/main/web/index.html"))
+        self.assertNotIn('id="framingWarning"', read("firmware/main/web/index.html"))
+        self.assertNotIn("Muốn tay chính xác hơn", read("firmware/main/web/index.html"))
+        self.assertIn("function landmarkQuality(point)", read("firmware/main/web/index.html"))
         self.assertIn("classifier-3", worker)
         self.assertIn('asset->content_encoding', assets)
         self.assertIn('"no-cache"', assets)
@@ -203,7 +258,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
     def test_subject_relative_horizontal_axis_invalidates_old_baseline(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
         kotlin = read(
-            "soucre_code/from_On_Hand_3_android_wear/app/src/main/kotlin/"
+            "wear/app/src/main/kotlin/"
             "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
         )
         self.assertIn("kBaselineRevision = 2U", firmware)

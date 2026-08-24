@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
@@ -34,6 +36,12 @@ void ble_store_config_init(void);
 #define DEVICE_INFO_SIZE 34U
 #define FRAME_ACCESS_INFO_SIZE 40U
 #define FRAME_HEADER_SIZE 8U
+#define YAWN_BLE_STATE_SIZE 32U
+#define YAWN_BLE_CONTROL_MAX_SIZE 150U
+#define YAWN_BLE_OPCODE_SESSION_RESUME 0x10U
+#define YAWN_BLE_OPCODE_EVENT 0x11U
+#define YAWN_BLE_OPCODE_STATE_REQUEST 0x12U
+#define YAWN_BLE_OPCODE_SESSION_END 0x13U
 #define DEFAULT_NOTIFICATION_CAPACITY 20U
 #define MAX_NOTIFICATION_CAPACITY 514U
 /* Stub transport does not claim detector/camera readiness (bits 0/1). */
@@ -52,18 +60,40 @@ static uint8_t message_id;
 static uint32_t notification_attempts;
 static uint32_t notification_failures;
 static uint8_t consecutive_notification_failures;
+static uint64_t notification_failure_started_ms;
 static uint32_t observations_emitted;
 static uint32_t capabilities = BASE_CAPABILITIES;
+static portMUX_TYPE ble_state_mux = portMUX_INITIALIZER_UNLOCKED;
+
+typedef struct {
+    uint16_t connection;
+    bool subscribed;
+    bool streaming;
+    uint8_t rate_dhz;
+} transport_state_t;
+
+static transport_state_t transport_state(void)
+{
+    transport_state_t state;
+    taskENTER_CRITICAL(&ble_state_mux);
+    state.connection = active_connection;
+    state.subscribed = subscribed;
+    state.streaming = streaming;
+    state.rate_dhz = rate_dhz;
+    taskEXIT_CRITICAL(&ble_state_mux);
+    return state;
+}
 
 void focusmate_ble_snapshot(focusmate_ble_snapshot_t *out)
 {
     if (out == NULL) return;
-    const bool connected = active_connection != BLE_HS_CONN_HANDLE_NONE;
+    const transport_state_t state = transport_state();
+    const bool connected = state.connection != BLE_HS_CONN_HANDLE_NONE;
     out->connected = connected;
-    out->subscribed = subscribed;
-    out->streaming = streaming;
-    out->mtu = connected ? ble_att_mtu(active_connection) : 0U;
-    out->rate_dhz = rate_dhz;
+    out->subscribed = state.subscribed;
+    out->streaming = state.streaming;
+    out->mtu = connected ? ble_att_mtu(state.connection) : 0U;
+    out->rate_dhz = state.rate_dhz;
     out->observations = observations_emitted;
     out->notification_attempts = notification_attempts;
     out->notification_failures = notification_failures;
@@ -93,6 +123,29 @@ static void put_le(uint8_t *target, uint64_t value, size_t count)
     }
 }
 
+static uint64_t get_le(const uint8_t *source, size_t count)
+{
+    uint64_t value = 0U;
+    for (size_t index = 0; index < count; ++index) value |= (uint64_t)source[index] << (index * 8U);
+    return value;
+}
+
+static void notify_payload(const uint8_t *payload, size_t length);
+
+static void notify_yawn_ble_state(const focusmate_yawn_ble_state_t *state,
+                                  bool acknowledge, uint32_t acknowledged_event_id)
+{
+    if (state == NULL || !state->active || state->revision == 0U) return;
+    uint8_t payload[YAWN_BLE_STATE_SIZE] = {0x59U, 0x32U, 0U};
+    payload[2] = (uint8_t)(1U | (acknowledge ? 2U : 0U));
+    memcpy(payload + 3U, state->session, FOCUSMATE_YAWN_BLE_SESSION_BYTES);
+    put_le(payload + 19U, state->revision, 4U);
+    put_le(payload + 23U, state->total, 4U);
+    payload[27] = state->window;
+    put_le(payload + 28U, acknowledged_event_id, 4U);
+    notify_payload(payload, sizeof payload);
+}
+
 static int device_info_access(uint16_t connection, uint16_t attribute,
                               struct ble_gatt_access_ctxt *context, void *arg)
 {
@@ -106,7 +159,7 @@ static int device_info_access(uint16_t connection, uint16_t attribute,
     put_le(info + 19, (uint64_t)(esp_timer_get_time() / 1000), 8);
     info[27] = 4;
     info[28] = 16;
-    info[29] = rate_dhz;
+    info[29] = transport_state().rate_dhz;
     put_le(info + 30, capabilities, 4);
     return os_mbuf_append(context->om, info, sizeof info) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
@@ -117,7 +170,7 @@ static int control_access(uint16_t connection, uint16_t attribute,
     (void)connection;
     (void)attribute;
     (void)arg;
-    uint8_t command[2] = {0};
+    uint8_t command[YAWN_BLE_CONTROL_MAX_SIZE] = {0};
     const uint16_t length = OS_MBUF_PKTLEN(context->om);
     if (length < 1U || length > sizeof command || ble_hs_mbuf_to_flat(context->om, command, length, NULL) != 0) {
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
@@ -125,25 +178,76 @@ static int control_access(uint16_t connection, uint16_t attribute,
     switch (command[0]) {
         case 0x01:
             if (length != 2U || command[1] < 10U || command[1] > 100U) return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+            taskENTER_CRITICAL(&ble_state_mux);
             rate_dhz = command[1];
             streaming = true;
+            taskEXIT_CRITICAL(&ble_state_mux);
             break;
         case 0x02:
             if (length != 1U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            taskENTER_CRITICAL(&ble_state_mux);
             streaming = false;
+            taskEXIT_CRITICAL(&ble_state_mux);
             break;
         case 0x03:
             if (length != 2U || command[1] < 10U || command[1] > 100U) return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+            taskENTER_CRITICAL(&ble_state_mux);
             rate_dhz = command[1];
+            taskEXIT_CRITICAL(&ble_state_mux);
             break;
         case 0x04:
             if (length != 1U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             message_id = 0;
             break;
+        case YAWN_BLE_OPCODE_SESSION_RESUME: {
+            if (length < 22U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            const uint8_t count = command[21];
+            if (count > FOCUSMATE_YAWN_BLE_MAX_RECENT_EVENTS ||
+                length != (uint16_t)(22U + (uint16_t)count * 2U)) {
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            uint16_t ages[FOCUSMATE_YAWN_BLE_MAX_RECENT_EVENTS] = {0};
+            for (uint8_t index = 0; index < count; ++index) {
+                ages[index] = (uint16_t)get_le(command + 22U + (size_t)index * 2U, 2U);
+            }
+            focusmate_yawn_ble_state_t yawn_state = {0};
+            if (!focusmate_dashboard_yawn_ble_resume(command + 1U,
+                    (uint32_t)get_le(command + 17U, 4U), ages, count, &yawn_state)) {
+                return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+            }
+            notify_yawn_ble_state(&yawn_state, false, 0U);
+            break;
+        }
+        case YAWN_BLE_OPCODE_EVENT: {
+            if (length != 37U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            const uint32_t event_id = (uint32_t)get_le(command + 21U, 4U);
+            focusmate_yawn_ble_state_t yawn_state = {0};
+            bool accepted = focusmate_dashboard_yawn_ble_event(
+                command + 1U, (uint32_t)get_le(command + 17U, 4U), event_id,
+                (uint32_t)get_le(command + 25U, 4U), get_le(command + 29U, 8U), &yawn_state);
+            if (!accepted) accepted = focusmate_dashboard_yawn_ble_state(&yawn_state);
+            if (accepted) notify_yawn_ble_state(&yawn_state, accepted &&
+                memcmp(yawn_state.session, command + 1U, FOCUSMATE_YAWN_BLE_SESSION_BYTES) == 0,
+                event_id);
+            break;
+        }
+        case YAWN_BLE_OPCODE_STATE_REQUEST: {
+            if (length != 17U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            focusmate_yawn_ble_state_t yawn_state = {0};
+            if (focusmate_dashboard_yawn_ble_state(&yawn_state)) {
+                notify_yawn_ble_state(&yawn_state, false, 0U);
+            }
+            break;
+        }
+        case YAWN_BLE_OPCODE_SESSION_END:
+            if (length != 17U) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            (void)focusmate_dashboard_yawn_ble_end(command + 1U);
+            break;
         default:
             return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
     }
-    ESP_LOGI(TAG, "control opcode=%u rate_dhz=%u streaming=%d", command[0], rate_dhz, streaming);
+    const transport_state_t state = transport_state();
+    ESP_LOGI(TAG, "control opcode=%u rate_dhz=%u streaming=%d", command[0], state.rate_dhz, state.streaming);
     return 0;
 }
 
@@ -243,42 +347,51 @@ static void protocol_self_test(void)
     ESP_LOGI(TAG, "C canonical golden self-test passed");
 }
 
-static void notify_bytes(const uint8_t *data, size_t length)
+static void notify_bytes(uint16_t connection, const uint8_t *data, size_t length)
 {
     ++notification_attempts;
     struct os_mbuf *buffer = ble_hs_mbuf_from_flat(data, (uint16_t)length);
     if (buffer == NULL) {
         ++notification_failures;
-        if (++consecutive_notification_failures == 5U && active_connection != BLE_HS_CONN_HANDLE_NONE) {
-            ESP_LOGW(TAG, "five consecutive notify allocation failures; recycling BLE link");
-            (void)ble_gap_terminate(active_connection, BLE_ERR_REM_USER_CONN_TERM);
+        ++consecutive_notification_failures;
+        const uint64_t current = (uint64_t)(esp_timer_get_time() / 1000);
+        if (notification_failure_started_ms == 0U) notification_failure_started_ms = current;
+        if (current - notification_failure_started_ms >= 8000U && connection != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGW(TAG, "notify allocation stalled for 8s; recycling BLE link");
+            (void)ble_gap_terminate(connection, BLE_ERR_REM_USER_CONN_TERM);
         }
         return;
     }
-    const int rc = ble_gatts_notify_custom(active_connection, observation_handle, buffer);
+    const int rc = ble_gatts_notify_custom(connection, observation_handle, buffer);
     if (rc != 0) {
         ++notification_failures;
         ESP_LOGW(TAG, "notify failed rc=%d", rc);
-        if (++consecutive_notification_failures == 5U && active_connection != BLE_HS_CONN_HANDLE_NONE) {
-            ESP_LOGW(TAG, "five consecutive notify failures; recycling BLE link");
-            (void)ble_gap_terminate(active_connection, BLE_ERR_REM_USER_CONN_TERM);
+        ++consecutive_notification_failures;
+        const uint64_t current = (uint64_t)(esp_timer_get_time() / 1000);
+        if (notification_failure_started_ms == 0U) notification_failure_started_ms = current;
+        if (current - notification_failure_started_ms >= 8000U && connection != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGW(TAG, "notify path stalled for 8s; recycling BLE link");
+            (void)ble_gap_terminate(connection, BLE_ERR_REM_USER_CONN_TERM);
         }
     } else {
         consecutive_notification_failures = 0U;
+        notification_failure_started_ms = 0U;
     }
 }
 
 static void notify_payload(const uint8_t *payload, size_t length)
 {
+    const transport_state_t state = transport_state();
+    if (state.connection == BLE_HS_CONN_HANDLE_NONE) return;
     struct ble_gap_conn_desc description;
-    if (ble_gap_conn_find(active_connection, &description) != 0 || !description.sec_state.encrypted) {
+    if (ble_gap_conn_find(state.connection, &description) != 0 || !description.sec_state.encrypted) {
         return;
     }
-    const uint16_t negotiated_mtu = ble_att_mtu(active_connection);
+    const uint16_t negotiated_mtu = ble_att_mtu(state.connection);
     size_t notification_capacity = negotiated_mtu > 3U ? negotiated_mtu - 3U : DEFAULT_NOTIFICATION_CAPACITY;
     if (notification_capacity > MAX_NOTIFICATION_CAPACITY) notification_capacity = MAX_NOTIFICATION_CAPACITY;
     if (length <= notification_capacity) {
-        notify_bytes(payload, length);
+        notify_bytes(state.connection, payload, length);
     } else {
         if (notification_capacity <= FRAME_HEADER_SIZE) return;
         const size_t chunk_capacity = notification_capacity - FRAME_HEADER_SIZE;
@@ -293,7 +406,7 @@ static void notify_payload(const uint8_t *payload, size_t length)
                 (uint8_t)crc, (uint8_t)(crc >> 8U),
             };
             memcpy(frame + FRAME_HEADER_SIZE, payload + offset, part);
-            notify_bytes(frame, FRAME_HEADER_SIZE + part);
+            notify_bytes(state.connection, frame, FRAME_HEADER_SIZE + part);
         }
         ++message_id;
     }
@@ -355,8 +468,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
+                taskENTER_CRITICAL(&ble_state_mux);
                 active_connection = event->connect.conn_handle;
+                taskEXIT_CRITICAL(&ble_state_mux);
                 consecutive_notification_failures = 0U;
+                notification_failure_started_ms = 0U;
                 ESP_LOGI(TAG, "connected handle=%u", active_connection);
             } else {
                 advertise();
@@ -365,10 +481,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         case BLE_GAP_EVENT_DISCONNECT:
             ESP_LOGI(TAG, "disconnected reason=%d (%s)", event->disconnect.reason,
                      disconnect_reason_name(event->disconnect.reason));
+            taskENTER_CRITICAL(&ble_state_mux);
             active_connection = BLE_HS_CONN_HANDLE_NONE;
             subscribed = false;
             streaming = false;
+            taskEXIT_CRITICAL(&ble_state_mux);
             consecutive_notification_failures = 0U;
+            notification_failure_started_ms = 0U;
             advertise();
             break;
         case BLE_GAP_EVENT_ENC_CHANGE:
@@ -388,8 +507,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         case BLE_GAP_EVENT_SUBSCRIBE:
             if (event->subscribe.attr_handle == observation_handle) {
+                taskENTER_CRITICAL(&ble_state_mux);
                 subscribed = event->subscribe.cur_notify != 0;
-                ESP_LOGI(TAG, "observation subscribed=%d mtu=%u", subscribed,
+                const bool current_subscribed = subscribed;
+                taskEXIT_CRITICAL(&ble_state_mux);
+                ESP_LOGI(TAG, "observation subscribed=%d mtu=%u", current_subscribed,
                          ble_att_mtu(event->subscribe.conn_handle));
             }
             break;
@@ -424,8 +546,10 @@ static void observation_task(void *arg)
 {
     (void)arg;
     char payload[320];
+    const char *warmup_flags[] = {"sensor_warmup"};
     while (true) {
-        if (streaming && subscribed && active_connection != BLE_HS_CONN_HANDLE_NONE) {
+        const transport_state_t state = transport_state();
+        if (state.streaming && state.subscribed && state.connection != BLE_HS_CONN_HANDLE_NONE) {
             focusmate_face_result_t result = {0};
             size_t length = 0U;
             if (focusmate_face_detector_latest(&result)) {
@@ -437,10 +561,16 @@ static void observation_task(void *arg)
                     length = focusmate_encode_no_face(payload, sizeof payload, sequence++,
                                                       result.observed_uptime_ms, NULL, 0);
                 }
+            } else {
+                /* Keep transport liveness separate from detector freshness.
+                   The Watch accepts the heartbeat but cannot treat it as a
+                   usable face sample. */
+                length = focusmate_encode_no_face(payload, sizeof payload, sequence++,
+                    (uint64_t)(esp_timer_get_time() / 1000), warmup_flags, 1U);
             }
             if (length > 0U) notify_payload((const uint8_t *)payload, length);
         }
-        const TickType_t delay = pdMS_TO_TICKS(10000U / rate_dhz);
+        const TickType_t delay = pdMS_TO_TICKS(10000U / state.rate_dhz);
         vTaskDelay(delay > 0 ? delay : 1);
     }
 }

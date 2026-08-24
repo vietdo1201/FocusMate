@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 export const YAWN_CLASSIFIER_VERSION = "YAWN_MAR_V3";
 
 const REQUIRED_SAMPLES = 20;

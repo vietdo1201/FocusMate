@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 vietdo1201
+// SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";

@@ -85,6 +85,14 @@ Watch chỉ đọc khi capability bit 5 bật, sau mỗi connect/reconnect và k
 | `0x02` | — | STOP: dừng phát, giữ kết nối |
 | `0x03` | `[u8 rate_dhz]` | SET_RATE |
 | `0x04` | — | RESYNC: reset `msg_id`, `sequence` giữ nguyên |
+| `0x10` | `[session:16][checkpoint:u32le][count:u8][age_seconds:u16le × count]` | YAWN_SESSION_RESUME V2 |
+| `0x11` | `[session:16][client:u32le][event:u32le][frame_sequence:u32le][observed_uptime:u64le]` | YAWN_EVENT V2 |
+| `0x12` | `[session:16]` | YAWN_STATE_REQUEST V2 |
+| `0x13` | `[session:16]` | YAWN_SESSION_END V2 |
+
+Các opcode `0x10..0x13` là extension tương thích ngược trên Control UUID hiện có. Firmware cũ trả ATT `request not supported`; Watch mới khi đó giữ link posture và dùng HTTP fallback.
+
+Sau resume/event/request hợp lệ, ESP phát payload nhị phân 32 byte qua Observation notification: magic `59 32`, flags, session 16 byte, revision/total `u32le`, window `u8`, ACK event `u32le`. Watch chỉ yêu cầu payload này sau khi chủ động gửi opcode V2, nên app cũ không nhận loại notification mới.
 
 - `rate_dhz` hợp lệ trong `10..100` (1,0–10,0 Hz). Ngoài khoảng → ESP **PHẢI** trả `ATT_ERROR_VALUE_NOT_ALLOWED (0x13)` và giữ rate cũ.
 - Opcode lạ → `ATT_ERROR_REQUEST_NOT_SUPPORTED (0x06)`.
@@ -213,6 +221,11 @@ Còn 195 byte dự phòng dưới cap 512. Mọi observation hợp lệ theo con
 - ESP **NÊN** yêu cầu connection interval 30–50 ms và slave latency 0 khi đang stream.
 - Ở MTU 23 một observation 317 byte cần 27 chunk; ở 5 Hz là 135 notification/s. ESP **NÊN** giảm rate hoặc Watch **NÊN** chấp nhận rate thấp hơn khi MTU nhỏ. Rate thực tế đạt được **PHẢI** ghi trong report thiết bị.
 - Mất kết nối BLE **CẤM** chặn phiên học. Watch reconnect với backoff (1 s, 2 s, 4 s, … tối đa 30 s) và hiển thị `disconnected`; session, motion/HR và Rule Engine tiếp tục chạy.
+- Backoff có jitter ±20%; thiết bị đã bond được thử trực tiếp trước khi scan.
+  Khi Bluetooth tắt, Watch chờ state broadcast thay vì scan lặp.
+- Watch dùng 5 Hz khi màn hình bật, 2 Hz khi tắt và 1 Hz khi thermal severe;
+  `SET_RATE` giữ nguyên connection. Watchdog dùng rate thực tế, tối thiểu 3 giây
+  trước START recovery và 8 giây trước khi tái tạo GATT.
 
 ## 11. Danh sách reject của `decode`
 
