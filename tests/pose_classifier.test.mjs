@@ -22,6 +22,9 @@ const neutral = Object.freeze({
   hasHips: true,
 });
 
+const LABEL_DEBOUNCE_MS = 1000;
+const DEFAULT_SAMPLE_INTERVAL_MS = 300;
+
 function calibrated() {
   const classifier = new PosePostureClassifier({fingerprint: "test-profile-v1"});
   for (let index = 0; index < 20; index += 1) {
@@ -36,7 +39,14 @@ function calibrated() {
   return classifier;
 }
 
-function settle(classifier, features, startSequence, startMs, count = 3, spacing = 300) {
+function settle(
+  classifier,
+  features,
+  startSequence,
+  startMs,
+  count = Math.ceil(LABEL_DEBOUNCE_MS / DEFAULT_SAMPLE_INTERVAL_MS) + 1,
+  spacing = DEFAULT_SAMPLE_INTERVAL_MS,
+) {
   let result;
   for (let index = 0; index < count; index += 1) {
     result = classifier.observeFeatures({
@@ -110,7 +120,7 @@ test("head down, too close, slumped and missing use distinct evidence", () => {
   assert.equal(result.state, "SLUMPED");
 
   const missing = calibrated();
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     result = missing.observeFeatures({sequence: 30 + index, timestampMs: 7000 + index * 300, features: null, faceDetected: false});
   }
   assert.equal(result.state, "FACE_MISSING");
@@ -124,7 +134,7 @@ test("duplicate frames do not advance debounce", () => {
     classifier.observeFeatures({sequence: 30, timestampMs: 7000, features: leaned, faceDetected: true});
   }
   assert.notEqual(classifier.snapshot().state, "LEAN_LEFT");
-  const result = settle(classifier, leaned, 31, 7300, 2);
+  const result = settle(classifier, leaned, 31, 7300, 4);
   assert.equal(result.state, "LEAN_LEFT");
 });
 
@@ -132,11 +142,11 @@ test("explicit exit hysteresis and monotonic stale transition are fail-closed", 
   const classifier = calibrated();
   let result = settle(classifier, {...neutral, faceScale: 0.29}, 30, 7000);
   assert.equal(result.state, "TOO_CLOSE");
-  result = settle(classifier, {...neutral, faceScale: 0.245}, 33, 7900);
+  result = settle(classifier, {...neutral, faceScale: 0.245}, 35, 8500);
   assert.equal(result.state, "TOO_CLOSE", "1.225x remains TOO_CLOSE until below 1.20x");
-  result = settle(classifier, {...neutral, faceScale: 0.235}, 36, 8800);
+  result = settle(classifier, {...neutral, faceScale: 0.235}, 40, 10000);
   assert.equal(result.state, "NORMAL");
-  assert.equal(classifier.stale(12_500).state, "UNKNOWN");
+  assert.equal(classifier.stale(14_201).state, "UNKNOWN");
 });
 
 test("camera mirror and rotation are undone before anatomical extraction", () => {
@@ -184,8 +194,9 @@ test("shared landmark golden vectors preserve label vocabulary and precedence", 
       torsoLength: Number(row.torso_length),
     };
     const holdMs = Number(row.hold_ms);
-    const frames = Math.max(3, Math.ceil(holdMs / 300) + 3);
-    const result = settle(classifier, features, 30, 7000, frames, 300);
+    const requiredDurationMs = Math.max(LABEL_DEBOUNCE_MS, holdMs) + DEFAULT_SAMPLE_INTERVAL_MS;
+    const frames = Math.ceil(requiredDurationMs / DEFAULT_SAMPLE_INTERVAL_MS) + 1;
+    const result = settle(classifier, features, 30, 7000, frames, DEFAULT_SAMPLE_INTERVAL_MS);
     assert.equal(result.state, row.expected, row.name);
   }
 });

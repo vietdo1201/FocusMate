@@ -15,6 +15,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Verify firmware and Web contracts
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+          node --test tests/*.test.mjs
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

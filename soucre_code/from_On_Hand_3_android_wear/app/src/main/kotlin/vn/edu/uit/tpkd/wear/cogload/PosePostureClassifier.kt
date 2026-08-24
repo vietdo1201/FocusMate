@@ -80,7 +80,6 @@ data class PoseGeometryConfig(
     val torsoCompressionEnter: Double = 0.10,
     val slumpedMinimumMs: Long = 5_000L,
     val hysteresisFactor: Double = 0.65,
-    val stableResults: Int = 3,
     val labelDebounceMs: Long = 1_000L,
     val invalidHoldMs: Long = 800L,
 )
@@ -176,7 +175,7 @@ class PosePostureClassifier(
 
     fun isCalibrated(): Boolean = baseline != null
 
-    /** Freshness is monotonic and bypasses the normal three-frame debounce. */
+    /** Freshness is monotonic and bypasses the normal time-based label debounce. */
     fun stale(nowMonoMs: Long): PoseClassifierUpdate? {
         val observedAt = lastObservedAtMs ?: return null
         if (nowMonoMs - observedAt <= config.maximumContinuousGapMs || stableState == PostureState.UNKNOWN) return null

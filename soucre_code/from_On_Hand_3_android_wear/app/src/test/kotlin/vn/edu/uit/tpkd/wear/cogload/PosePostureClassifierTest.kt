@@ -61,13 +61,13 @@ class PosePostureClassifierTest {
     @Test
     fun missingPoseAndEspFaceMustAgreeBeforeFaceMissing() {
         val classifier = calibrated()
-        repeat(3) { index -> classifier.observeFeatures(40L + index, 7_000L + index * 250L, null, false) }
+        repeat(4) { index -> classifier.observeFeatures(40L + index, 7_000L + index * 250L, null, false) }
         assertEquals(
             PostureState.FACE_MISSING,
-            classifier.observeFeatures(43, 7_750, null, false).classification?.state,
+            classifier.observeFeatures(44, 8_000, null, false).classification?.state,
         )
-        repeat(3) { index -> classifier.observeFeatures(44L + index, 8_000L + index * 250L, null, true) }
-        val disagreement = classifier.observeFeatures(47, 8_750, null, true)
+        repeat(4) { index -> classifier.observeFeatures(45L + index, 8_250L + index * 250L, null, true) }
+        val disagreement = classifier.observeFeatures(49, 9_250, null, true)
         assertEquals(PostureState.UNKNOWN, disagreement.classification?.state)
         assertEquals("pose_missing_esp_face_present", disagreement.calibration.reason)
     }
@@ -75,28 +75,28 @@ class PosePostureClassifierTest {
     @Test
     fun validPoseRemainsPrimaryWhenEspDetectorTemporarilyMissesFaceAndStaleIsImmediate() {
         val classifier = calibratedAndSettled()
-        repeat(3) { index ->
+        repeat(4) { index ->
             classifier.observeFeatures(40L + index, 7_000L + index * 250L, neutral(headRollDeg = 13.0), false)
         }
         assertEquals(
             PostureState.LEAN_LEFT,
-            classifier.observeFeatures(43, 7_750, neutral(headRollDeg = 13.0), false).classification?.state,
+            classifier.observeFeatures(44, 8_000, neutral(headRollDeg = 13.0), false).classification?.state,
         )
         assertEquals(PostureState.UNKNOWN, classifier.stale(11_001)?.classification?.state)
         assertNull(classifier.stale(11_100))
     }
 
     @Test
-    fun stateChangesNeedThreeResultsAndHysteresisPreventsBoundaryFlicker() {
+    fun stateChangesNeedOneSecondAndHysteresisPreventsBoundaryFlicker() {
         val classifier = calibratedAndSettled()
         val leaned = neutral(headRollDeg = 13.0)
         assertEquals(PostureState.NORMAL, classifier.observeFeatures(40, 7_000, leaned, true).classification?.state)
-        assertEquals(PostureState.NORMAL, classifier.observeFeatures(41, 7_250, leaned, true).classification?.state)
-        assertEquals(PostureState.LEAN_LEFT, classifier.observeFeatures(42, 7_500, leaned, true).classification?.state)
+        assertEquals(PostureState.NORMAL, classifier.observeFeatures(41, 7_999, leaned, true).classification?.state)
+        assertEquals(PostureState.LEAN_LEFT, classifier.observeFeatures(42, 8_000, leaned, true).classification?.state)
         repeat(3) { index ->
             assertEquals(
                 PostureState.LEAN_LEFT,
-                classifier.observeFeatures(43L + index, 7_750L + index * 250L, neutral(headRollDeg = 8.0), true).classification?.state,
+                classifier.observeFeatures(43L + index, 8_250L + index * 250L, neutral(headRollDeg = 8.0), true).classification?.state,
             )
         }
     }
@@ -121,10 +121,12 @@ class PosePostureClassifierTest {
                 torsoLength = row.getValue("torso_length").toDouble(),
             )
             val holdMs = row.getValue("hold_ms").toLong()
-            val frames = maxOf(3, ceil(holdMs / 300.0).toInt() + 3)
+            val sampleIntervalMs = 300L
+            val requiredDurationMs = maxOf(PoseGeometryConfig().labelDebounceMs, holdMs) + sampleIntervalMs
+            val frames = ceil(requiredDurationMs / sampleIntervalMs.toDouble()).toInt() + 1
             var result: PoseClassifierUpdate? = null
             repeat(frames) { index ->
-                result = classifier.observeFeatures(40L + index, 7_000L + index * 300L, features, true)
+                result = classifier.observeFeatures(40L + index, 7_000L + index * sampleIntervalMs, features, true)
             }
             assertEquals(row.getValue("name"), PostureState.valueOf(row.getValue("expected")), result?.classification?.state)
         }
@@ -146,7 +148,7 @@ class PosePostureClassifierTest {
 
     private fun calibratedAndSettled(): PosePostureClassifier = calibrated().also { classifier ->
         repeat(2) { index -> classifier.observeFeatures(30L + index, 5_200L + index * 250L, neutral(), true) }
-        assertEquals(PostureState.NORMAL, classifier.observeFeatures(32, 5_700, neutral(), true).classification?.state)
+        assertEquals(PostureState.NORMAL, classifier.observeFeatures(32, 6_000, neutral(), true).classification?.state)
     }
 
     private fun neutral(
