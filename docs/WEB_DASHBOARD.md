@@ -2,14 +2,14 @@
 
 Tài liệu này là contract HTTP cho dashboard local của ADR 0005 và đường pose local của ADR 0006. JSON dùng UTF-8, `Content-Type: application/json`, số geometry chuẩn hóa trong `[0,1]`, timestamp/age dùng monotonic milliseconds. Sidecar Watch normative nằm ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md).
 
-## Discovery và session
+## Discovery và truy cập
 
-- LAN URL chuẩn: `http://focusmate.local/`.
-- Setup fallback: `http://192.168.4.1/` trên AP `FocusMate-Setup`.
+- URL chuẩn duy nhất trên cả LAN và AP `FocusMate-Setup`: `http://focusmate.local/`.
+- Trên LAN, hostname được công bố bằng mDNS và trỏ tới IP DHCP của STA. Trên AP, mDNS cùng DNS nội bộ của ESP đều trỏ hostname này tới `192.168.4.1`, nên vẫn dùng đúng URL khi mạng setup không có Internet.
+- `GET http://<IPv4>/` trả `302` về `http://focusmate.local/` để browser chỉ có một origin/localStorage/cache. Các API và route Watch theo IPv4 không redirect, vì provisioning và Watch vẫn cần hoạt động với IP trực tiếp.
 - IP LAN là DHCP và được trả trong status; `192.168.1.4` không phải contract.
-- `POST /api/auth/login` nhận `{ "password": "..." }`, trả session cookie `HttpOnly`, `SameSite=Strict`. Login failure không tiết lộ credential và bị rate-limit.
-- `POST /api/auth/logout` hủy session. Mọi route `/api/*` khác và `/camera.jpg` yêu cầu session, trừ status setup tối thiểu cần để provision.
-- Ngoại lệ duy nhất là `GET /api/watch/frame`: route này không nhận cookie/password dashboard mà chỉ nhận token boot-scoped từ encrypted GATT theo `LOCAL_FRAME_V1`.
+- Dashboard Web và các API điều khiển local không dùng mật khẩu/session cookie. Mật khẩu WPA2 của AP `FocusMate-Setup` vẫn được giữ để giới hạn truy cập provisioning.
+- `GET /api/watch/frame` tiếp tục yêu cầu token boot-scoped từ encrypted GATT theo `LOCAL_FRAME_V1`; việc bỏ mật khẩu Web không làm yếu route Watch.
 
 ## Frame
 
@@ -21,12 +21,16 @@ Tài liệu này là contract HTTP cho dashboard local của ADR 0005 và đư�
 - `X-FocusMate-Bbox` (`cx,cy,width,height`, sáu chữ số thập phân; vắng khi no-face)
 - `X-FocusMate-Confidence`
 - `X-FocusMate-Face-Meta-V1` (Base64URL không padding của sidecar public 32 byte Q16; atomic với JPEG)
+- Nhóm `X-FocusMate-Yawn-*` tùy chọn chỉ chứa summary số Web → ESP → Watch; không chứa ảnh hoặc landmark.
 
 Nếu chưa có frame mới trong 1 giây, server trả `204`. Chỉ một request frame dài hạn được giữ; client thứ hai nhận `409`. Đóng/ngắt client làm JPEG producer idle trong tối đa 2 giây.
 
 ## Frame cho Watch
 
 Watch dùng đúng `GET /api/watch/frame?after=<uint32>` với `Authorization: FocusMate <32 lowercase hex token>`. Không POST, cookie, mDNS URL hoặc redirect. `200` trả JPEG + ba header `X-FocusMate-Frame-Sequence`, `X-FocusMate-Observed-Uptime-Ms`, `X-FocusMate-Face-Meta-V1`; `204` là chưa có frame mới; `401` buộc đọc lại Frame Access Info qua BLE. Watch và browser có lease độc lập. Toàn bộ validation, status và privacy ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md).
+
+Dashboard gửi summary ngáp bằng `POST /api/yawn/event`; ESP chỉ
+giữ giá trị mới nhất trong RAM và piggyback vào frame Watch.
 
 ## Status schema 1
 
@@ -43,6 +47,8 @@ Watch dùng đúng `GET /api/watch/frame?after=<uint32>` với `Authorization: F
 Posture vocabulary cố định: `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, `UNKNOWN`.
 
 `POSE_LOCAL` dùng Pose Landmarker Lite và baseline/threshold/precedence khóa ở [LOCAL_FRAME_V1](LOCAL_FRAME_V1.md). Nó cần thấy nose, hai mắt và hai vai; hips là tùy chọn cho head-only nhưng bắt buộc cho claim thân/gù. Thiếu anatomy cần thiết trả `UNKNOWN` thay vì suy diễn từ bbox. Model/assets chạy hoàn toàn local, không CDN và không cần dataset người dùng.
+
+JPEG camera dùng QVGA quality 6 (ít nén hơn quality 8). Worker giữ ngưỡng tracking `0.65` và lọc thích nghi chỉ cho landmark hiển thị để giảm rung khuỷu/cổ tay; classifier posture và baseline vẫn nhận landmark thô, nên bộ lọc không che một chuyển động/tư thế thật. Xương tay có visibility/presence dưới `0.65` không được vẽ. Dashboard cảnh báo khi hai khuỷu/cổ tay không nằm trọn trong khung vì landmark ngoài ảnh chỉ là suy đoán và không thể được coi là chính xác.
 
 Các luật dưới đây chỉ áp dụng cho nguồn cũ `esp_web_geometry_v2_shadow`/`BBOX_FALLBACK`:
 

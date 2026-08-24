@@ -59,3 +59,15 @@ board before this detector revision can be marked `VERIFIED_DEVICE`.
   to `UNKNOWN`; the system must not infer a posture from face bbox alone.
 - Do not use the detector for identity, surveillance, diagnosis, safety
   decisions or the Rule Engine's break decision. Posture remains advisory.
+
+## Local yawn consumer
+
+- Web and Watch additionally run the pinned MediaPipe Face Landmarker float16
+  revision 1 locally. It supplies lip landmarks and `jawOpen`; no face image,
+  landmark list or embedding is persisted.
+- A temporal MAR/`jawOpen` heuristic counts a yawn only after about one second
+  of sustained opening. Three events in ten minutes create an advisory
+  sleepiness/fatigue signal; they do not diagnose boredom or alter Rule Engine
+  decisions.
+- This path is `EXPERIMENTAL` and `UNVERIFIED` on device until camera angle,
+  speech false positives, thermal behavior and real yaw events are evaluated.

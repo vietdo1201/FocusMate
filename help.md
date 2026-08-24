@@ -14,7 +14,9 @@
 
 Tám state: `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT`, `TOO_CLOSE`, `SLUMPED`, `FACE_MISSING`, `UNKNOWN`.
 
-Yawn/PFLD không thuộc v2 hoặc alpha; capability phải báo `deferred/unavailable`.
+Yawn advisory chạy local trên Web/Watch bằng Face Landmarker. Hệ thống chỉ đếm
+chu kỳ ngáp và báo dấu hiệu buồn ngủ/mệt khi có ít nhất 3 lần trong 10 phút;
+không suy luận chán nản, không sửa fatigue do người dùng nhập và không gọi Rule Engine.
 
 ## Input phiên học
 

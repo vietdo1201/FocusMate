@@ -55,6 +55,7 @@ data class PoseCalibrationProgress(
     val requiredSamples: Int,
     val reason: String,
     val calibrated: Boolean,
+    val stableMs: Long = 0L,
 )
 
 data class PoseClassifierUpdate(
@@ -80,6 +81,8 @@ data class PoseGeometryConfig(
     val slumpedMinimumMs: Long = 5_000L,
     val hysteresisFactor: Double = 0.65,
     val stableResults: Int = 3,
+    val labelDebounceMs: Long = 1_000L,
+    val invalidHoldMs: Long = 800L,
 )
 
 internal data class PoseFeatures(
@@ -121,10 +124,12 @@ class PosePostureClassifier(
     private var lastFrameSequence: Long? = null
     private var lastObservedAtMs: Long? = null
     private var lastCalibrationObservedAtMs: Long? = null
+    private var calibrationOutlier: TimedPoseFeatures? = null
     private var slumpedSinceMs: Long? = null
     private var candidateState = PostureState.UNKNOWN
-    private var candidateCount = 0
+    private var candidateSinceMs = 0L
     private var stableState = PostureState.UNKNOWN
+    private var lastUsableAtMs: Long? = null
 
     fun observe(frame: PoseFrameObservation): PoseClassifierUpdate = observeFeatures(
         frameSequence = frame.frameSequence,
@@ -144,19 +149,24 @@ class PosePostureClassifier(
             if (features == null || features.quality < config.minimumLandmarkConfidence) {
                 return progress(null, missingRawState(features, faceDetected), calibrationFailureReason(features, faceDetected))
             }
-            collectCalibration(observedAtMonoMs, features)
+            val calibrationReason = collectCalibration(observedAtMonoMs, features)
             val calibratedNow = tryCalibrate()
-            if (!calibratedNow) return progress(null, PostureState.UNKNOWN, "collecting_stable_upright_pose")
+            if (!calibratedNow) return progress(null, PostureState.UNKNOWN, calibrationReason)
         }
 
         if (features == null || features.quality < config.minimumLandmarkConfidence) {
             breakTemporalContinuity(observedAtMonoMs)
             val raw = missingRawState(features, faceDetected)
-            return progress(commit(raw), raw, calibrationFailureReason(features, faceDetected), observedAtMonoMs, 0.0)
+            val usableAt = lastUsableAtMs
+            if (raw == PostureState.UNKNOWN && usableAt != null && observedAtMonoMs - usableAt <= config.invalidHoldMs) {
+                return progress(stableState, raw, "${calibrationFailureReason(features, faceDetected)}_hold", observedAtMonoMs, 0.0)
+            }
+            return progress(commit(raw, observedAtMonoMs), raw, calibrationFailureReason(features, faceDetected), observedAtMonoMs, 0.0)
         }
+        lastUsableAtMs = observedAtMonoMs
         val raw = classifyRaw(features, observedAtMonoMs)
         return progress(
-            classification = commit(raw.state),
+            classification = commit(raw.state, observedAtMonoMs),
             rawState = raw.state,
             reason = raw.reason,
             observedAtMs = observedAtMonoMs,
@@ -172,7 +182,7 @@ class PosePostureClassifier(
         if (nowMonoMs - observedAt <= config.maximumContinuousGapMs || stableState == PostureState.UNKNOWN) return null
         slumpedSinceMs = null
         candidateState = PostureState.UNKNOWN
-        candidateCount = config.stableResults
+        candidateSinceMs = nowMonoMs - config.labelDebounceMs
         stableState = PostureState.UNKNOWN
         return progress(
             classification = PostureState.UNKNOWN,
@@ -189,38 +199,46 @@ class PosePostureClassifier(
         lastFrameSequence = null
         lastObservedAtMs = null
         lastCalibrationObservedAtMs = null
+        calibrationOutlier = null
         slumpedSinceMs = null
         candidateState = PostureState.UNKNOWN
-        candidateCount = 0
+        candidateSinceMs = 0L
         stableState = PostureState.UNKNOWN
+        lastUsableAtMs = null
     }
 
-    private fun collectCalibration(observedAtMs: Long, features: PoseFeatures) {
-        val upright = abs(features.headRollDeg) <= config.headRollEnterDeg &&
-            abs(features.torsoLeanDeg) <= config.torsoLeanEnterDeg &&
-            abs(features.lateralHead) <= config.lateralEnter &&
-            features.headHeight in 0.35..2.5
-        if (!upright) {
-            clearCalibration()
-            return
-        }
+    private fun collectCalibration(observedAtMs: Long, features: PoseFeatures): String {
+        if (!features.headHeight.isFinite() || features.headHeight !in 0.25..3.0 ||
+            !features.shoulderWidth.isFinite() || features.shoulderWidth < MINIMUM_BODY_SCALE
+        ) return "invalid_geometry"
         lastCalibrationObservedAtMs?.let { previousAt ->
             if (observedAtMs <= previousAt || observedAtMs - previousAt > config.calibrationMaximumGapMs) {
                 clearCalibration()
             }
         }
         val previous = calibration.lastOrNull()?.features
-        if (previous != null && (
-            abs(features.headRollDeg - previous.headRollDeg) > 4.0 ||
-                abs(features.torsoLeanDeg - previous.torsoLeanDeg) > 4.0 ||
-                abs(features.lateralHead - previous.lateralHead) > 0.04 ||
-                abs(features.headHeight - previous.headHeight) > 0.08
-            )
-        ) return // Ignore an isolated noisy inference without discarding stable history.
+        if (previous != null && !stablePair(features, previous)) {
+            val priorOutlier = calibrationOutlier
+            calibrationOutlier = TimedPoseFeatures(observedAtMs, features)
+            if (priorOutlier == null || observedAtMs - priorOutlier.observedAtMs > config.calibrationMaximumGapMs ||
+                !stablePair(features, priorOutlier.features)
+            ) return "moving_too_much"
+            calibration.clear()
+            calibration.addLast(priorOutlier)
+            lastCalibrationObservedAtMs = priorOutlier.observedAtMs
+        }
+        calibrationOutlier = null
         lastCalibrationObservedAtMs = observedAtMs
         calibration.addLast(TimedPoseFeatures(observedAtMs, features))
         while (calibration.size > MAXIMUM_CALIBRATION_SAMPLES) calibration.removeFirst()
+        return "collecting_stable_personal_pose"
     }
+
+    private fun stablePair(current: PoseFeatures, previous: PoseFeatures): Boolean =
+        abs(current.headRollDeg - previous.headRollDeg) <= 4.0 &&
+            abs(current.torsoLeanDeg - previous.torsoLeanDeg) <= 4.0 &&
+            abs(current.lateralHead - previous.lateralHead) <= 0.04 &&
+            abs(current.headHeight - previous.headHeight) <= 0.08
 
     private fun tryCalibrate(): Boolean {
         if (calibration.size < config.calibrationSamples) return false
@@ -238,6 +256,7 @@ class PosePostureClassifier(
         )
         calibration.clear()
         lastCalibrationObservedAtMs = null
+        calibrationOutlier = null
         lastObservedAtMs = null
         slumpedSinceMs = null
         return true
@@ -290,10 +309,6 @@ class PosePostureClassifier(
         ).filter { it.direction != 0.0 && it.score >= 1.0 }.sortedByDescending(DirectionalScore::score)
         var leanScore = leanSignals.firstOrNull()?.score ?: 0.0
         var leanDirection = leanSignals.firstOrNull()?.direction ?: 0.0
-        if (leanSignals.any { it.direction != leanDirection && it.score >= leanScore / 1.2 }) {
-            leanScore = 0.0
-            leanDirection = 0.0
-        }
 
         val downSignals = buildList {
             add(headDrop / headDropEnter)
@@ -319,10 +334,7 @@ class PosePostureClassifier(
             slumpedSinceMs = null
         }
 
-        if (leanScore >= 1.0 && headDown &&
-            maxOf(leanScore, downScore) / maxOf(0.001, minOf(leanScore, downScore)) < 1.2
-        ) return RawClassification(PostureState.UNKNOWN, features.quality, "conflicting_geometry")
-        if (leanScore >= 1.0 && (!headDown || leanScore >= downScore * 1.2)) {
+        if (leanScore >= 1.0 && (!headDown || leanScore >= downScore)) {
             val state = if (leanDirection > 0.0) PostureState.LEAN_LEFT else PostureState.LEAN_RIGHT
             return RawClassification(state, (leanScore / 1.8).coerceIn(0.0, 1.0), "anatomical_lean")
         }
@@ -337,12 +349,12 @@ class PosePostureClassifier(
         return RawClassification(PostureState.NORMAL, features.quality, "within_baseline")
     }
 
-    private fun commit(raw: PostureState): PostureState {
-        if (raw == candidateState) candidateCount++ else {
+    private fun commit(raw: PostureState, observedAtMs: Long): PostureState {
+        if (raw != candidateState) {
             candidateState = raw
-            candidateCount = 1
+            candidateSinceMs = observedAtMs
         }
-        if (candidateCount >= config.stableResults) stableState = raw
+        if (stableState != raw && observedAtMs - candidateSinceMs >= config.labelDebounceMs) stableState = raw
         return stableState
     }
 
@@ -362,6 +374,8 @@ class PosePostureClassifier(
             requiredSamples = config.calibrationSamples,
             reason = reason,
             calibrated = baseline != null,
+            stableMs = if (baseline != null || calibration.size < 2) 0L
+            else (calibration.last().observedAtMs - calibration.first().observedAtMs).coerceAtLeast(0L),
         ),
     )
 
@@ -385,6 +399,7 @@ class PosePostureClassifier(
     private fun clearCalibration() {
         calibration.clear()
         lastCalibrationObservedAtMs = null
+        calibrationOutlier = null
     }
 
     private fun acceptSequence(sequence: Long): Boolean {
@@ -405,7 +420,7 @@ class PosePostureClassifier(
     companion object {
         const val SOURCE = "watch_mediapipe_pose_lite_v1"
         const val PROFILE_FINGERPRINT =
-            "ov2640-qvga-canonical-v1:59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a:classifier-v1"
+            "ov2640-qvga-canonical-v1:59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a:classifier-v2"
         private const val MAXIMUM_CALIBRATION_SAMPLES = 60
         private const val UINT32_MAX = 4_294_967_295L
         private const val UINT32_HALF_RANGE = 2_147_483_647L

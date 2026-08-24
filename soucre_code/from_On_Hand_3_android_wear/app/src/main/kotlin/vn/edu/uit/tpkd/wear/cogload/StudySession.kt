@@ -112,6 +112,9 @@ data class StudySession(
     val sessionConfidence: Int = 0,
     val postureSummaries: List<PostureStateSummary> = emptyList(),
     val postureInsightReasonCodes: Set<String> = emptySet(),
+    val yawnCount: Int = 0,
+    val yawnAlertCount: Int = 0,
+    val yawnTotalDurationMs: Long = 0L,
     val breakTargetMinutes: Int = FocusMateRules.DEFAULT_BREAK_MINUTES,
     val breakCount: Int = 0,
     val totalBreakDurationMs: Long = 0L,
@@ -141,6 +144,9 @@ data class StudySession(
         put("session_confidence", sessionConfidence)
         put("posture_summaries", postureSummaries.toJson())
         put("posture_insight_reason_codes", JSONArray(postureInsightReasonCodes.sorted()))
+        put("yawn_count", yawnCount)
+        put("yawn_alert_count", yawnAlertCount)
+        put("yawn_total_duration_ms", yawnTotalDurationMs)
         put("break_target_minutes", breakTargetMinutes)
         put("break_count", breakCount)
         put("total_break_duration_ms", totalBreakDurationMs)
@@ -186,6 +192,9 @@ data class StudySession(
                 sessionConfidence = json.optInt("session_confidence", 0).coerceIn(0, 100),
                 postureSummaries = json.postureSummaries(),
                 postureInsightReasonCodes = json.stringSet("posture_insight_reason_codes"),
+                yawnCount = json.optInt("yawn_count", 0).coerceAtLeast(0),
+                yawnAlertCount = json.optInt("yawn_alert_count", 0).coerceAtLeast(0),
+                yawnTotalDurationMs = json.optLong("yawn_total_duration_ms", 0L).coerceAtLeast(0L),
                 breakTargetMinutes = json.optInt("break_target_minutes", FocusMateRules.DEFAULT_BREAK_MINUTES)
                     .coerceIn(FocusMateRules.MIN_BREAK_MINUTES, FocusMateRules.MAX_BREAK_MINUTES),
                 breakCount = json.optInt("break_count", 0).coerceAtLeast(0),
@@ -233,6 +242,11 @@ data class ActiveStudySession(
     val sessionConfidence: Int = 0,
     val postureSummaries: List<PostureStateSummary> = emptyList(),
     val postureInsightReasonCodes: Set<String> = emptySet(),
+    val yawnCount: Int = 0,
+    val yawnAlertCount: Int = 0,
+    val yawnTotalDurationMs: Long = 0L,
+    val recentYawnEventTimesMs: List<Long> = emptyList(),
+    val lastYawnAlertAtMs: Long? = null,
     val breakTargetMinutes: Int = FocusMateRules.DEFAULT_BREAK_MINUTES,
     val breakCount: Int = 0,
     val accumulatedBreakMs: Long = 0L,
@@ -266,6 +280,11 @@ data class ActiveStudySession(
         put("session_confidence", sessionConfidence)
         put("posture_summaries", postureSummaries.toJson())
         put("posture_insight_reason_codes", JSONArray(postureInsightReasonCodes.sorted()))
+        put("yawn_count", yawnCount)
+        put("yawn_alert_count", yawnAlertCount)
+        put("yawn_total_duration_ms", yawnTotalDurationMs)
+        put("recent_yawn_event_times_ms", JSONArray(recentYawnEventTimesMs))
+        put("last_yawn_alert_at_ms", lastYawnAlertAtMs ?: JSONObject.NULL)
         put("break_target_minutes", breakTargetMinutes)
         put("break_count", breakCount)
         put("accumulated_break_ms", accumulatedBreakMs)
@@ -313,6 +332,11 @@ data class ActiveStudySession(
             sessionConfidence = json.optInt("session_confidence", 0).coerceIn(0, 100),
             postureSummaries = json.postureSummaries(),
             postureInsightReasonCodes = json.stringSet("posture_insight_reason_codes"),
+            yawnCount = json.optInt("yawn_count", 0).coerceAtLeast(0),
+            yawnAlertCount = json.optInt("yawn_alert_count", 0).coerceAtLeast(0),
+            yawnTotalDurationMs = json.optLong("yawn_total_duration_ms", 0L).coerceAtLeast(0L),
+            recentYawnEventTimesMs = json.longList("recent_yawn_event_times_ms"),
+            lastYawnAlertAtMs = json.optionalLong("last_yawn_alert_at_ms"),
             breakTargetMinutes = json.optInt("break_target_minutes", FocusMateRules.DEFAULT_BREAK_MINUTES)
                 .coerceIn(FocusMateRules.MIN_BREAK_MINUTES, FocusMateRules.MAX_BREAK_MINUTES),
             breakCount = json.optInt("break_count", 0).coerceAtLeast(0),
@@ -502,6 +526,14 @@ private fun JSONObject.postureSummaries(): List<PostureStateSummary> = buildList
 private fun JSONObject.stringSet(key: String): Set<String> = buildSet {
     val values = optJSONArray(key) ?: return@buildSet
     for (index in 0 until values.length()) add(values.getString(index))
+}
+
+private fun JSONObject.longList(key: String): List<Long> = buildList {
+    val values = optJSONArray(key) ?: return@buildList
+    for (index in 0 until values.length()) {
+        val value = values.optLong(index, Long.MIN_VALUE)
+        if (value != Long.MIN_VALUE) add(value)
+    }
 }
 
 private fun JSONObject.optionalString(key: String): String? = if (!has(key) || isNull(key)) null else getString(key)

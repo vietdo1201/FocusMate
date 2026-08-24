@@ -42,7 +42,7 @@ Gate: report `VERIFIED_DEVICE` có app/firmware build, hardware revision của E
 ## Giai đoạn 4 — Alpha
 
 - Privacy/delete/export review, accessibility, long-session soak và failure recovery.
-- Yawn/PFLD tiếp tục `deferred/unavailable`.
+- Yawn advisory Face Landmarker local đã chuyển sang `IMPLEMENTED / EXPERIMENTAL / UNVERIFIED`; không thuộc Rule Engine và không phải suy luận cảm xúc.
 - Model posture nếu nghiên cứu chỉ chạy bbox feature ở shadow mode, không quyết định break.
 
 ### Nhánh nghiên cứu frame-on-Watch

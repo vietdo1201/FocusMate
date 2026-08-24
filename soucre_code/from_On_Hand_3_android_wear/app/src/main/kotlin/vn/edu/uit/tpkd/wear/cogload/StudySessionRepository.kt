@@ -292,7 +292,7 @@ class StudySessionRepository(private val context: Context) {
         updated
     }
 
-    /** Persistence seam for the future BLE client; posture never calls the reminder engine. */
+    /** Posture is persisted as insight only and never calls the reminder engine. */
     fun updateActivePosture(
         sessionId: String,
         summaries: List<PostureStateSummary>,
@@ -307,6 +307,22 @@ class StudySessionRepository(private val context: Context) {
         activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
         updated
     }
+
+    /** Persists numeric yawn summaries only; frames and landmarks never enter storage. */
+    fun updateActiveYawn(sessionId: String, detection: YawnDetection): ActiveStudySession? =
+        synchronized(STORE_LOCK) {
+            val active = activeSession() ?: return@synchronized null
+            if (active.sessionId != sessionId) return@synchronized null
+            val updated = active.copy(
+                yawnCount = detection.totalCount,
+                yawnAlertCount = detection.alertCount,
+                yawnTotalDurationMs = detection.totalDurationMs,
+                recentYawnEventTimesMs = detection.recentEventTimesMs,
+                lastYawnAlertAtMs = detection.lastAlertAtMs,
+            )
+            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            updated
+        }
 
     /** Incrementally updates personal-session HR averages without storing raw samples. */
     fun updateActiveHeartRate(sessionId: String, bpm: Double, observedAtMs: Long = System.currentTimeMillis()) {
@@ -567,6 +583,9 @@ class StudySessionRepository(private val context: Context) {
             sessionConfidence = SessionConfidence.calculate(active, safeEnd),
             postureSummaries = active.postureSummaries,
             postureInsightReasonCodes = active.postureInsightReasonCodes,
+            yawnCount = active.yawnCount,
+            yawnAlertCount = active.yawnAlertCount,
+            yawnTotalDurationMs = active.yawnTotalDurationMs,
             breakTargetMinutes = active.breakTargetMinutes,
             breakCount = active.breakCount,
             totalBreakDurationMs = StudySessionClock.totalBreakDurationMs(active, safeEnd),

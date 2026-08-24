@@ -16,25 +16,27 @@ struct Asset {
     const char *uri;
     const char *file;
     const char *content_type;
-    bool gzip;
+    const char *content_encoding;
 };
 
 constexpr Asset kAssets[] = {
-    {"/assets/vision_bundle.mjs", "/mpassets/vision_bundle.mjs", "text/javascript; charset=utf-8", false},
-    {"/assets/pose_worker.mjs", "/mpassets/pose_worker.mjs", "text/javascript; charset=utf-8", false},
-    {"/assets/pose_worker_bootstrap.js", "/mpassets/pose_worker_bootstrap.js", "text/javascript; charset=utf-8", false},
-    {"/assets/pose_classifier.mjs", "/mpassets/pose_classifier.mjs", "text/javascript; charset=utf-8", false},
-    {"/assets/wasm/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", false},
-    {"/assets/wasm/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.gz", "application/wasm", true},
-    {"/assets/wasm-module-v1/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", false},
-    {"/assets/wasm-module-v1/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.gz", "application/wasm", true},
-    {"/assets/wasm-module-v2/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", false},
-    {"/assets/wasm-module-v2/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.gz", "application/wasm", true},
-    {"/assets/wasm-classic-v1/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", false},
-    {"/assets/wasm-classic-v1/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.gz", "application/wasm", true},
-    {"/assets/pose_landmarker_lite.task", "/mpassets/pose_landmarker_lite.task.gz", "application/octet-stream", true},
-    {"/assets/pose_landmarker_lite-v2.task", "/mpassets/pose_landmarker_lite.task.gz", "application/octet-stream", true},
-    {"/assets/asset-manifest.json", "/mpassets/asset-manifest.json", "application/json; charset=utf-8", false},
+    {"/assets/vision_bundle.mjs", "/mpassets/vision_bundle.mjs", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/pose_worker.mjs", "/mpassets/pose_worker.mjs", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/pose_worker_bootstrap.js", "/mpassets/pose_worker_bootstrap.js", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/pose_classifier.mjs", "/mpassets/pose_classifier.mjs", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/yawn_classifier.mjs", "/mpassets/yawn_classifier.mjs", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/wasm/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/wasm/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.br", "application/wasm", "br"},
+    {"/assets/wasm-module-v1/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/wasm-module-v1/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.br", "application/wasm", "br"},
+    {"/assets/wasm-module-v2/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/wasm-module-v2/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.br", "application/wasm", "br"},
+    {"/assets/wasm-classic-v1/vision_wasm_internal.js", "/mpassets/wasm/vwi.js", "text/javascript; charset=utf-8", nullptr},
+    {"/assets/wasm-classic-v1/vision_wasm_internal.wasm", "/mpassets/wasm/vwi.wasm.br", "application/wasm", "br"},
+    {"/assets/pose_landmarker_lite.task", "/mpassets/pose_landmarker_lite.task.gz", "application/octet-stream", "gzip"},
+    {"/assets/pose_landmarker_lite-v2.task", "/mpassets/pose_landmarker_lite.task.gz", "application/octet-stream", "gzip"},
+    {"/assets/face_landmarker-v1.task", "/mpassets/face_landmarker.task.gz", "application/octet-stream", "gzip"},
+    {"/assets/asset-manifest.json", "/mpassets/asset-manifest.json", "application/json; charset=utf-8", nullptr},
 };
 
 const Asset *find_asset(const char *uri)
@@ -77,12 +79,12 @@ extern "C" esp_err_t focusmate_web_assets_serve(httpd_req_t *request, const char
         return httpd_resp_send_500(request);
     }
     httpd_resp_set_type(request, asset->content_type);
-    httpd_resp_set_hdr(request, "Cache-Control", asset->gzip
+    httpd_resp_set_hdr(request, "Cache-Control", asset->content_encoding != nullptr
         ? "public, max-age=31536000, immutable"
         : "no-cache");
     httpd_resp_set_hdr(request, "X-Content-Type-Options", "nosniff");
     httpd_resp_set_hdr(request, "Cross-Origin-Resource-Policy", "same-origin");
-    if (asset->gzip) httpd_resp_set_hdr(request, "Content-Encoding", "gzip");
+    if (asset->content_encoding != nullptr) httpd_resp_set_hdr(request, "Content-Encoding", asset->content_encoding);
 
     std::array<char, 4096> buffer{};
     esp_err_t result = ESP_OK;

@@ -30,6 +30,11 @@
     <string name="posture_status_unavailable">TƯ THẾ\nChưa có dữ liệu bbox từ ESP</string>
     <string name="posture_status_recorded">TƯ THẾ\nĐã ghi %1$d episode • xem khi nghỉ</string>
     <string name="posture_status_no_advice">TƯ THẾ\nKhông có lỗi nổi trội cần chỉnh</string>
+    <string name="yawn_status_idle">NGÁP / BUỒN NGỦ\nChưa có phiên học</string>
+    <string name="yawn_status_tracking">NGÁP / BUỒN NGỦ\nĐang theo dõi • %1$d lần</string>
+    <string name="yawn_status_calibrating">NGÁP / BUỒN NGỦ\nHiệu chỉnh miệng %1$d/%2$d</string>
+    <string name="yawn_status_detected">ĐANG NGÁP\nĐã ghi nhận %1$d lần</string>
+    <string name="yawn_status_advisory">Bạn hơi buồn ngủ rồi hả?\nĐã ngáp %1$d lần trong 10 phút</string>
     <string name="last_seven_days">7 NGÀY GẦN NHẤT</string>
     <string name="today_zero">0 phút hôm nay</string>
     <string name="today_total">%1$s hôm nay</string>

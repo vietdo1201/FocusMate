@@ -14,7 +14,7 @@ def read(relative: str) -> str:
 
 
 class ShadowDashboardContractTest(unittest.TestCase):
-    def test_dashboard_is_local_authenticated_and_landmark_primary(self) -> None:
+    def test_dashboard_is_local_passwordless_and_landmark_primary(self) -> None:
         source = read("firmware/main/dashboard.cpp")
         html = read("firmware/main/web/index.html")
         adr = read("docs/decisions/0005-local-realtime-shadow-dashboard.md")
@@ -24,7 +24,6 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "/assets/*",
             "/api/status",
             "/api/viewer/release",
-            "/api/auth/login",
             "/api/posture/calibrate",
             "/api/posture/reset",
             "/api/wifi/scan",
@@ -33,7 +32,9 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "/api/wifi/ap-password",
         ):
             self.assertIn(route, source + html)
-        self.assertIn("SameSite=Strict", source)
+        self.assertNotIn("focusmate_session", source + html)
+        self.assertNotIn("/api/auth/", source + html)
+        self.assertIn('"dashboard_auth", false', source)
         self.assertIn("focusmate.local", source)
         self.assertIn("shadow_only", source)
         self.assertIn("watch_rules_v2", adr)
@@ -51,6 +52,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
         detector = read("firmware/main/face_detector.cpp")
         self.assertIn("PIXFORMAT_JPEG", camera)
         self.assertIn("FRAMESIZE_QVGA", camera)
+        self.assertIn(".jpeg_quality = 6", camera)
         self.assertIn("kFrameWidth = 320U", broker)
         self.assertIn("kJpegSlotCount = 3U", broker)
         self.assertIn("kJpegSlotCapacity = 128U * 1024U", broker)
@@ -74,6 +76,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
 
     def test_safe_wifi_pending_promote_and_rollback_contract(self) -> None:
         source = read("firmware/main/dashboard.cpp")
+        dns = read("firmware/components/focusmate_dns/focusmate_dns.c")
         for token in (
             "pending_ssid",
             "pending_pass",
@@ -86,7 +89,17 @@ class ShadowDashboardContractTest(unittest.TestCase):
             self.assertIn(token, source)
         self.assertIn('espressif/mdns: "1.9.1"', read("firmware/main/idf_component.yml"))
         self.assertIn("station_associated_", source)
-        self.assertIn("!online && !associated && reconnect_due", source)
+        self.assertIn("kStationReconnectIntervalMs = 30000U", source)
+        self.assertIn("WIFI_EVENT_AP_STACONNECTED", source)
+        self.assertIn("WIFI_EVENT_AP_STADISCONNECTED", source)
+        self.assertIn("!online && !associated && !ap_client_connected && reconnect_due", source)
+        self.assertLess(source.index("mdns_init()"), source.index("esp_wifi_start()"))
+        self.assertIn("mdns_netif_action(ap_netif, MDNS_EVENT_ENABLE_IP4)", source)
+        self.assertIn('focusmate_dns_start(kCanonicalHostname, "WIFI_AP_DEF")', source)
+        self.assertIn('strcmp(name, state->hostname) == 0', dns)
+        self.assertIn("DNS_TYPE_A", dns)
+        self.assertIn('"302 Found"', source)
+        self.assertIn('"http://focusmate.local/"', source)
 
     def test_kotlin_and_firmware_thresholds_match(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
@@ -148,7 +161,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("REQUIRED_BASELINE_MS = 5000", classifier)
         self.assertIn("features.quality < 0.7", classifier)
         self.assertIn("auto_calibrating", classifier)
-        self.assertIn("Xóa baseline và tự hiệu chỉnh lại", html)
+        self.assertIn("Xóa baseline và tự hiệu chỉnh", html)
         self.assertNotIn('id="calibrate"', html)
         self.assertNotIn("Hiệu chỉnh 5 giây", html)
 
@@ -162,21 +175,29 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("59929E1D1EE95287735DDD833B19CF4AC46D29BC7AFDDBBF6753C459690D574A", script)
         self.assertIn("spiffs_create_partition_image(mp_assets", cmake)
         self.assertIn("mp_assets", partitions)
-        self.assertIn('Content-Encoding", "gzip', assets)
+        self.assertIn('"Content-Encoding", asset->content_encoding', assets)
         self.assertIn("pose_landmarker_lite.task.gz", assets)
-        self.assertIn("vwi.wasm.gz", assets)
+        self.assertIn("vwi.wasm.br", assets)
         self.assertIn("globalThis.ModuleFactory = ModuleFactory", script)
-        self.assertIn('console.error("FocusMate Pose"', read("firmware/main/web/index.html"))
+        self.assertIn('console.error("FocusMate Vision"', read("firmware/main/web/index.html"))
         worker = read("firmware/main/web/pose_worker.mjs")
         bootstrap = read("firmware/main/web/pose_worker_bootstrap.js")
         self.assertIn("wasm-classic-v1", worker)
         self.assertIn("wasm-classic-v1", bootstrap)
         self.assertIn("wasm-classic-v1", assets)
         self.assertIn("importScripts", bootstrap)
-        self.assertIn("pose-local-classic-2", bootstrap)
-        self.assertIn("pose-worker-classic-2", read("firmware/main/web/index.html"))
-        self.assertIn("classifier-2", worker)
-        self.assertIn('asset->gzip', assets)
+        self.assertIn("pose-stability-4", bootstrap)
+        self.assertIn("vision-worker-pose-stability-3", read("firmware/main/web/index.html"))
+        self.assertIn("schedulePoseWorkerRetry", read("firmware/main/web/index.html"))
+        self.assertIn("yawnUnavailable", worker)
+        self.assertIn('!poseLandmarker || !poseClassifier || !message.bitmap', worker)
+        self.assertIn("minTrackingConfidence: 0.65", worker)
+        self.assertIn("smoothLandmarksForDisplay", worker)
+        self.assertIn("posture classification continues to use raw landmarks", worker)
+        self.assertIn('id="framingWarning"', read("firmware/main/web/index.html"))
+        self.assertIn("landmarkQuality(point)>=.65", read("firmware/main/web/index.html"))
+        self.assertIn("classifier-3", worker)
+        self.assertIn('asset->content_encoding', assets)
         self.assertIn('"no-cache"', assets)
 
     def test_subject_relative_horizontal_axis_invalidates_old_baseline(self) -> None:

@@ -277,6 +277,8 @@ Tất cả **PHẢI** là API public của `:protocol`; tác giả firmware đ�
 ## 14. Ngoài phạm vi profile này
 
 - Byte frame/ảnh nén không đi qua GATT; sidecar opt-in nằm ở [LOCAL_FRAME_V1.md](LOCAL_FRAME_V1.md). Embedding và identifier vẫn ngoài phạm vi tuyệt đối.
-- Yawn/PFLD: `deferred/unavailable`.
+- Yawn advisory vẫn được suy luận local. Khi Web hoạt động, summary số được đồng
+  bộ qua HTTP frame headers để Watch lấy `max(Web, local)`; không thêm byte,
+  capability hay UUID vào profile GATT này.
 - OTA, cloud, telemetry, nhiều detector cùng lúc.
 - Bất kỳ đường nào để posture ảnh hưởng quyết định break: Rule Engine `watch_rules_v2` vẫn là nguồn duy nhất (ADR 0002).

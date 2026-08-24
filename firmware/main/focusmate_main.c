@@ -51,6 +51,7 @@ static uint32_t sequence;
 static uint8_t message_id;
 static uint32_t notification_attempts;
 static uint32_t notification_failures;
+static uint8_t consecutive_notification_failures;
 static uint32_t observations_emitted;
 static uint32_t capabilities = BASE_CAPABILITIES;
 
@@ -248,12 +249,22 @@ static void notify_bytes(const uint8_t *data, size_t length)
     struct os_mbuf *buffer = ble_hs_mbuf_from_flat(data, (uint16_t)length);
     if (buffer == NULL) {
         ++notification_failures;
+        if (++consecutive_notification_failures == 5U && active_connection != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGW(TAG, "five consecutive notify allocation failures; recycling BLE link");
+            (void)ble_gap_terminate(active_connection, BLE_ERR_REM_USER_CONN_TERM);
+        }
         return;
     }
     const int rc = ble_gatts_notify_custom(active_connection, observation_handle, buffer);
     if (rc != 0) {
         ++notification_failures;
         ESP_LOGW(TAG, "notify failed rc=%d", rc);
+        if (++consecutive_notification_failures == 5U && active_connection != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGW(TAG, "five consecutive notify failures; recycling BLE link");
+            (void)ble_gap_terminate(active_connection, BLE_ERR_REM_USER_CONN_TERM);
+        }
+    } else {
+        consecutive_notification_failures = 0U;
     }
 }
 
@@ -329,6 +340,10 @@ static void advertise(void)
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    /* 0.625 ms units: advertise quickly after boot/disconnect so a Watch scan
+       does not wait on the host defaults. */
+    params.itvl_min = 48U;
+    params.itvl_max = 80U;
     rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &params, gap_event, NULL);
     assert(rc == 0);
     ESP_LOGI(TAG, "advertising FocusMate service");
@@ -341,6 +356,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
                 active_connection = event->connect.conn_handle;
+                consecutive_notification_failures = 0U;
                 ESP_LOGI(TAG, "connected handle=%u", active_connection);
             } else {
                 advertise();
@@ -352,6 +368,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             active_connection = BLE_HS_CONN_HANDLE_NONE;
             subscribed = false;
             streaming = false;
+            consecutive_notification_failures = 0U;
             advertise();
             break;
         case BLE_GAP_EVENT_ENC_CHANGE:

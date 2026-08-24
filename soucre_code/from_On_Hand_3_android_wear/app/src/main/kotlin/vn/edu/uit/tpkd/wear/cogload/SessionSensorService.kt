@@ -13,7 +13,11 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Build
+import android.os.PowerManager
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.widget.Toast
 
 /** Keeps deterministic motion collection alive; heart rate is independently optional. */
 class SessionSensorService : Service() {
@@ -79,7 +83,25 @@ class SessionSensorService : Service() {
         localPosePipeline = LocalPosePosturePipeline(
             context = this,
             sourceCoordinator = postureSourceCoordinator,
+            yawnClassifier = repository.activeSession()?.let { active ->
+                YawnClassifier(
+                    YawnSeed(
+                        totalCount = active.yawnCount,
+                        alertCount = active.yawnAlertCount,
+                        totalDurationMs = active.yawnTotalDurationMs,
+                        recentEventTimesMs = active.recentYawnEventTimesMs,
+                        lastAlertAtMs = active.lastYawnAlertAtMs,
+                    ),
+                )
+            } ?: YawnClassifier(),
             onRuntime = PostureRuntimeStore::updateLocalPose,
+            onYawn = { detection ->
+                val active = repository.activeSession()
+                if (active != null && detection.persistenceChanged) {
+                    repository.updateActiveYawn(active.sessionId, detection)
+                }
+                if (detection.alertJustTriggered) notifyYawnAlert(detection.eventsInWindow)
+            },
             requestFrameAccessRefresh = {
                 if (::postureBleClient.isInitialized) postureBleClient.refreshFrameAccessInfo()
             },
@@ -131,6 +153,7 @@ class SessionSensorService : Service() {
         localPosePipeline.stop()
         postureIngestor.reset()
         postureSourceCoordinator.reset()
+        YawnRuntimeStore.reset()
         collectingSessionId = null
         if (::repository.isInitialized && shouldReleaseStudyDnd(repository.activeSession(), System.currentTimeMillis())) {
             StudyDndController.disable(this)
@@ -168,6 +191,23 @@ class SessionSensorService : Service() {
             .build()
     }
 
+    private fun notifyYawnAlert(eventsInWindow: Int) {
+        val vibrator = getSystemService(Vibrator::class.java)
+        if (vibrator?.hasVibrator() == true) {
+            vibrator.vibrate(VibrationEffect.createOneShot(YAWN_VIBRATION_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager?.isInteractive == true) {
+            handler.post {
+                Toast.makeText(
+                    this,
+                    "Bạn hơi buồn ngủ rồi hả? Đã ngáp $eventsInWindow lần trong 10 phút.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     companion object {
         private const val ANDROID_16_API = 36
         private const val HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
@@ -176,6 +216,7 @@ class SessionSensorService : Service() {
         private const val HEART_RATE_INTERVAL_MS = 5 * 60_000L
         private const val HEART_RATE_DURATION_MS = 60_000L
         private const val HEART_RATE_TICK_MS = 5_000L
+        private const val YAWN_VIBRATION_MS = 180L
 
         fun start(context: Context) {
             runCatching { context.startForegroundService(Intent(context, SessionSensorService::class.java)) }

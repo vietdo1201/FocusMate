@@ -8,7 +8,9 @@ class LocalPosePosturePipeline(
     context: Context,
     private val sourceCoordinator: PostureSourceCoordinator,
     private val classifier: PosePostureClassifier = PosePostureClassifier(),
+    private val yawnClassifier: YawnClassifier = YawnClassifier(),
     private val onRuntime: (LocalPosePhase, PostureThermalState, String) -> Unit,
+    private val onYawn: (YawnDetection) -> Unit = {},
     private val requestFrameAccessRefresh: () -> Unit,
 ) {
     private val lock = Any()
@@ -16,15 +18,17 @@ class LocalPosePosturePipeline(
     private var modelReady = false
     private var thermalState = PostureThermalState.UNKNOWN
     private var endpointBootId: String? = null
+    private var lastRemoteYawnSequence: Long? = null
     private val engine = PoseLandmarkerEngine(
         context = context,
         onObservation = ::onPoseObservation,
+        onYawnObservation = ::onYawnObservation,
         onAvailability = ::onEngineAvailability,
         onDiagnostic = ::onEngineDiagnostic,
     )
     private val frameClient = LocalFrameClient(
         context = context,
-        onFrame = engine::offer,
+        onFrame = ::onFrame,
         onState = ::onFrameState,
         onUnauthorized = requestFrameAccessRefresh,
     )
@@ -48,6 +52,7 @@ class LocalPosePosturePipeline(
         }
         if (bootChanged) {
             classifier.reset()
+            lastRemoteYawnSequence = null
             sourceCoordinator.poseUnavailable()
         }
         frameClient.updateEndpoint(endpoint)
@@ -70,6 +75,8 @@ class LocalPosePosturePipeline(
         frameClient.stop()
         engine.stop()
         classifier.reset()
+        yawnClassifier.reset()
+        YawnRuntimeStore.reset()
         sourceCoordinator.poseUnavailable()
         onRuntime(LocalPosePhase.STOPPED, thermalState, "Đã dừng Pose local")
     }
@@ -104,6 +111,35 @@ class LocalPosePosturePipeline(
         onRuntime(phase, thermalState, detail)
     }
 
+    private fun onYawnObservation(observation: YawnFrameObservation) {
+        val detection = yawnClassifier.observe(observation)
+        YawnRuntimeStore.update(detection)
+        onYawn(detection)
+    }
+
+    private fun onFrame(frame: LocalFramePacket) {
+        val sync = frame.yawnSync
+        if (sync != null && isNewerSequence(sync.sequence, lastRemoteYawnSequence)) {
+            lastRemoteYawnSequence = sync.sequence
+            yawnClassifier.synchronizeRemote(
+                remoteTotalCount = sync.totalCount,
+                remoteWindowCount = sync.windowCount,
+                observedAtMonoMs = frame.receivedAtMonoMs,
+                observedAtWallMs = System.currentTimeMillis(),
+            )?.let { detection ->
+                YawnRuntimeStore.update(detection)
+                onYawn(detection)
+            }
+        }
+        engine.offer(frame)
+    }
+
+    private fun isNewerSequence(candidate: Long, previous: Long?): Boolean {
+        if (previous == null) return true
+        val distance = (candidate - previous) and UINT32_MAX
+        return distance in 1L..0x7FFF_FFFFL
+    }
+
     private fun onEngineDiagnostic(detail: String) {
         sourceCoordinator.poseUnavailable()
         onRuntime(LocalPosePhase.ERROR, thermalState, detail)
@@ -134,6 +170,17 @@ class LocalPosePosturePipeline(
 
     private fun onThermalState(value: PostureThermalState) {
         synchronized(lock) { thermalState = value }
+        engine.setFaceInferenceIntervalMs(
+            when (value) {
+                PostureThermalState.MODERATE -> 500L
+                PostureThermalState.SEVERE,
+                PostureThermalState.CRITICAL,
+                PostureThermalState.EMERGENCY,
+                PostureThermalState.SHUTDOWN,
+                -> null
+                else -> 400L
+            },
+        )
         val ready = synchronized(lock) { started && modelReady }
         if (!value.allowsLocalPose()) {
             frameClient.setEnabled(false)
@@ -150,5 +197,9 @@ class LocalPosePosturePipeline(
         } else {
             onRuntime(LocalPosePhase.LOADING_MODEL, value, "Đang nạp Pose Landmarker Lite")
         }
+    }
+
+    private companion object {
+        const val UINT32_MAX = 0xFFFF_FFFFL
     }
 }

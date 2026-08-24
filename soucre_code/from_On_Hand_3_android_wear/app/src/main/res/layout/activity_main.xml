@@ -383,6 +383,23 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/tv_yawn_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/workload_background"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:paddingStart="10dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="12dp"
+                android:text="@string/yawn_status_idle"
+                android:textColor="#FFD58A"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"

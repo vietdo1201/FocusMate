@@ -1,6 +1,6 @@
 # Trạng thái dự án
 
-Ngày kiểm chứng tài liệu: 2026-08-23. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
+Ngày kiểm chứng tài liệu: 2026-08-24. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
 
 Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3 N16R8 + OV2640. Định nghĩa nằm trong [ROADMAP.md](../soucre_code/from_On_Hand_3_android_wear/ROADMAP.md). `VERIFIED_DEVICE` chỉ được cấp cho hạng mục đã chạy trên đúng cặp thiết bị này và có report trong `reports/`.
 
@@ -15,10 +15,10 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 | Posture insight/report policy | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 180 s và 4 episode/15 phút tests |
 | BLE GATT Watch ↔ ESP | `IN_PROGRESS` | `TARGET` | `VERIFIED_LOCAL` | Watch 5 Pro + ESP thật: encrypted bond, MTU 23→256, 5,0 Hz, reboot reconnect; [Gate B report](../reports/2026-08-22-gate-b-ble-vertical-slice.md) |
 | Firmware ESP-IDF | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | GATT + camera + detector/no-face/positive-bbox chạy trên ESP32-S3 thật; long-run còn thiếu; [Gate C detector report](../reports/2026-08-22-gate-c-face-detector.md) |
-| OV2640 camera smoke | `IMPLEMENTED` | `TARGET` | `VERIFIED_DEVICE` | PID 0x26; JPEG QVGA quality 8, sensor xoay đúng 180°, 25/25 frame; [report lịch sử](../reports/2026-08-22-gate-c-camera-smoke.md), realtime retest đang hoàn thiện |
+| OV2640 camera smoke | `IMPLEMENTED` | `TARGET` | `VERIFIED_DEVICE` | PID 0x26; JPEG QVGA quality 6, sensor xoay đúng 180°, 25/25 frame; [report lịch sử](../reports/2026-08-22-gate-c-camera-smoke.md), realtime retest đang hoàn thiện |
 | Face detector ESP32-S3 | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | MSR/MNP 5-point thay ESPDet bbox-only, JPEG QVGA; detector/broker đạt 5,0 FPS trong pass Web + Watch, BLE 5 Hz/0 notify failure; positive landmarks và long-run vẫn cần retest; [landmark progress](../reports/2026-08-23-local-pose-landmark-device-progress.md) |
 | Posture với ESP32-S3 + Galaxy Watch 5 Pro thật | `IN_PROGRESS` | `TARGET` | `UNVERIFIED` | MediaPipe Pose Lite chạy local trên Web/Watch, Web từng tự baseline 20/20; Watch frame transport đã hết HTTP 400 và fail-closed khi mất mặt. Chưa kiểm đủ tám state, 90 giây guided test, low-light, thermal và soak; [landmark progress](../reports/2026-08-23-local-pose-landmark-device-progress.md) |
-| Yawn/PFLD | `NOT_STARTED` | `DEFERRED` | `UNVERIFIED` | `deferred/unavailable` cho v2 và alpha |
+| Yawn advisory (Face Landmarker) | `IMPLEMENTED` | `EXPERIMENTAL` | `UNVERIFIED` | Local Web/Watch; summary số Web→ESP→Watch hội tụ bằng max + sequence; MAR + `jawOpen`, 3 lần/10 phút; không tác động Rule Engine, chưa device accuracy/thermal test |
 | MediaPipe Pose Lite local (Web + Watch) | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Model/runtime đóng gói offline, shared 8-state fixtures pass; smoke thiết bị đạt Web 38–49 ms nhưng chưa đủ accuracy/thermal/soak để nâng device evidence |
 | Frame transport ESP → Watch | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | `LOCAL_FRAME_V1`, encrypted `FrameAccessInfoV1`, boot token và latest-frame-wins đã chạy thật ở 5 FPS; thiếu network capture và soak 2 giờ |
 

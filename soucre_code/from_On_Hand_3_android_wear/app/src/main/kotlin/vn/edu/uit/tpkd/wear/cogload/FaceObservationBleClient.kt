@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -23,6 +24,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.util.Log
 import vn.edu.uit.tpkd.wear.cogload.protocol.FrameAccessInfoV1
 import vn.edu.uit.tpkd.wear.cogload.protocol.GattProfile
@@ -50,6 +52,12 @@ class FaceObservationBleClient(
     private var activeDeviceAddress: String? = null
     private var frameAccessReadContinuesObservation = false
     private var cacheRefreshAttempted = false
+    private var knownDeviceAttempted = false
+    private var connectionHealthy = false
+    private var connectionStep = "kết nối"
+    private var streamingRequestedAtMs = 0L
+    private var lastNotificationAtMs = 0L
+    private var startRecoveryAttempted = false
     private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val scanTimeout = Runnable {
@@ -62,7 +70,7 @@ class FaceObservationBleClient(
     private val reconnect = Runnable { scan() }
     private val connectTimeout = Runnable {
         val current = gatt ?: return@Runnable
-        failConnection(current, "GATT timeout sau ${CONNECT_TIMEOUT_MS / 1_000}s")
+        failConnection(current, "$connectionStep timeout sau ${CONNECT_TIMEOUT_MS / 1_000}s")
     }
     private val bondTimeout = Runnable {
         val current = gatt
@@ -72,12 +80,33 @@ class FaceObservationBleClient(
             scheduleReconnect()
         }
     }
+    private val notificationWatchdog = object : Runnable {
+        override fun run() {
+            val current = gatt
+            if (!running || current == null || streamingRequestedAtMs == 0L) return
+            val now = SystemClock.elapsedRealtime()
+            val lastSignal = if (lastNotificationAtMs > 0L) lastNotificationAtMs else streamingRequestedAtMs
+            val silentMs = now - lastSignal
+            when {
+                silentMs >= NOTIFICATION_RECONNECT_MS -> {
+                    failConnection(current, "Không có notification trong ${NOTIFICATION_RECONNECT_MS / 1_000}s")
+                    return
+                }
+                silentMs >= NOTIFICATION_RESTART_MS && !startRecoveryAttempted -> {
+                    startRecoveryAttempted = true
+                    sendStart(current, recovery = true)
+                }
+            }
+            handler.postDelayed(this, WATCHDOG_TICK_MS)
+        }
+    }
 
     fun start() {
         if (running) return
         running = true
         reconnectAttempt = 0
         cacheRefreshAttempted = false
+        knownDeviceAttempted = false
         registerBondReceiver()
         scan()
     }
@@ -112,6 +141,7 @@ class FaceObservationBleClient(
         handler.removeCallbacks(reconnect)
         if (!hasPermissions()) {
             ingestor.disconnected("Thiếu quyền Bluetooth")
+            scheduleReconnect()
             return
         }
         val scanner = adapter?.bluetoothLeScanner
@@ -123,7 +153,11 @@ class FaceObservationBleClient(
         ingestor.connecting()
         if (connectKnownDevice()) return
         val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE_UUID)).build()
-        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+            .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
+            .build()
         // Some Android BLE stacks can deliver a cached result from startScan() immediately.
         // Publish the state first so the first matching callback can atomically consume it.
         scanning = true
@@ -157,6 +191,7 @@ class FaceObservationBleClient(
     }
 
     private fun connectKnownDevice(): Boolean {
+        if (knownDeviceAttempted) return false
         val bonded = runCatching { adapter?.bondedDevices.orEmpty() }.getOrDefault(emptySet())
         val remembered = preferences.getString(PREF_DEVICE_ADDRESS, null)
             ?.let { address -> bonded.firstOrNull { it.address == address } }
@@ -164,6 +199,7 @@ class FaceObservationBleClient(
             runCatching { device.name?.startsWith(DEVICE_NAME_PREFIX) == true }.getOrDefault(false)
         }
         val selected = remembered ?: candidates.singleOrNull() ?: return false
+        knownDeviceAttempted = true
         Log.i(TAG, "reconnect using bonded FocusMate device")
         connectDevice(selected)
         return true
@@ -177,10 +213,13 @@ class FaceObservationBleClient(
         closeCurrentGatt()
         activeDeviceAddress = device.address
         servicesRequested = false
+        connectionHealthy = false
+        streamingRequestedAtMs = 0L
+        lastNotificationAtMs = 0L
+        startRecoveryAttempted = false
         runCatching {
             gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-            handler.removeCallbacks(connectTimeout)
-            handler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
+            armConnectTimeout("Kết nối GATT")
         }.onFailure {
             Log.w(TAG, "connectGatt failed", it)
             ingestor.disconnected("Không thể kết nối GATT")
@@ -202,8 +241,8 @@ class FaceObservationBleClient(
             Log.i(TAG, "connection status=$status state=$newState")
             runCatching {
                 if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
-                    handler.removeCallbacks(connectTimeout)
-                    reconnectAttempt = 0
+                    runCatching { client.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
+                    armConnectTimeout("Thương lượng MTU")
                     if (!client.requestMtu(GattProfile.PREFERRED_MTU)) requestServices(client)
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     detachAndClose(client)
@@ -261,7 +300,7 @@ class FaceObservationBleClient(
         @Deprecated("API 33 callback remains required on Wear OS 4")
         override fun onCharacteristicChanged(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (running && gatt === client && characteristic.uuid == OBSERVATION_UUID) {
-                ingestor.onNotification(characteristic.value.copyOf())
+                if (ingestor.onNotification(characteristic.value.copyOf())) markNotificationHealthy()
             }
         }
 
@@ -271,7 +310,7 @@ class FaceObservationBleClient(
             value: ByteArray,
         ) {
             if (running && gatt === client && characteristic.uuid == OBSERVATION_UUID) {
-                ingestor.onNotification(value.copyOf())
+                if (ingestor.onNotification(value.copyOf())) markNotificationHealthy()
             }
         }
 
@@ -287,10 +326,23 @@ class FaceObservationBleClient(
                 return
             }
             Log.i(TAG, "observation subscribed; sending START at ${GattProfile.NOMINAL_RATE_DHZ} dHz")
-            client.getService(SERVICE_UUID)?.getCharacteristic(CONTROL_UUID)?.let { control ->
-                control.value = GattProfile.startCommand()
-                client.writeCharacteristic(control)
+            sendStart(client, recovery = false)
+        }
+
+        override fun onCharacteristicWrite(
+            client: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int,
+        ) {
+            if (gatt !== client || characteristic.uuid != CONTROL_UUID) return
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                failConnection(client, "Không gửi được START ($status)")
+                return
             }
+            handler.removeCallbacks(connectTimeout)
+            if (streamingRequestedAtMs == 0L) streamingRequestedAtMs = SystemClock.elapsedRealtime()
+            handler.removeCallbacks(notificationWatchdog)
+            handler.postDelayed(notificationWatchdog, WATCHDOG_TICK_MS)
         }
     }
 
@@ -357,11 +409,13 @@ class FaceObservationBleClient(
         onFrameAccess(endpoint)
         Log.i(TAG, "FrameAccess read status=$status usable=${endpoint != null}")
         if (continueWithObservation) enableObservation(client)
+        else handler.removeCallbacks(connectTimeout)
     }
 
     private fun requestServices(client: BluetoothGatt) {
         if (gatt !== client || servicesRequested) return
         servicesRequested = true
+        armConnectTimeout("Khám phá GATT")
         val started = runCatching { client.discoverServices() }.getOrDefault(false)
         if (!started) {
             servicesRequested = false
@@ -372,6 +426,7 @@ class FaceObservationBleClient(
     private fun readDeviceInfo(client: BluetoothGatt) {
         if (gatt !== client) return
         val info = client.getService(SERVICE_UUID)?.getCharacteristic(DEVICE_INFO_UUID)
+        armConnectTimeout("Đọc Device Info")
         val readStarted = info != null && runCatching { client.readCharacteristic(info) }.getOrDefault(false)
         if (!readStarted) failConnection(client, "Thiếu Device Info")
     }
@@ -379,6 +434,7 @@ class FaceObservationBleClient(
     private fun readFrameAccessInfo(client: BluetoothGatt, continueWithObservation: Boolean) {
         if (gatt !== client) return
         frameAccessReadContinuesObservation = continueWithObservation
+        armConnectTimeout("Đọc Frame Access")
         val access = client.getService(SERVICE_UUID)?.getCharacteristic(FRAME_ACCESS_INFO_UUID)
         if (access == null && continueWithObservation && !cacheRefreshAttempted) {
             cacheRefreshAttempted = true
@@ -485,8 +541,50 @@ class FaceObservationBleClient(
             failConnection(client, "Observation/CCCD không tồn tại")
             return
         }
+        armConnectTimeout("Bật notification")
         cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         if (!client.writeDescriptor(cccd)) failConnection(client, "Không ghi được CCCD")
+    }
+
+    private fun sendStart(client: BluetoothGatt, recovery: Boolean) {
+        if (gatt !== client || !running || !hasConnectPermission()) return
+        val control = client.getService(SERVICE_UUID)?.getCharacteristic(CONTROL_UUID)
+        if (control == null) {
+            failConnection(client, "Control characteristic không tồn tại")
+            return
+        }
+        if (!recovery) armConnectTimeout("Gửi START")
+        val command = GattProfile.startCommand()
+        val started = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                client.writeCharacteristic(
+                    control,
+                    command,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                ) == BluetoothStatusCodes.SUCCESS
+            } else {
+                control.value = command
+                client.writeCharacteristic(control)
+            }
+        }.getOrDefault(false)
+        if (!started) failConnection(client, if (recovery) "Không gửi lại được START" else "Không gửi được START")
+    }
+
+    private fun markNotificationHealthy() {
+        lastNotificationAtMs = SystemClock.elapsedRealtime()
+        startRecoveryAttempted = false
+        if (!connectionHealthy) {
+            connectionHealthy = true
+            reconnectAttempt = 0
+            knownDeviceAttempted = false
+            Log.i(TAG, "BLE link healthy after first notification")
+        }
+    }
+
+    private fun armConnectTimeout(step: String) {
+        connectionStep = step
+        handler.removeCallbacks(connectTimeout)
+        handler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
     }
 
     private fun failConnection(client: BluetoothGatt, reason: String) {
@@ -499,6 +597,7 @@ class FaceObservationBleClient(
     private fun permissionRevoked(client: BluetoothGatt) {
         detachAndClose(client)
         ingestor.disconnected("Quyền Bluetooth đã bị thu hồi")
+        scheduleReconnect()
     }
 
     private fun closeCurrentGatt() {
@@ -510,9 +609,14 @@ class FaceObservationBleClient(
     private fun detachGatt(): BluetoothGatt? {
         handler.removeCallbacks(connectTimeout)
         handler.removeCallbacks(bondTimeout)
+        handler.removeCallbacks(notificationWatchdog)
         servicesRequested = false
         frameAccessReadContinuesObservation = false
         activeDeviceAddress = null
+        connectionHealthy = false
+        streamingRequestedAtMs = 0L
+        lastNotificationAtMs = 0L
+        startRecoveryAttempted = false
         val current = gatt
         gatt = null
         onFrameAccess(null)
@@ -530,6 +634,7 @@ class FaceObservationBleClient(
         handler.removeCallbacks(reconnect)
         handler.removeCallbacks(connectTimeout)
         handler.removeCallbacks(bondTimeout)
+        handler.removeCallbacks(notificationWatchdog)
     }
 
     private fun scheduleReconnect() {
@@ -566,12 +671,15 @@ class FaceObservationBleClient(
         val CONTROL_UUID: UUID = UUID.fromString(GattProfile.CONTROL_UUID)
         val FRAME_ACCESS_INFO_UUID: UUID = UUID.fromString(GattProfile.FRAME_ACCESS_INFO_UUID)
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-        const val SCAN_TIMEOUT_MS = 15_000L
-        const val CONNECT_TIMEOUT_MS = 10_000L
+        const val SCAN_TIMEOUT_MS = 8_000L
+        const val CONNECT_TIMEOUT_MS = 6_000L
         const val BOND_TIMEOUT_MS = 45_000L
         const val RECONNECT_BASE_MS = 1_000L
         const val RECONNECT_MAX_MS = 30_000L
         const val GATT_CACHE_SETTLE_MS = 500L
+        const val WATCHDOG_TICK_MS = 1_000L
+        const val NOTIFICATION_RESTART_MS = 3_000L
+        const val NOTIFICATION_RECONNECT_MS = 6_000L
         const val GATT_INSUFFICIENT_AUTHENTICATION = 5
         const val GATT_INSUFFICIENT_ENCRYPTION = 15
     }

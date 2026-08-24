@@ -20,7 +20,7 @@ Rule Engine v2 là nguồn quyết định break duy nhất. Posture không làm
 - Watch app, protocol contract, rule v2 và classifier hình học đã có unit test local.
 - BLE client, GATT server, firmware ESP-IDF, camera và face detector trên phần cứng: `NOT_STARTED / UNVERIFIED`.
 - Posture trên chuỗi bbox hiện mới là synthetic test; chưa xác nhận với ESP32-S3 và Galaxy Watch 5 Pro thật.
-- Yawn/PFLD: `deferred/unavailable` trong v2 và alpha.
+- Yawn advisory dùng Face Landmarker local trên Web/Watch: đếm chu kỳ ngáp và cảnh báo nhẹ khi có 3 lần/10 phút; không chẩn đoán chán nản và không tác động Rule Engine.
 
 Không truyền frame trong `FaceObservationV1`. Đường frame tương lai phải là protocol opt-in riêng, không lưu trữ, không cloud và không chứa định danh. Dự án không phải thiết bị y tế.
 

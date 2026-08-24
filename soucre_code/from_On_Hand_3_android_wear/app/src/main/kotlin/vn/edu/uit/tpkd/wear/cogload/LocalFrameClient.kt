@@ -80,6 +80,15 @@ data class LocalFramePacket(
     val jpeg: ByteArray,
     val receivedAtMonoMs: Long,
     val bootIdHex: String,
+    val yawnSync: RemoteYawnSync? = null,
+)
+
+data class RemoteYawnSync(
+    val sequence: Long,
+    val client: Long,
+    val totalCount: Int,
+    val windowCount: Int,
+    val observedEspUptimeMs: Long,
 )
 
 enum class LocalFrameFetchState {
@@ -96,6 +105,7 @@ internal data class ParsedLocalFrame(
     val observedEspUptimeMs: Long,
     val faceMetaV1: PoseFaceMetaV1,
     val jpeg: ByteArray,
+    val yawnSync: RemoteYawnSync?,
 )
 
 internal object LocalFrameResponseParser {
@@ -121,7 +131,23 @@ internal object LocalFrameResponseParser {
         val metaHeader = requireNotNull(header("X-FocusMate-Face-Meta-V1")) { "missing face metadata" }
         require(metaHeader.isNotBlank() && metaHeader.length <= MAX_FACE_META_CHARS) { "invalid face metadata" }
         val meta = parseFaceMetaV1(metaHeader)
-        return ParsedLocalFrame(sequence, uptime, meta, jpeg)
+        // Yawn sync is optional metadata. A truncated/malformed optional group
+        // must never discard the JPEG needed by posture and mouth calibration.
+        val yawnSync = runCatching {
+            val syncSequence = requireNotNull(
+                header("X-FocusMate-Yawn-Sequence")?.toLongOrNull(),
+            )
+            require(syncSequence in 1L..UINT32_MAX)
+            val client = requireNotNull(header("X-FocusMate-Yawn-Client")?.toLongOrNull())
+            val total = requireNotNull(header("X-FocusMate-Yawn-Total")?.toIntOrNull())
+            val window = requireNotNull(header("X-FocusMate-Yawn-Window")?.toIntOrNull())
+            val observed = requireNotNull(
+                header("X-FocusMate-Yawn-Observed-Uptime-Ms")?.toLongOrNull(),
+            )
+            require(client in 1L..UINT32_MAX && total in 0..1_000_000 && window in 0..1_000 && observed >= 0L)
+            RemoteYawnSync(syncSequence, client, total, window, observed)
+        }.getOrNull()
+        return ParsedLocalFrame(sequence, uptime, meta, jpeg, yawnSync)
     }
 
     internal fun parseFaceMetaV1(encoded: String): PoseFaceMetaV1 {
@@ -324,6 +350,7 @@ class LocalFrameClient(
                                 jpeg = parsed.jpeg,
                                 receivedAtMonoMs = monotonicMs(),
                                 bootIdHex = request.endpoint.bootIdHex,
+                                yawnSync = parsed.yawnSync,
                             ),
                         )
                     }

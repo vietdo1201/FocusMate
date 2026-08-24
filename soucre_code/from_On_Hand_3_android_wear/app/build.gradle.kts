@@ -24,8 +24,8 @@ android {
         applicationId   = "vn.edu.uit.tpkd.wear.cogload"
         minSdk          = 30
         targetSdk       = 35
-        versionCode     = 16
-        versionName     = "1.15-posture-orientation"
+        versionCode     = 20
+        versionName     = "1.19-yawn-sync-fix"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // Device-locked build for the current SM-R925F test image.

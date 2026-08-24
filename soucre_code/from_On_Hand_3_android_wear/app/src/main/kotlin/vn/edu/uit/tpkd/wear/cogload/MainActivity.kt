@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private lateinit var tvSessionConfidence: TextView
     private lateinit var tvRuleStatus: TextView
     private lateinit var tvPostureStatus: TextView
+    private lateinit var tvYawnStatus: TextView
     private lateinit var tvTodayTotal: TextView
     private lateinit var weeklyChart: WeeklyStudyChart
     private lateinit var tvStats: TextView
@@ -73,6 +74,7 @@ class MainActivity : Activity() {
             renderSessionConfidence(active)
             renderRuleStatus(active)
             renderPostureStatus(active)
+            renderYawnStatus(active)
             renderPostureRuntimeStatus(active)
             maybeShowForegroundBreakPrompt()
             uiHandler.postDelayed(this, 1_000L)
@@ -136,6 +138,7 @@ class MainActivity : Activity() {
         tvSessionConfidence = findViewById(R.id.tv_session_confidence)
         tvRuleStatus = findViewById(R.id.tv_rule_status)
         tvPostureStatus = findViewById(R.id.tv_posture_status)
+        tvYawnStatus = findViewById(R.id.tv_yawn_status)
         tvTodayTotal = findViewById(R.id.tv_today_total)
         weeklyChart = findViewById(R.id.weekly_chart)
         tvStats = findViewById(R.id.tv_stats)
@@ -225,9 +228,16 @@ class MainActivity : Activity() {
             "Đã lưu phiên ${completed.durationMinutes} phút."
         }
         val postureReport = PostureRecommendations.report(completed.postureSummaries)
+        val yawnReport = "Ngáp: ${completed.yawnCount} lần • cảnh báo buồn ngủ/mệt ${completed.yawnAlertCount} lần."
         AlertDialog.Builder(this)
             .setTitle("Báo cáo cuối phiên")
-            .setMessage(if (postureReport.isBlank()) "$message\nTư thế: chưa có dữ liệu." else "$message\n\n$postureReport")
+            .setMessage(
+                if (postureReport.isBlank()) {
+                    "$message\nTư thế: chưa có dữ liệu.\n$yawnReport"
+                } else {
+                    "$message\n\n$postureReport\n\n$yawnReport"
+                },
+            )
             .setPositiveButton("Đóng", null)
             .show()
         uiHandler.post { maybeShowPendingReview() }
@@ -390,6 +400,7 @@ class MainActivity : Activity() {
         renderSessionConfidence(active)
         renderRuleStatus(active)
         renderPostureStatus(active)
+        renderYawnStatus(active)
         renderHistory()
         renderPostureRuntimeStatus(active)
         renderReminderReadiness()
@@ -529,6 +540,30 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun renderYawnStatus(active: ActiveStudySession?) {
+        if (active == null) {
+            tvYawnStatus.setText(R.string.yawn_status_idle)
+            return
+        }
+        val detection = YawnRuntimeStore.snapshot
+        tvYawnStatus.text = when {
+            detection?.advisory == true -> getString(
+                R.string.yawn_status_advisory,
+                detection.eventsInWindow,
+            )
+            detection?.state == YawnState.YAWNING -> getString(
+                R.string.yawn_status_detected,
+                detection.totalCount,
+            )
+            detection?.state == YawnState.CALIBRATING -> getString(
+                R.string.yawn_status_calibrating,
+                detection.calibrationProgress,
+                detection.calibrationRequired,
+            )
+            else -> getString(R.string.yawn_status_tracking, active.yawnCount)
+        }
+    }
+
     private fun renderPostureRuntimeStatus(active: ActiveStudySession?) {
         if (active == null) {
             tvPostureRuntimeStatus.setText(R.string.posture_runtime_idle)
@@ -597,7 +632,7 @@ class MainActivity : Activity() {
                     session.accepted == false -> "đã hoãn"
                     else -> "không nhắc"
                 }
-                "${DATE_FORMAT.format(Date(session.startTimeMs))} • ${session.durationMinutes}p • tập trung ${session.focusScore}/5 • $marker"
+                "${DATE_FORMAT.format(Date(session.startTimeMs))} • ${session.durationMinutes}p • tập trung ${session.focusScore}/5 • ngáp ${session.yawnCount} • $marker"
             }
         }
     }

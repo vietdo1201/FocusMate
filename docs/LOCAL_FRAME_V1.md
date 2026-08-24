@@ -73,6 +73,10 @@ Response `200` **PHẢI** có `Content-Type: image/jpeg`, `Cache-Control: no-sto
 - `X-FocusMate-Frame-Sequence`: uint32 decimal.
 - `X-FocusMate-Observed-Uptime-Ms`: monotonic ESP uptime decimal.
 - `X-FocusMate-Face-Meta-V1`: Base64URL canonical của sidecar public 32 byte ở mục 4.
+- Nhóm tùy chọn `X-FocusMate-Yawn-Sequence`, `-Client`, `-Total`, `-Window`
+  và `-Observed-Uptime-Ms` phải xuất hiện cùng nhau. Watch dùng tổng lớn hơn
+  giữa Web và local để hội tụ mà không cộng đôi cùng một lần ngáp. Nếu nhóm
+  tùy chọn thiếu/hỏng, Watch bỏ riêng summary này nhưng vẫn xử lý JPEG/Pose.
 
 JPEG tối đa 512 KiB, bắt đầu `FF D8`, kết thúc `FF D9`. Watch reject body/header hỏng, quá lớn, sequence replay/out-of-order hoặc uptime lùi trong cùng `boot_id`. Sequence so modular như `FaceSequenceGate`; frame bỏ qua vì backpressure là gap hợp lệ. Header sequence/uptime và FaceMeta **PHẢI** thuộc đúng cùng một snapshot JPEG.
 

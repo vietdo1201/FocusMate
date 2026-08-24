@@ -41,7 +41,10 @@ bool focusmate_camera_smoke_init(void)
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = PIXFORMAT_JPEG,
         .frame_size = FRAMESIZE_QVGA,
-        .jpeg_quality = 8,
+        /* OV2640 quality is inverse: lower means less JPEG compression.
+         * Quality 6 preserves limb edges better while remaining comfortably
+         * below the broker's bounded 128 KiB slot at QVGA. */
+        .jpeg_quality = 6,
         .fb_count = 1,
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
@@ -103,7 +106,7 @@ bool focusmate_camera_smoke_init(void)
     }
     const int64_t elapsed_us = esp_timer_get_time() - started_us;
     const double fps = elapsed_us > 0 ? (double)valid * 1000000.0 / (double)elapsed_us : 0.0;
-    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x format=JPEG size=320x240 quality=8 profile=indoor-auto valid=%u errors=%u fps=%.2f",
+    ESP_LOGI(TAG, "OV2640 smoke PID=0x%04x format=JPEG size=320x240 quality=6 profile=indoor-auto valid=%u errors=%u fps=%.2f",
              sensor->id.PID, valid, errors, fps);
     if (valid < 24U || errors > 1U) {
         ESP_LOGE(TAG, "camera smoke acceptance failed");

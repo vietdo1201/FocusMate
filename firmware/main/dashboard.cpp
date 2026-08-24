@@ -21,6 +21,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "face_detector.h"
+#include "focusmate_dns.h"
 #include "frame_broker.h"
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
@@ -41,16 +42,29 @@ constexpr char kTag[] = "focusmate-web";
 constexpr char kNvsNamespace[] = "focusmate_web";
 constexpr char kLegacyNvsNamespace[] = "focusmate";
 constexpr char kDefaultPassword[] = "FocusMate123";
-constexpr char kCookieName[] = "focusmate_session";
 constexpr char kApSsid[] = "FocusMate-Setup";
 constexpr char kMdnsHost[] = "focusmate";
-constexpr uint32_t kLoginBackoffMs = 1000U;
+constexpr char kCanonicalHostname[] = "focusmate.local";
+constexpr char kCanonicalUrl[] = "http://focusmate.local/";
+// A failed STA connection performs a channel scan. Retrying every few seconds
+// makes the co-hosted setup AP difficult to discover, especially when the
+// saved network is no longer nearby. Keep a generous setup window and stop
+// background STA retries while somebody is connected to the setup AP.
+constexpr uint32_t kStationReconnectIntervalMs = 30000U;
 
 struct WifiStatus {
     bool station_online = false;
     char ip[16] = "192.168.4.1";
     char ssid[33] = "FocusMate-Setup";
     int rssi = 0;
+};
+
+struct YawnSyncSnapshot {
+    uint32_t sequence = 0;
+    uint32_t client = 0;
+    uint32_t total = 0;
+    uint32_t window = 0;
+    uint64_t observed_uptime_ms = 0;
 };
 
 class Dashboard {
@@ -64,13 +78,10 @@ private:
     bool initialize_identity();
     bool initialize_network();
     bool initialize_server();
-    bool authenticated(httpd_req_t *request) const;
     esp_err_t root(httpd_req_t *request);
-    esp_err_t login(httpd_req_t *request);
-    esp_err_t logout(httpd_req_t *request);
-    esp_err_t change_password(httpd_req_t *request);
     esp_err_t camera(httpd_req_t *request);
     esp_err_t watch_camera(httpd_req_t *request);
+    esp_err_t yawn_event(httpd_req_t *request);
     esp_err_t viewer_release(httpd_req_t *request);
     esp_err_t status(httpd_req_t *request);
     esp_err_t posture(httpd_req_t *request, bool calibrate);
@@ -90,14 +101,12 @@ private:
     void rollback_pending();
     WifiStatus wifi_status();
     bool watch_authenticated(httpd_req_t *request) const;
+    YawnSyncSnapshot yawn_sync_snapshot();
 
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;
     WifiStatus wifi_{};
-    std::string dashboard_password_;
-    std::string session_token_;
     std::array<uint8_t, 16> watch_token_{};
-    uint64_t last_login_failure_ms_ = 0;
     uint32_t previous_inference_count_ = 0;
     uint64_t previous_inference_at_ms_ = 0;
     uint32_t inference_fps_q6_ = 0;
@@ -105,9 +114,12 @@ private:
     bool pending_connection_started_ = false;
     bool pending_switch_requested_ = false;
     bool station_associated_ = false;
+    uint8_t ap_client_count_ = 0U;
     uint64_t pending_deadline_ms_ = 0;
     uint64_t pending_switch_at_ms_ = 0;
     uint64_t last_reconnect_ms_ = 0;
+    YawnSyncSnapshot yawn_sync_{};
+    uint32_t yawn_event_id_ = 0;
 };
 
 Dashboard dashboard;
@@ -187,17 +199,6 @@ uint32_t remote_ipv4(httpd_req_t *request)
     return 0U;
 }
 
-std::string hex_token()
-{
-    std::array<uint8_t, 16> bytes{};
-    esp_fill_random(bytes.data(), bytes.size());
-    char value[33];
-    for (size_t index = 0; index < bytes.size(); ++index)
-        std::snprintf(value + index * 2U, 3U, "%02x", bytes[index]);
-    value[32] = '\0';
-    return value;
-}
-
 bool valid_password(const std::string &value)
 {
     return value.size() >= 8U && value.size() <= 63U;
@@ -244,7 +245,8 @@ std::string face_meta_header(const focusmate_face_meta_v1_t &meta)
     return encoded;
 }
 
-esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view)
+esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view,
+                    const YawnSyncSnapshot *yawn_sync = nullptr)
 {
     char sequence[16], uptime[24], confidence[16], bbox[96];
     std::snprintf(sequence, sizeof sequence, "%" PRIu32, view.sequence);
@@ -260,6 +262,19 @@ esp_err_t send_jpeg(httpd_req_t *request, const focusmate_jpeg_view_t &view)
     httpd_resp_set_hdr(request, "X-FocusMate-Confidence", confidence);
     const std::string encoded_meta = face_meta_header(view.meta);
     httpd_resp_set_hdr(request, "X-FocusMate-Face-Meta-V1", encoded_meta.c_str());
+    char yawn_sequence[16], yawn_client[16], yawn_total[16], yawn_window[16], yawn_uptime[24];
+    if (yawn_sync != nullptr && yawn_sync->sequence != 0U) {
+        std::snprintf(yawn_sequence, sizeof yawn_sequence, "%" PRIu32, yawn_sync->sequence);
+        std::snprintf(yawn_client, sizeof yawn_client, "%" PRIu32, yawn_sync->client);
+        std::snprintf(yawn_total, sizeof yawn_total, "%" PRIu32, yawn_sync->total);
+        std::snprintf(yawn_window, sizeof yawn_window, "%" PRIu32, yawn_sync->window);
+        std::snprintf(yawn_uptime, sizeof yawn_uptime, "%" PRIu64, yawn_sync->observed_uptime_ms);
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Sequence", yawn_sequence);
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Client", yawn_client);
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Total", yawn_total);
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Window", yawn_window);
+        httpd_resp_set_hdr(request, "X-FocusMate-Yawn-Observed-Uptime-Ms", yawn_uptime);
+    }
     if (view.face.face_detected) {
         std::snprintf(bbox, sizeof bbox,
             "%" PRIu32 ".%06" PRIu32 ",%" PRIu32 ".%06" PRIu32
@@ -289,18 +304,19 @@ bool Dashboard::start()
 bool Dashboard::initialize_identity()
 {
     esp_fill_random(watch_token_.data(), watch_token_.size());
-    dashboard_password_ = nvs_string("dash_pass");
-    if (!valid_password(dashboard_password_)) {
-        const std::string legacy_ap_password = nvs_string("ap_pass");
-        dashboard_password_ = valid_password(legacy_ap_password) ? legacy_ap_password : kDefaultPassword;
-        if (!set_nvs_string("dash_pass", dashboard_password_)) return false;
-    }
-    session_token_ = nvs_string("dash_token");
-    if (session_token_.size() != 32U) {
-        session_token_ = hex_token();
-        if (!set_nvs_string("dash_token", session_token_)) return false;
-    }
     return true;
+}
+
+bool request_host_is_ipv4(httpd_req_t *request)
+{
+    const size_t length = httpd_req_get_hdr_value_len(request, "Host");
+    if (length == 0U || length >= 64U) return false;
+    std::array<char, 64> host{};
+    if (httpd_req_get_hdr_value_str(request, "Host", host.data(), host.size()) != ESP_OK)
+        return false;
+    if (char *port = std::strchr(host.data(), ':'); port != nullptr) *port = '\0';
+    in_addr address{};
+    return inet_pton(AF_INET, host.data(), &address) == 1;
 }
 
 bool Dashboard::initialize_network()
@@ -309,8 +325,9 @@ bool Dashboard::initialize_network()
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return false;
     result = esp_event_loop_create_default();
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return false;
-    esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
+    esp_netif_t *station_netif = esp_netif_create_default_wifi_sta();
+    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+    if (station_netif == nullptr || ap_netif == nullptr) return false;
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     if (esp_wifi_init(&init) != ESP_OK) return false;
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, event_thunk, this);
@@ -330,7 +347,26 @@ bool Dashboard::initialize_network()
     ap.ap.channel = 1;
     ap.ap.max_connection = 2;
     ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
-    if (esp_wifi_set_config(WIFI_IF_AP, &ap) != ESP_OK || esp_wifi_start() != ESP_OK) return false;
+    if (esp_wifi_set_config(WIFI_IF_AP, &ap) != ESP_OK) return false;
+
+    // Register mDNS before AP_START so the responder sees the AP lifecycle
+    // event. Explicitly enabling the AP afterwards also covers warm starts.
+    bool mdns_ready = false;
+    if (mdns_init() == ESP_OK) {
+        mdns_ready = true;
+        mdns_hostname_set(kMdnsHost);
+        mdns_instance_name_set("FocusMate Shadow Dashboard");
+        mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0);
+    }
+    if (esp_wifi_start() != ESP_OK) return false;
+    if (mdns_ready && mdns_netif_action(ap_netif, MDNS_EVENT_ENABLE_IP4) != ESP_OK)
+        ESP_LOGW(kTag, "could not explicitly enable mDNS on setup AP");
+
+    // ESP-IDF's AP DHCP server advertises its own address as DNS. This small
+    // unicast responder is needed because some Windows clients do not use
+    // multicast .local resolution on Wi-Fi networks without Internet.
+    if (!focusmate_dns_start(kCanonicalHostname, "WIFI_AP_DEF"))
+        ESP_LOGE(kTag, "could not start setup AP DNS responder");
 
     std::string ssid = nvs_string("pending_ssid");
     std::string password = nvs_string("pending_pass");
@@ -344,11 +380,6 @@ bool Dashboard::initialize_network()
     }
     if (!ssid.empty()) configure_station(ssid, password);
 
-    if (mdns_init() == ESP_OK) {
-        mdns_hostname_set(kMdnsHost);
-        mdns_instance_name_set("FocusMate Shadow Dashboard");
-        mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0);
-    }
     if (xTaskCreate(network_task_thunk, "focusmate-network", 4096, this, 3, nullptr) != pdPASS)
         return false;
     return true;
@@ -359,6 +390,7 @@ bool Dashboard::initialize_server()
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 16;
+    config.max_resp_headers = 16;
     config.max_open_sockets = 6;
     config.lru_purge_enable = true;
     config.stack_size = 10240;
@@ -369,11 +401,9 @@ bool Dashboard::initialize_server()
         {"/assets/*", HTTP_GET, dispatch, this},
         {"/camera.jpg", HTTP_GET, dispatch, this},
         {"/api/watch/frame", HTTP_GET, dispatch, this},
+        {"/api/yawn/event", HTTP_POST, dispatch, this},
         {"/api/viewer/release", HTTP_POST, dispatch, this},
         {"/api/status", HTTP_GET, dispatch, this},
-        {"/api/auth/login", HTTP_POST, dispatch, this},
-        {"/api/auth/logout", HTTP_POST, dispatch, this},
-        {"/api/auth/password", HTTP_POST, dispatch, this},
         {"/api/posture/calibrate", HTTP_POST, dispatch, this},
         {"/api/posture/reset", HTTP_POST, dispatch, this},
         {"/api/wifi/scan", HTTP_GET, dispatch, this},
@@ -399,11 +429,8 @@ esp_err_t Dashboard::handle(httpd_req_t *request)
     if (query != std::string::npos) uri.resize(query);
     if (uri == "/") return root(request);
     if (uri.rfind("/assets/", 0U) == 0U) return focusmate_web_assets_serve(request, uri.c_str());
-    if (uri == "/api/auth/login") return login(request);
     if (uri == "/api/watch/frame") return watch_camera(request);
-    if (!authenticated(request)) return json_error(request, "401 Unauthorized", "authentication required");
-    if (uri == "/api/auth/logout") return logout(request);
-    if (uri == "/api/auth/password") return change_password(request);
+    if (uri == "/api/yawn/event") return yawn_event(request);
     if (uri == "/camera.jpg") return camera(request);
     if (uri == "/api/viewer/release") return viewer_release(request);
     if (uri == "/api/status") return status(request);
@@ -414,21 +441,6 @@ esp_err_t Dashboard::handle(httpd_req_t *request)
     if (uri == "/api/wifi/reset") return wifi_reset(request);
     if (uri == "/api/wifi/ap-password") return ap_password(request);
     return httpd_resp_send_404(request);
-}
-
-bool Dashboard::authenticated(httpd_req_t *request) const
-{
-    const size_t length = httpd_req_get_hdr_value_len(request, "Cookie");
-    if (length == 0U || length > 512U) return false;
-    std::vector<char> cookie(length + 1U);
-    if (httpd_req_get_hdr_value_str(request, "Cookie", cookie.data(), cookie.size()) != ESP_OK) return false;
-    const std::string expected = std::string(kCookieName) + "=" + session_token_;
-    const std::string value(cookie.data());
-    const size_t position = value.find(expected);
-    if (position == std::string::npos) return false;
-    const size_t end = position + expected.size();
-    return (position == 0U || value[position - 1U] == ' ' || value[position - 1U] == ';') &&
-        (end == value.size() || value[end] == ';');
 }
 
 bool Dashboard::watch_authenticated(httpd_req_t *request) const
@@ -454,6 +466,14 @@ bool Dashboard::watch_authenticated(httpd_req_t *request) const
 
 esp_err_t Dashboard::root(httpd_req_t *request)
 {
+    // One hostname means one browser origin/localStorage/cache regardless of
+    // whether the ESP is reached through the setup AP or the home/office LAN.
+    if (request_host_is_ipv4(request)) {
+        httpd_resp_set_status(request, "302 Found");
+        httpd_resp_set_hdr(request, "Location", kCanonicalUrl);
+        httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+        return httpd_resp_send(request, nullptr, 0);
+    }
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     httpd_resp_set_hdr(request, "Content-Security-Policy",
@@ -461,54 +481,6 @@ esp_err_t Dashboard::root(httpd_req_t *request)
         "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'");
     return httpd_resp_send(request, reinterpret_cast<const char *>(dashboard_html_start),
                            dashboard_html_end - dashboard_html_start);
-}
-
-esp_err_t Dashboard::login(httpd_req_t *request)
-{
-    const uint64_t current = now_ms();
-    if (last_login_failure_ms_ != 0U && current - last_login_failure_ms_ < kLoginBackoffMs)
-        return json_error(request, "429 Too Many Requests", "try again shortly");
-    const std::string body = read_body(request);
-    cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
-    const std::string password = root == nullptr ? "" : json_string(root, "password");
-    cJSON_Delete(root);
-    if (password != dashboard_password_) {
-        last_login_failure_ms_ = current;
-        return json_error(request, "401 Unauthorized", "invalid password");
-    }
-    const std::string cookie = std::string(kCookieName) + "=" + session_token_ +
-        "; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict";
-    httpd_resp_set_hdr(request, "Set-Cookie", cookie.c_str());
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddBoolToObject(response, "authenticated", true);
-    cJSON_AddBoolToObject(response, "default_password", dashboard_password_ == kDefaultPassword);
-    return send_json(request, response);
-}
-
-esp_err_t Dashboard::logout(httpd_req_t *request)
-{
-    httpd_resp_set_hdr(request, "Set-Cookie",
-        "focusmate_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddBoolToObject(response, "authenticated", false);
-    return send_json(request, response);
-}
-
-esp_err_t Dashboard::change_password(httpd_req_t *request)
-{
-    const std::string body = read_body(request);
-    cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
-    const std::string current = root == nullptr ? "" : json_string(root, "current_password");
-    const std::string next = root == nullptr ? "" : json_string(root, "new_password");
-    cJSON_Delete(root);
-    if (current != dashboard_password_) return json_error(request, "403 Forbidden", "current password is invalid");
-    if (!valid_password(next)) return json_error(request, "400 Bad Request", "password must contain 8 to 63 characters");
-    const std::string token = hex_token();
-    if (!set_nvs_string("dash_pass", next) || !set_nvs_string("dash_token", token))
-        return json_error(request, "500 Internal Server Error", "cannot persist password");
-    dashboard_password_ = next;
-    session_token_ = token;
-    return logout(request);
 }
 
 esp_err_t Dashboard::camera(httpd_req_t *request)
@@ -573,9 +545,62 @@ esp_err_t Dashboard::watch_camera(httpd_req_t *request)
         httpd_resp_set_status(request, "204 No Content");
         return httpd_resp_send(request, nullptr, 0);
     }
-    const esp_err_t result = send_jpeg(request, view);
+    const YawnSyncSnapshot yawn_sync = yawn_sync_snapshot();
+    const esp_err_t result = send_jpeg(request, view, &yawn_sync);
     focusmate_frame_broker_release(&view);
     return result;
+}
+
+esp_err_t Dashboard::yawn_event(httpd_req_t *request)
+{
+    const std::string body = read_body(request);
+    cJSON *root = cJSON_ParseWithLength(body.data(), body.size());
+    cJSON *client_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "client");
+    cJSON *event_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "event");
+    cJSON *total_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "total_count");
+    cJSON *window_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "window_count");
+    cJSON *uptime_item = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "observed_uptime_ms");
+    const bool valid = cJSON_IsNumber(client_item) && client_item->valuedouble >= 1.0 &&
+        client_item->valuedouble <= UINT32_MAX && cJSON_IsNumber(event_item) &&
+        event_item->valuedouble >= 0.0 && event_item->valuedouble <= UINT32_MAX &&
+        cJSON_IsNumber(total_item) && total_item->valuedouble >= 0.0 && total_item->valuedouble <= 1000000.0 &&
+        cJSON_IsNumber(window_item) && window_item->valuedouble >= 0.0 && window_item->valuedouble <= 1000.0 &&
+        cJSON_IsNumber(uptime_item) && uptime_item->valuedouble >= 0.0;
+    if (!valid) {
+        cJSON_Delete(root);
+        return json_error(request, "400 Bad Request", "invalid yawn sync");
+    }
+    const uint32_t client = static_cast<uint32_t>(client_item->valuedouble);
+    const uint32_t event = static_cast<uint32_t>(event_item->valuedouble);
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const bool changed = yawn_sync_.client != client || yawn_event_id_ != event ||
+        yawn_sync_.total != static_cast<uint32_t>(total_item->valuedouble) ||
+        yawn_sync_.window != static_cast<uint32_t>(window_item->valuedouble);
+    if (changed) {
+        ++yawn_sync_.sequence;
+        if (yawn_sync_.sequence == 0U) ++yawn_sync_.sequence;
+        yawn_sync_.client = client;
+        yawn_event_id_ = event;
+        yawn_sync_.total = static_cast<uint32_t>(total_item->valuedouble);
+        yawn_sync_.window = static_cast<uint32_t>(window_item->valuedouble);
+        yawn_sync_.observed_uptime_ms = static_cast<uint64_t>(uptime_item->valuedouble);
+    }
+    const YawnSyncSnapshot snapshot = yawn_sync_;
+    xSemaphoreGive(mutex_);
+    cJSON_Delete(root);
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddNumberToObject(response, "sequence", snapshot.sequence);
+    cJSON_AddNumberToObject(response, "total_count", snapshot.total);
+    cJSON_AddNumberToObject(response, "window_count", snapshot.window);
+    return send_json(request, response);
+}
+
+YawnSyncSnapshot Dashboard::yawn_sync_snapshot()
+{
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const YawnSyncSnapshot snapshot = yawn_sync_;
+    xSemaphoreGive(mutex_);
+    return snapshot;
 }
 
 esp_err_t Dashboard::viewer_release(httpd_req_t *request)
@@ -715,7 +740,7 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddBoolToObject(privacy, "landmark_local", true);
     cJSON_AddStringToObject(privacy, "pose_model_sha256",
         "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a");
-    cJSON_AddBoolToObject(root, "default_password", dashboard_password_ == kDefaultPassword);
+    cJSON_AddBoolToObject(root, "dashboard_auth", false);
     return send_json(request, root);
 }
 
@@ -867,6 +892,15 @@ void Dashboard::on_event(esp_event_base_t base, int32_t id, void *data)
         std::strncpy(wifi_.ssid, kApSsid, sizeof(wifi_.ssid));
         wifi_.rssi = 0;
         xSemaphoreGive(mutex_);
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_STACONNECTED) {
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+        if (ap_client_count_ < UINT8_MAX) ++ap_client_count_;
+        xSemaphoreGive(mutex_);
+        ESP_LOGI(kTag, "setup AP client connected; pausing saved-network retries");
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_STADISCONNECTED) {
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+        if (ap_client_count_ > 0U) --ap_client_count_;
+        xSemaphoreGive(mutex_);
     }
 }
 
@@ -885,8 +919,9 @@ void Dashboard::network_task()
         const uint64_t switch_at = pending_switch_at_ms_;
         const bool online = wifi_.station_online;
         const bool associated = station_associated_;
+        const bool ap_client_connected = ap_client_count_ > 0U;
         const uint64_t deadline = pending_deadline_ms_;
-        const bool reconnect_due = current - last_reconnect_ms_ >= 5000U;
+        const bool reconnect_due = current - last_reconnect_ms_ >= kStationReconnectIntervalMs;
         if (reconnect_due) last_reconnect_ms_ = current;
         if (switch_requested && current >= switch_at) pending_switch_requested_ = false;
         xSemaphoreGive(mutex_);
@@ -899,7 +934,7 @@ void Dashboard::network_task()
             if (ssid.empty() || !configure_station(ssid, password)) rollback_pending();
         } else if (pending && !online && current >= deadline) {
             rollback_pending();
-        } else if (!online && !associated && reconnect_due) {
+        } else if (!online && !associated && !ap_client_connected && reconnect_due) {
             esp_wifi_connect();
         }
         vTaskDelay(pdMS_TO_TICKS(1000));

@@ -177,17 +177,17 @@ class FaceObservationIngestor(
         publish(PostureRuntimePhase.UNAVAILABLE, "Device Info không hợp lệ")
     }
 
-    fun onNotification(notification: ByteArray) {
+    fun onNotification(notification: ByteArray): Boolean {
         val nowMono = monotonicMs()
         val outcome = reassembler.offer(notification, nowMono)
-        if (outcome !is FaceObservationReassembler.Outcome.Complete) return
-        val observation = FaceObservationCodec.tryDecode(outcome.payload).getOrNull() ?: return
+        if (outcome !is FaceObservationReassembler.Outcome.Complete) return false
+        val observation = FaceObservationCodec.tryDecode(outcome.payload).getOrNull() ?: return false
         val timeAnchor = anchor ?: run {
             recordRate(nowMono)
             publish(PostureRuntimePhase.UNAVAILABLE, unavailableDetail)
-            return
+            return true
         }
-        if (!sequenceGate.accept(observation)) return
+        if (!sequenceGate.accept(observation)) return true
         recordRate(nowMono)
         if (timeAnchor.isStale(observation.espUptimeMs, nowMono)) {
             classifier.resetTemporalState()
@@ -198,7 +198,7 @@ class FaceObservationIngestor(
                 lastCalibrationSampleMonoMs = null
             }
             publish(PostureRuntimePhase.STALE, "Không có observation mới")
-            return
+            return true
         }
         // The ESP transport can notify faster than the detector produces a new
         // result. Keep those notifications in link-rate telemetry, but never
@@ -207,7 +207,7 @@ class FaceObservationIngestor(
         // FaceSequenceGate; reconnect on the same boot retains this gate,
         // while a boot_id change or full pipeline reset clears it.
         val previousUniqueUptime = lastUniqueEspUptimeMs
-        if (previousUniqueUptime != null && observation.espUptimeMs <= previousUniqueUptime) return
+        if (previousUniqueUptime != null && observation.espUptimeMs <= previousUniqueUptime) return true
         lastUniqueEspUptimeMs = observation.espUptimeMs
         if (!classifier.isCalibrated()) {
             if (classifier.isCalibrationCandidate(observation)) {
@@ -234,13 +234,13 @@ class FaceObservationIngestor(
                     "${calibration.size}/$CALIBRATION_SAMPLES mẫu"
                 }
                 publish(PostureRuntimePhase.CALIBRATING, detail)
-                return
+                return true
             }
             calibration.clear()
             lastCalibrationSampleMonoMs = null
         }
         val observedAtMono = timeAnchor.observedAtMonotonicMs(observation.espUptimeMs)
-        if (observedAtMono < 0L) return
+        if (observedAtMono < 0L) return true
         val previousObservedAt = lastAcceptedObservedAtMonoMs
         if (previousObservedAt != null &&
             (observedAtMono <= previousObservedAt ||
@@ -255,6 +255,7 @@ class FaceObservationIngestor(
         val update = PostureIngestionUpdate(classification, tracker.summaries(observedAtMono), insights)
         onUpdate(update)
         publish(PostureRuntimePhase.LIVE, classification.state.name, classification)
+        return true
     }
 
     fun disconnected(detail: String = "Mất kết nối") {

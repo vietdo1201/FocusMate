@@ -9,10 +9,12 @@ export const POSTURE_STATES = Object.freeze([
   "UNKNOWN",
 ]);
 
-export const POSE_CLASSIFIER_VERSION = 1;
+export const POSE_CLASSIFIER_VERSION = 2;
 export const REQUIRED_BASELINE_SAMPLES = 20;
 export const REQUIRED_BASELINE_MS = 5000;
 export const STALE_MS = 3000;
+const LABEL_DEBOUNCE_MS = 1000;
+const INVALID_HOLD_MS = 800;
 
 const LANDMARK = Object.freeze({
   NOSE: 0,
@@ -160,14 +162,17 @@ export class PosePostureClassifier {
     this.samples = [];
     this.baselineStartedAt = 0;
     this.baselineLastAt = 0;
+    this.calibrationOutlier = null;
+    this.manualCalibration = false;
     this.lastSequence = null;
     this.lastTimestampMs = 0;
     this.lastFeatures = null;
     this.missingCount = 0;
     this.candidate = "UNKNOWN";
-    this.candidateCount = 0;
+    this.candidateSinceMs = 0;
     this.state = "UNKNOWN";
     this.stateSinceMs = 0;
+    this.lastUsableAtMs = 0;
     this.slumpedSinceMs = 0;
     this.normalSinceMs = 0;
     this.adaptationSamples = [];
@@ -178,14 +183,24 @@ export class PosePostureClassifier {
     this.samples = [];
     this.baselineStartedAt = 0;
     this.baselineLastAt = 0;
+    this.calibrationOutlier = null;
+    this.manualCalibration = false;
+    this.lastSequence = null;
+    this.lastTimestampMs = 0;
     this.lastFeatures = null;
     this.candidate = "UNKNOWN";
-    this.candidateCount = 0;
+    this.candidateSinceMs = 0;
     this.state = "UNKNOWN";
     this.stateSinceMs = 0;
     this.slumpedSinceMs = 0;
     this.normalSinceMs = 0;
+    this.lastUsableAtMs = 0;
     this.adaptationSamples = [];
+  }
+
+  captureBaseline() {
+    this.reset();
+    this.manualCalibration = true;
   }
 
   persistedBaseline() {
@@ -206,14 +221,19 @@ export class PosePostureClassifier {
     if (!features || features.quality < 0.7) {
       this.missingCount += 1;
       const raw = !features && !faceDetected ? "FACE_MISSING" : "UNKNOWN";
+      if (this.baseline && raw === "UNKNOWN" && this.lastUsableAtMs &&
+          timestampMs - this.lastUsableAtMs <= INVALID_HOLD_MS) {
+        return this.snapshot(features ? "low_visibility_hold" : "pose_missing_hold", 0, features, raw);
+      }
       return this.commit(raw, timestampMs, 0, features, features ? "low_visibility" : "pose_missing");
     }
     this.missingCount = 0;
+    this.lastUsableAtMs = timestampMs;
 
     if (!this.baseline) {
-      this.collectBaseline(features, timestampMs);
+      const calibrationReason = this.collectBaseline(features, timestampMs);
       return this.commit("UNKNOWN", timestampMs, features.quality, features,
-        this.baseline ? "baseline_ready" : "auto_calibrating");
+        this.baseline ? "baseline_ready" : calibrationReason);
     }
 
     const classification = this.classify(features, timestampMs);
@@ -226,21 +246,16 @@ export class PosePostureClassifier {
   stale(nowMs) {
     if (!this.lastTimestampMs || nowMs - this.lastTimestampMs <= STALE_MS) return null;
     this.candidate = "UNKNOWN";
-    this.candidateCount = 3;
+    this.candidateSinceMs = nowMs - LABEL_DEBOUNCE_MS;
     this.state = "UNKNOWN";
     this.stateSinceMs = nowMs;
     return this.snapshot("stale");
   }
 
   collectBaseline(features, timestampMs) {
-    const upright = Math.abs(features.headRollDeg) <= 10 && Math.abs(features.torsoLeanDeg) <= 8 &&
-      Math.abs(features.lateralHead) <= 0.12 && features.headHeight >= 0.35 && features.headHeight <= 2.5;
-    if (!upright) {
-      this.samples = [];
-      this.baselineStartedAt = 0;
-      this.baselineLastAt = 0;
-      this.lastFeatures = null;
-      return;
+    if (!Number.isFinite(features.headHeight) || features.headHeight < 0.25 || features.headHeight > 3 ||
+        !Number.isFinite(features.shoulderWidth) || features.shoulderWidth < 0.04) {
+      return "invalid_geometry";
     }
     if (this.baselineLastAt &&
         (timestampMs <= this.baselineLastAt || timestampMs - this.baselineLastAt > 1500)) {
@@ -248,20 +263,30 @@ export class PosePostureClassifier {
       this.baselineStartedAt = 0;
       this.baselineLastAt = 0;
       this.lastFeatures = null;
+      this.calibrationOutlier = null;
     }
-    if (this.lastFeatures && (
-      Math.abs(features.headRollDeg - this.lastFeatures.headRollDeg) > 4 ||
-      Math.abs(features.torsoLeanDeg - this.lastFeatures.torsoLeanDeg) > 4 ||
-      Math.abs(features.lateralHead - this.lastFeatures.lateralHead) > 0.04 ||
-      Math.abs(features.headHeight - this.lastFeatures.headHeight) > 0.08
-    )) return; // Ignore one noisy inference without throwing away good history.
+    if (this.lastFeatures && !this.isStablePair(features, this.lastFeatures)) {
+      const previousOutlier = this.calibrationOutlier;
+      this.calibrationOutlier = {features, timestampMs};
+      if (!previousOutlier || timestampMs - previousOutlier.timestampMs > 1500 ||
+          !this.isStablePair(features, previousOutlier.features)) return "moving_too_much";
+      // Two consecutive samples around a new position start a new stable window;
+      // a single noisy inference never destroys good history.
+      this.samples = [{...previousOutlier.features, _timestampMs: previousOutlier.timestampMs}];
+      this.baselineStartedAt = previousOutlier.timestampMs;
+      this.baselineLastAt = previousOutlier.timestampMs;
+      this.lastFeatures = previousOutlier.features;
+    }
+    this.calibrationOutlier = null;
     if (!this.baselineStartedAt) this.baselineStartedAt = timestampMs;
     this.baselineLastAt = timestampMs;
     this.lastFeatures = features;
     this.samples.push({...features, _timestampMs: timestampMs});
     if (this.samples.length > 60) this.samples.shift();
     if (this.samples.length < REQUIRED_BASELINE_SAMPLES ||
-        this.samples.at(-1)._timestampMs - this.samples[0]._timestampMs < REQUIRED_BASELINE_MS) return;
+        this.samples.at(-1)._timestampMs - this.samples[0]._timestampMs < REQUIRED_BASELINE_MS) {
+      return this.manualCalibration ? "manual_calibrating" : "auto_calibrating";
+    }
 
     const names = ["headRollDeg", "torsoLeanDeg", "shoulderAngleDeg", "lateralHead", "headHeight",
       "eyeHeight", "facePitch", "faceScale", "shoulderWidth", "torsoLength"];
@@ -282,6 +307,15 @@ export class PosePostureClassifier {
     this.baselineStartedAt = 0;
     this.baselineLastAt = 0;
     this.lastFeatures = null;
+    this.manualCalibration = false;
+    return "baseline_ready";
+  }
+
+  isStablePair(current, previous) {
+    return Math.abs(current.headRollDeg - previous.headRollDeg) <= 4 &&
+      Math.abs(current.torsoLeanDeg - previous.torsoLeanDeg) <= 4 &&
+      Math.abs(current.lateralHead - previous.lateralHead) <= 0.04 &&
+      Math.abs(current.headHeight - previous.headHeight) <= 0.08;
   }
 
   classify(features, timestampMs) {
@@ -316,10 +350,6 @@ export class PosePostureClassifier {
     leanScores.sort((a, b) => b.score - a.score);
     let leanScore = leanScores[0]?.score ?? 0;
     let leanDirection = leanScores[0]?.direction ?? 0;
-    if (leanScores.some(value => value.direction !== leanDirection && value.score >= leanScore / 1.2)) {
-      leanScore = 0;
-      leanDirection = 0;
-    }
 
     const downSignals = [headDrop / enter.headDrop, eyeDrop / enter.eyeDrop, pitch / enter.pitch];
     const downCount = downSignals.filter(value => value >= 1).length;
@@ -343,10 +373,7 @@ export class PosePostureClassifier {
       this.slumpedSinceMs = 0;
     }
 
-    if (leanScore >= 1 && headDown && Math.max(leanScore, downScore) / Math.max(0.001, Math.min(leanScore, downScore)) < 1.2) {
-      return {state: "UNKNOWN", rawState: "UNKNOWN", confidence: features.quality, reason: "conflicting_geometry"};
-    }
-    if (leanScore >= 1 && (!headDown || leanScore >= downScore * 1.2)) {
+    if (leanScore >= 1 && (!headDown || leanScore >= downScore)) {
       const state = leanDirection > 0 ? "LEAN_LEFT" : "LEAN_RIGHT";
       return {state, rawState: state, confidence: clamp(leanScore / 1.8, 0, 1), reason: "anatomical_lean"};
     }
@@ -358,12 +385,11 @@ export class PosePostureClassifier {
   }
 
   commit(rawState, timestampMs, confidence, features, reason, explicitRawState = null) {
-    if (rawState === this.candidate) this.candidateCount += 1;
-    else {
+    if (rawState !== this.candidate) {
       this.candidate = rawState;
-      this.candidateCount = 1;
+      this.candidateSinceMs = timestampMs;
     }
-    if (this.candidateCount >= 3 && this.state !== rawState) {
+    if (this.state !== rawState && timestampMs - this.candidateSinceMs >= LABEL_DEBOUNCE_MS) {
       this.state = rawState;
       this.stateSinceMs = timestampMs;
       if (rawState !== "NORMAL") this.normalSinceMs = 0;
@@ -402,6 +428,9 @@ export class PosePostureClassifier {
       calibrated: Boolean(this.baseline),
       calibrationProgress: this.baseline ? REQUIRED_BASELINE_SAMPLES : this.samples.length,
       calibrationRequired: REQUIRED_BASELINE_SAMPLES,
+      calibrationStableMs: this.baseline ? REQUIRED_BASELINE_MS :
+        (this.samples.length > 1 ? this.samples.at(-1)._timestampMs - this.samples[0]._timestampMs : 0),
+      calibrationMode: this.manualCalibration ? "manual" : "auto",
       features,
       baselineChanged: reason === "baseline_ready",
     };
