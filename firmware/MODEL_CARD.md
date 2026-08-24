@@ -41,12 +41,12 @@ package SHA-256 is `3195826BCCB7AF3A8262B3DE188D2120A4C858BEA96B9A6708B0F55BAA97
 
 ## Measured device behavior
 
-The previous ESPDet build was measured on ESP32-S3 rev 0.2, but that evidence
-does not transfer to this MSR/MNP build. The current detector, five-point
-metadata and dual-client broker are `VERIFIED_LOCAL` by build and contract
-tests only. Latency, low-light precision, false-positive rate, BLE coexistence,
-thermal behavior and long-run stability must be measured again on the target
-board before this detector revision can be marked `VERIFIED_DEVICE`.
+The current MSR/MNP detector, five-point metadata and dual-client broker have
+device evidence on ESP32-S3 rev 0.2: Web inference 38–49 ms in the recorded pass,
+BLE 5 Hz and zero notification failures. This supports `VERIFIED_DEVICE` for the
+recorded smoke/vertical slice only. Low-light precision, false-positive rate,
+thermal behavior and long-run stability remain unverified and are not inferred
+from build or CI success.
 
 ## Quality and limitations
 

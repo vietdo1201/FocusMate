@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0 — 2026-08-25
+
+- Thêm Yawn Sync V2 qua GATT với HTTP local fallback, checkpoint phiên và chống
+  đếm trùng sau reconnect/reboot.
+- Giảm tiêu thụ pin Watch bằng sensor batching, BLE/frame/inference thích ứng
+  màn hình và nhiệt, cùng retry backoff tối đa 30 giây.
+- Chuẩn hóa build clean checkout cho Android và ESP-IDF bằng model hash-pinned.
+- Chuẩn hóa cây nguồn `wear/`, SPDX/REUSE, third-party notices và SPDX 2.3 SBOM.
+- Nâng CI và signed release để phát hành APK, firmware, hash và hồ sơ license.
+
 ## 1.15-posture-orientation
 
 - Đổi geometry ngang sang hệ quy chiếu của người ngồi để `LEAN_LEFT/RIGHT` không còn bị đảo theo phía ảnh camera.

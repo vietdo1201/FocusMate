@@ -1,9 +1,9 @@
-FocusMate AI
-Copyright 2026 FocusMate AI contributors
+FocusMate
+Copyright 2026 vietdo1201
 
 This product includes third-party software and may use separately licensed
 model artifacts. Those components retain their respective copyright and
 license terms. The Apache License 2.0 in LICENSE applies only to project-owned
 material unless a file or component states otherwise.
 
-See docs/LICENSING.md and dependency lockfiles for the distribution checklist.
+See docs/LICENSING.md, THIRD_PARTY_NOTICES.md and the SPDX SBOM for details.

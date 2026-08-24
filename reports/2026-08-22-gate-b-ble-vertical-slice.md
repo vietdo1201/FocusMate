@@ -47,7 +47,7 @@ idf.py build
 idf.py -p COM4 flash
 idf.py -p COM4 monitor
 
-adb install -r soucre_code/from_On_Hand_3_android_wear/app/build/outputs/apk/debug/app-debug.apk
+adb install -r wear/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -v time -s FocusMateBLE:I '*:S'
 ```
 

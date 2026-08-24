@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
+name: Đề xuất cải tiến
+description: Đề xuất thay đổi có phạm vi, lợi ích và tiêu chí hoàn thành rõ ràng
+title: "[Enhancement]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vấn đề cần giải quyết
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Giải pháp đề xuất và tiêu chí chấp nhận
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: Giải pháp giữ dữ liệu local-first hoặc giải thích rõ ngoại lệ.
+          required: true

@@ -19,7 +19,7 @@ Sau khi đặt các biến môi trường:
 ./release.ps1
 ```
 
-APK signed được tạo tại `soucre_code/from_On_Hand_3_android_wear/app/build/outputs/apk/release/app-release.apk`.
+APK signed được tạo tại `wear/app/build/outputs/apk/release/app-release.apk`.
 
 ## Cài lên Galaxy Watch
 
@@ -27,4 +27,5 @@ APK signed được tạo tại `soucre_code/from_On_Hand_3_android_wear/app/bui
 2. Pair/connect Watch bằng `adb pair` và `adb connect`.
 3. Chạy `adb install -r <đường-dẫn-apk>`.
 
-Đây là bản experimental; BLE/camera posture chưa hoạt động trên phần cứng thật.
+Xem `docs/STATUS.md` để biết chính xác phần nào đã `VERIFIED_DEVICE`; không suy
+diễn trạng thái chỉ từ việc APK cài được hoặc workflow build thành công.

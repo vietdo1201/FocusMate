@@ -2,8 +2,10 @@
 
 ESP-IDF 5.5.5 project for the ESP32-S3 N16R8. The first hardware gate is a
 privacy-safe camera-to-GATT path: it advertises the normative service, exposes
-the exact 34-byte Device Info structure, accepts control commands, and emits
-canonical face/no-face observations at 5 Hz. No image bytes leave the ESP.
+the versioned Device Info structure, accepts control commands, and emits
+canonical face/landmark observations at an adaptive 5/2/1 Hz. An opt-in,
+authenticated local HTTP endpoint can stream a temporary JPEG to one Watch or
+browser consumer; frames never leave the LAN and are not persisted.
 
 Camera and detector dependencies are pinned to Espressif `esp32-camera` 2.1.7
 (Apache-2.0), `human_face_detect` 0.5.0 (MIT) and `esp-dl` 3.3.9 (MIT).
@@ -25,9 +27,10 @@ to the BLE task as integer micro-units; an inference older than 1 second is not
 transmitted. The 4 MiB factory partition preserves the standard NVS address at
 `0x9000`, including stored BLE bond keys.
 
-Build and flash from an exported ESP-IDF 5.5.5 shell:
+Prepare pinned assets, then build from an exported ESP-IDF 5.5.5 shell:
 
 ```text
+python ../tools/bootstrap_assets.py
 idf.py set-target esp32s3
 idf.py build
 idf.py -p COM4 flash monitor

@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
+blank_issues_enabled: false
+contact_links:
+  - name: Báo cáo lỗ hổng bảo mật
+    url: https://github.com/vietdo1201/FocusMate/security/policy
+    about: Không công khai bí mật hoặc lỗ hổng chưa được xử lý trong Issues.

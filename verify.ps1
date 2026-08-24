@@ -1,39 +1,12 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
-$wearRoot = Join-Path $PSScriptRoot 'soucre_code/from_On_Hand_3_android_wear'
-$gradleWrapper = Join-Path $wearRoot 'gradlew.bat'
-$tasks = @(
-    'clean'
-    ':protocol:test'
-    ':app:testDebugUnitTest'
-    ':app:lintDebug'
-    ':app:assembleDebug'
-    ':app:assembleRelease'
-)
-
-python -m unittest discover -s (Join-Path $PSScriptRoot 'tests') -p 'test_*.py'
-if ($LASTEXITCODE -ne 0) {
-    throw "Repository contract verification failed with exit code $LASTEXITCODE"
+if (-not (Get-Command idf.py -ErrorAction SilentlyContinue)) {
+    $localIdf = Join-Path $env:USERPROFILE 'esp/esp-idf-v5.5.5/export.ps1'
+    if (Test-Path -LiteralPath $localIdf) { & $localIdf }
 }
-
-node --test (Join-Path $PSScriptRoot 'tests/pose_classifier.test.mjs')
-if ($LASTEXITCODE -ne 0) {
-    throw "Landmark classifier verification failed with exit code $LASTEXITCODE"
-}
-
-if (-not (Test-Path -LiteralPath $gradleWrapper)) {
-    throw "Gradle wrapper not found: $gradleWrapper"
-}
-
-Push-Location $wearRoot
-try {
-    & $gradleWrapper --no-daemon $tasks
-    if ($LASTEXITCODE -ne 0) {
-        throw "Watch rules v2 verification failed with exit code $LASTEXITCODE"
-    }
-}
-finally {
-    Pop-Location
-}
+python (Join-Path $PSScriptRoot 'tools/verify.py')
+if ($LASTEXITCODE -ne 0) { throw "FocusMate verification failed with exit code $LASTEXITCODE" }

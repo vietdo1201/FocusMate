@@ -1,0 +1,28 @@
+version = 1
+SPDX-PackageName = "FocusMate"
+SPDX-PackageSupplier = "Person: vietdo1201"
+SPDX-PackageDownloadLocation = "https://github.com/vietdo1201/FocusMate"
+
+[[annotations]]
+path = ["**/*.md", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.json", "**/*.csv", "**/*.lockfile", "**/.gitignore", ".gitignore", "help.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 vietdo1201"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [".gitattributes", "NOTICE", "artifacts/*.log", "firmware/sdkconfig.defaults", "tests/golden/*.tsv", "wear/app/proguard-rules.pro"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 vietdo1201"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["wear/gradlew", "wear/gradlew.bat", "wear/gradle/wrapper/gradle-wrapper.jar"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2015 the original author or authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["LICENSE", "LICENSES/Apache-2.0.txt", "LICENSES/MIT.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "Apache-2.0 OR MIT"

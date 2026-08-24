@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
+name: Báo lỗi
+description: Báo lỗi có thể tái hiện trên Watch, ESP32-S3 hoặc Web dashboard
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Không đăng token, địa chỉ riêng, log chứa dữ liệu sức khỏe hoặc ảnh khuôn mặt."
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Hiện tượng và cách tái hiện
+      description: Ghi các bước tối thiểu, kết quả thực tế và kết quả mong đợi.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Phiên bản/commit
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Thành phần
+      options: [Wear OS, ESP32-S3 firmware, Web dashboard, Build/CI, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Chẩn đoán đã ẩn dữ liệu nhạy cảm
