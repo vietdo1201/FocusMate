@@ -35,6 +35,7 @@ Không truyền frame trong `FaceObservationV1`. Đường frame tương lai ph�
 - [ADR 0003](docs/decisions/0003-optional-frame-transport-to-watch.md)
 - [ADR 0004](docs/decisions/0004-gatt-profile-and-canonical-framing.md)
 - [GATT profile (normative)](docs/GATT_PROFILE.md)
+- [Bằng chứng quan sát pin trên Galaxy Watch 5 Pro](reports/2026-08-25-watch-battery-observation.md)
 
 Chạy kiểm chứng từ root:
 
