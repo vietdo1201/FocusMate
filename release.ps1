@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
 [CmdletBinding()]
 param()
 
@@ -15,7 +17,7 @@ foreach ($name in $required) {
     }
 }
 
-$wearRoot = Join-Path $PSScriptRoot 'soucre_code/from_On_Hand_3_android_wear'
+$wearRoot = Join-Path $PSScriptRoot 'wear'
 $wrapper = Join-Path $wearRoot 'gradlew.bat'
 Push-Location $wearRoot
 try {
@@ -33,7 +35,23 @@ $sdkRoot = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT) |
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
     Select-Object -First 1
 if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
-    throw 'ANDROID_HOME or ANDROID_SDK_ROOT is required to verify the APK signature.'
+    $localProperties = Join-Path $wearRoot 'local.properties'
+    if (Test-Path -LiteralPath $localProperties) {
+        $sdkLine = Get-Content -LiteralPath $localProperties |
+            Where-Object { $_ -match '^sdk\.dir=' } |
+            Select-Object -First 1
+        if ($null -ne $sdkLine) {
+            $sdkRoot = ($sdkLine -replace '^sdk\.dir=', '') -replace '\\:', ':'
+            $sdkRoot = $sdkRoot -replace '\\\\', '\'
+        }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($sdkRoot) -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $defaultSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    if (Test-Path -LiteralPath $defaultSdk) { $sdkRoot = $defaultSdk }
+}
+if ([string]::IsNullOrWhiteSpace($sdkRoot) -or -not (Test-Path -LiteralPath $sdkRoot)) {
+    throw 'Android SDK was not found. Set ANDROID_HOME/ANDROID_SDK_ROOT or sdk.dir in wear/local.properties.'
 }
 $apksigner = Get-ChildItem -LiteralPath (Join-Path $sdkRoot 'build-tools') -Filter 'apksigner.bat' -Recurse -File |
     Sort-Object { [version]$_.Directory.Name } -Descending |

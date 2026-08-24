@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 vietdo1201
+# SPDX-License-Identifier: Apache-2.0
 name: Verify
 
 on:
@@ -5,27 +7,60 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  android:
+  android-and-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
-      - name: Verify firmware and Web contracts
-        run: |
-          python -m unittest discover -s tests -p "test_*.py"
-          node --test tests/*.test.mjs
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - name: Verify protocol and Wear app
-        working-directory: soucre_code/from_On_Hand_3_android_wear
+      - name: Prepare pinned assets and verify metadata
         run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon clean :protocol:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+          python -m pip install --disable-pip-version-check reuse==6.2.0 charset-normalizer==3.4.3
+          python tools/bootstrap_assets.py
+          python tools/generate_sbom.py
+          python tools/check_compliance.py
+          python -m reuse lint
+          git diff --exit-code -- sbom/focusmate-v2.2.0.spdx.json
+      - name: Verify contracts and Wear app
+        run: python tools/verify.py --no-firmware --no-assets
+
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Prepare pinned firmware assets
+        run: python tools/bootstrap_assets.py
+      - name: Build ESP32-S3 firmware with ESP-IDF 5.5.5
+        uses: espressif/esp-idf-ci-action@e6f5c74232b1ccd4c97ed641f1e48553853f1fd5 # v1.2.0
+        with:
+          esp_idf_version: v5.5.5
+          target: esp32s3
+          path: firmware
+          command: idf.py fullclean && idf.py build
