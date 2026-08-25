@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 vietdo1201
 // SPDX-License-Identifier: Apache-2.0
 import {FaceLandmarker, FilesetResolver, PoseLandmarker} from "/assets/vision_bundle.mjs?v=tasks-vision-1.0.1-classic-1";
-import {PosePostureClassifier, POSE_CLASSIFIER_VERSION} from "/assets/pose_classifier.mjs?v=classifier-3";
+import {PosePostureClassifier, POSE_CLASSIFIER_VERSION} from "/assets/pose_classifier.mjs?v=classifier-4";
 import {YawnClassifier, YAWN_CLASSIFIER_VERSION} from "/assets/yawn_classifier.mjs?v=yawn-3";
 
 const POSE_MODEL_URL = "/assets/pose_landmarker_lite-v2.task";
@@ -10,6 +10,8 @@ const POSE_MODEL_SHA256 = "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c
 const FACE_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff";
 const PROFILE = "ov2640-qvga-canonical-v1";
 const MOUTH_INDICES = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178,88,95,78,191,80,81,82,13,312,311,310,415];
+const FACE_SCALE_LANDMARKS = Object.freeze({leftEye: 33, rightEye: 263, top: 10, bottom: 152, left: 234, right: 454});
+const FACE_GEOMETRY_MAX_AGE_MS = 700;
 
 let poseLandmarker = null;
 let faceLandmarker = null;
@@ -22,6 +24,7 @@ let inferenceCount = 0;
 let inferenceFps = 0;
 let lastYawn = null;
 let lastMouthLandmarks = null;
+let lastFaceGeometry = null;
 let smoothedDisplayLandmarks = null;
 let lastDisplayLandmarkAt = 0;
 
@@ -32,7 +35,11 @@ const pointQuality = point => Math.min(point?.visibility ?? 1, point?.presence ?
 async function initialize(savedBaseline, savedYawnBaseline) {
   // Version the loader directory because firmware assets are served immutable.
   // The enclosing classic bootstrap supplies MediaPipe's required globals.
-  const fileset = await FilesetResolver.forVisionTasks("/assets/wasm-classic-v1", false);
+  // The asset server maps both MediaPipe's SIMD and no-SIMD filenames to the
+  // bundled compatibility runtime. This is required by older Android Chrome,
+  // whose SIMD probe selects the `_nosimd` filenames.
+  const nativeSimd = await FilesetResolver.isSimdSupported(false);
+  const fileset = await FilesetResolver.forVisionTasks("/assets/wasm-compatible-v1", false);
   poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
     baseOptions: {
       modelAssetPath: POSE_MODEL_URL,
@@ -81,6 +88,8 @@ async function initialize(savedBaseline, savedYawnBaseline) {
     classifierVersion: POSE_CLASSIFIER_VERSION,
     yawnClassifierVersion: YAWN_CLASSIFIER_VERSION,
     yawnAvailable,
+    wasmProfile: "nosimd-compatible",
+    nativeSimd,
   });
 }
 
@@ -137,6 +146,28 @@ function serializeMouthLandmarks(result) {
   return MOUTH_INDICES.map(index => ({index, x: face[index].x, y: face[index].y, z: face[index].z}));
 }
 
+function serializeFaceGeometry(result, observedAtMs) {
+  const face = result?.faceLandmarks?.[0];
+  if (!face) return null;
+  const point = name => face[FACE_SCALE_LANDMARKS[name]];
+  const leftEye = point("leftEye"), rightEye = point("rightEye"), top = point("top"),
+    bottom = point("bottom"), left = point("left"), right = point("right");
+  if ([leftEye, rightEye, top, bottom, left, right].some(value =>
+    !value || !Number.isFinite(value.x) || !Number.isFinite(value.y))) return null;
+  const eyeScale = Math.hypot(leftEye.x - rightEye.x, leftEye.y - rightEye.y);
+  if (!Number.isFinite(eyeScale) || eyeScale <= 0.005) return null;
+  return {
+    observedAtMs,
+    eyeScale,
+    cx: (left.x + right.x) / 2,
+    cy: (top.y + bottom.y) / 2,
+    width: Math.hypot(left.x - right.x, left.y - right.y),
+    height: Math.hypot(top.x - bottom.x, top.y - bottom.y),
+    leftEye: {x: leftEye.x, y: leftEye.y},
+    rightEye: {x: rightEye.x, y: rightEye.y},
+  };
+}
+
 function jawOpenScore(result) {
   const categories = result?.faceBlendshapes?.[0]?.categories || [];
   const match = categories.find(category => String(category.categoryName || "").toLowerCase() === "jawopen");
@@ -167,6 +198,7 @@ onmessage = async event => {
     yawnClassifier?.reset();
     lastYawn = null;
     lastMouthLandmarks = null;
+    lastFaceGeometry = null;
     postMessage({type: "yawnBaseline", baseline: null});
     return;
   }
@@ -180,17 +212,12 @@ onmessage = async event => {
     const result = poseLandmarker.detectForVideo(message.bitmap, timestampMs);
     const landmarks = serializeLandmarks(result);
     const displayLandmarks = smoothLandmarksForDisplay(landmarks, timestampMs);
-    const posture = poseClassifier.observe({
-      sequence: message.sequence,
-      timestampMs,
-      landmarks,
-      faceMeta: message.faceMeta ?? null,
-    });
     if (faceLandmarker && yawnClassifier && timestampMs - lastFaceInferenceAt >= 350) {
       lastFaceInferenceAt = timestampMs;
       const faceResult = faceLandmarker.detectForVideo(message.bitmap, timestampMs);
       const face = faceResult?.faceLandmarks?.[0] || null;
       lastMouthLandmarks = serializeMouthLandmarks(faceResult);
+      lastFaceGeometry = serializeFaceGeometry(faceResult, timestampMs);
       lastYawn = yawnClassifier.observe({
         sequence: message.sequence,
         timestampMs,
@@ -199,6 +226,15 @@ onmessage = async event => {
       });
       if (lastYawn.baselineChanged) postMessage({type: "yawnBaseline", baseline: yawnClassifier.persistedBaseline()});
     }
+    const faceGeometry = lastFaceGeometry && timestampMs - lastFaceGeometry.observedAtMs <= FACE_GEOMETRY_MAX_AGE_MS
+      ? {...lastFaceGeometry, ageMs: timestampMs - lastFaceGeometry.observedAtMs} : null;
+    const posture = poseClassifier.observe({
+      sequence: message.sequence,
+      timestampMs,
+      landmarks,
+      faceMeta: message.faceMeta ?? null,
+      faceGeometry,
+    });
     inferenceCount += 1;
     const elapsedMs = performance.now() - startedAt;
     inferenceFps = inferenceFps === 0 ? 1000 / Math.max(1, elapsedMs)
@@ -212,6 +248,7 @@ onmessage = async event => {
       posture,
       yawn: yawnForMessage,
       mouthLandmarks: lastMouthLandmarks,
+      faceGeometry,
       inferenceMs: elapsedMs,
       inferenceCount,
       inferenceFps,

@@ -36,11 +36,17 @@ data class PoseFaceMetaV1(
     val rightMouth: PoseFacePoint,
 )
 
+data class PoseFaceScaleGeometry(
+    val eyeScale: Double,
+    val observedAtMonoMs: Long,
+)
+
 data class PoseFrameObservation(
     val frameSequence: Long,
     val observedAtMonoMs: Long,
     val landmarks: List<PoseLandmarkPoint>,
     val faceMeta: PoseFaceMetaV1? = null,
+    val faceScaleGeometry: PoseFaceScaleGeometry? = null,
 ) {
     init {
         require(frameSequence in 0L..UINT32_MAX)
@@ -96,6 +102,9 @@ internal data class PoseFeatures(
     val eyeHeight: Double,
     val facePitch: Double?,
     val faceScale: Double,
+    val poseEyeScale: Double?,
+    val faceEyeScale: Double?,
+    val espBboxScale: Double?,
     val shoulderWidth: Double,
     val torsoLength: Double?,
 )
@@ -110,6 +119,9 @@ private data class PoseBaseline(
     val eyeHeight: FeatureSummary,
     val facePitch: FeatureSummary?,
     val faceScale: FeatureSummary,
+    val poseEyeScale: FeatureSummary?,
+    val faceEyeScale: FeatureSummary?,
+    val espBboxScale: FeatureSummary?,
     val torsoLength: FeatureSummary?,
 )
 
@@ -135,7 +147,7 @@ class PosePostureClassifier(
     fun observe(frame: PoseFrameObservation): PoseClassifierUpdate = observeFeatures(
         frameSequence = frame.frameSequence,
         observedAtMonoMs = frame.observedAtMonoMs,
-        features = extractPoseFeatures(frame.landmarks, frame.faceMeta),
+        features = extractPoseFeatures(frame.landmarks, frame.faceMeta, frame.faceScaleGeometry, frame.observedAtMonoMs),
         faceDetected = frame.faceMeta?.detected,
     )
 
@@ -253,6 +265,12 @@ class PosePostureClassifier(
             eyeHeight = samples.summary(PoseFeatures::eyeHeight),
             facePitch = samples.mapNotNull(PoseFeatures::facePitch).takeIf { it.size >= config.calibrationSamples / 2 }?.summary(),
             faceScale = samples.summary(PoseFeatures::faceScale),
+            poseEyeScale = samples.mapNotNull(PoseFeatures::poseEyeScale)
+                .takeIf { it.size >= config.calibrationSamples }?.summary(),
+            faceEyeScale = samples.mapNotNull(PoseFeatures::faceEyeScale)
+                .takeIf { it.size >= config.calibrationSamples }?.summary(),
+            espBboxScale = samples.mapNotNull(PoseFeatures::espBboxScale)
+                .takeIf { it.size >= config.calibrationSamples }?.summary(),
             torsoLength = samples.mapNotNull(PoseFeatures::torsoLength).takeIf { it.size >= config.calibrationSamples / 2 }?.summary(),
         )
         calibration.clear()
@@ -292,15 +310,21 @@ class PosePostureClassifier(
         val pitch = if (features.facePitch != null && reference.facePitch != null) {
             features.facePitch - reference.facePitch.value
         } else null
-        val scaleRatio = features.faceScale / reference.faceScale.value
+        val scaleRatios = listOfNotNull(
+            ratio(features.poseEyeScale, reference.poseEyeScale),
+            ratio(features.faceEyeScale, reference.faceEyeScale),
+            ratio(features.espBboxScale, reference.espBboxScale),
+        )
         val torsoCompression = if (features.torsoLength != null && reference.torsoLength != null && reference.torsoLength.value > 0.0) {
             (reference.torsoLength.value - features.torsoLength) / reference.torsoLength.value
         } else 0.0
 
         val tooCloseThreshold = if (stableState == PostureState.TOO_CLOSE) 1.20 else config.tooCloseScaleRatio
-        if (scaleRatio >= tooCloseThreshold) {
+        val closeRatios = scaleRatios.filter { it >= tooCloseThreshold }.sortedDescending()
+        if (scaleRatios.size >= 2 && closeRatios.size >= 2) {
             slumpedSinceMs = null
-            return RawClassification(PostureState.TOO_CLOSE, ((scaleRatio - 1.0) / 0.55).coerceIn(0.0, 1.0), "scale")
+            return RawClassification(PostureState.TOO_CLOSE,
+                ((closeRatios[1] - 1.0) / 0.55).coerceIn(0.0, 1.0), "scale_consensus")
         }
 
         val leanSignals = listOf(
@@ -421,7 +445,7 @@ class PosePostureClassifier(
     companion object {
         const val SOURCE = "watch_mediapipe_pose_lite_v1"
         const val PROFILE_FINGERPRINT =
-            "ov2640-qvga-canonical-v1:59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a:classifier-v2"
+            "ov2640-qvga-canonical-v1:59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a:classifier-v3"
         private const val MAXIMUM_CALIBRATION_SAMPLES = 60
         private const val UINT32_MAX = 4_294_967_295L
         private const val UINT32_HALF_RANGE = 2_147_483_647L
@@ -431,6 +455,8 @@ class PosePostureClassifier(
 internal fun extractPoseFeatures(
     landmarks: List<PoseLandmarkPoint>,
     faceMeta: PoseFaceMetaV1?,
+    faceScaleGeometry: PoseFaceScaleGeometry? = null,
+    observedAtMonoMs: Long = 0L,
 ): PoseFeatures? {
     if (landmarks.size <= RIGHT_HIP) return null
     val nose = landmarks[NOSE]
@@ -483,9 +509,11 @@ internal fun extractPoseFeatures(
     }
 
     var facePitch: Double? = null
-    var faceScale = shoulderWidth
+    var faceScale = eyeWidth
+    var espBboxScale: Double? = null
     if (faceMeta?.detected == true) {
-        faceScale = sqrt((faceMeta.width * faceMeta.height).coerceAtLeast(0.000001))
+        espBboxScale = sqrt((faceMeta.width * faceMeta.height).coerceAtLeast(0.000001))
+        faceScale = espBboxScale
         val metaEyeMid = midpoint(faceMeta.leftEye, faceMeta.rightEye)
         val mouthMid = midpoint(faceMeta.leftMouth, faceMeta.rightMouth)
         val eyeMouth = distance(metaEyeMid, mouthMid)
@@ -501,6 +529,12 @@ internal fun extractPoseFeatures(
         eyeHeight = distance(eyeMid, shoulderMid) / shoulderWidth,
         facePitch = facePitch,
         faceScale = faceScale,
+        poseEyeScale = eyeWidth.takeIf { it > MINIMUM_EYE_SCALE },
+        faceEyeScale = faceScaleGeometry?.takeIf {
+            it.eyeScale.isFinite() && it.eyeScale > MINIMUM_EYE_SCALE &&
+                observedAtMonoMs >= it.observedAtMonoMs && observedAtMonoMs - it.observedAtMonoMs <= FACE_SCALE_MAX_AGE_MS
+        }?.eyeScale,
+        espBboxScale = espBboxScale,
         shoulderWidth = shoulderWidth,
         torsoLength = torsoLength,
     )
@@ -529,6 +563,8 @@ private fun List<Double>.median(): Double {
     val middle = sorted.size / 2
     return if (sorted.size % 2 == 0) (sorted[middle - 1] + sorted[middle]) / 2.0 else sorted[middle]
 }
+private fun ratio(value: Double?, baseline: FeatureSummary?): Double? =
+    if (value != null && baseline != null && value.isFinite() && baseline.value > 0.0) value / baseline.value else null
 
 private const val NOSE = 0
 private const val LEFT_EYE = 2
@@ -543,3 +579,4 @@ private const val MINIMUM_BODY_SCALE = 0.04
 private const val MINIMUM_EYE_SCALE = 0.005
 private const val MINIMUM_TORSO_SCALE = 0.02
 private const val MINIMUM_HIP_CONFIDENCE = 0.50
+private const val FACE_SCALE_MAX_AGE_MS = 700L

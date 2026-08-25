@@ -6,8 +6,8 @@
 const queuedMessages = [];
 self.onmessage = event => queuedMessages.push(event);
 
-importScripts("/assets/wasm-classic-v1/vision_wasm_internal.js");
-import("/assets/pose_worker.mjs?v=pose-stability-4")
+importScripts("/assets/wasm-compatible-v1/vision_wasm_internal.js");
+import("/assets/pose_worker.mjs?v=scale-consensus-1")
   .then(() => {
     const moduleHandler = self.onmessage;
     if (typeof moduleHandler !== "function") {

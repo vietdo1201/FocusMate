@@ -34,6 +34,7 @@ class PoseLandmarkerEngine(
     private var faceLandmarker: FaceLandmarker? = null
     private var lastPoseTimestampMs = -1L
     private var lastFaceTimestampMs = -1L
+    private var lastFaceScaleGeometry: PoseFaceScaleGeometry? = null
     private var faceInferenceIntervalMs: Long? = DEFAULT_FACE_INTERVAL_MS
     private val mailbox = LatestFrameMailbox(
         executor = executor,
@@ -98,6 +99,7 @@ class PoseLandmarkerEngine(
             val value = poseLandmarker to faceLandmarker
             poseLandmarker = null
             faceLandmarker = null
+            lastFaceScaleGeometry = null
             value
         }
         executor.execute {
@@ -159,7 +161,7 @@ class PoseLandmarkerEngine(
             val poseTimestamp = synchronized(lock) {
                 maxOf(frame.receivedAtMonoMs, lastPoseTimestampMs + 1L).also { lastPoseTimestampMs = it }
             }
-            handlePoseResult(pose.detectForVideo(image, poseTimestamp), frame)
+            val poseResult = pose.detectForVideo(image, poseTimestamp)
             val face = tasks.second
             val interval = tasks.third
             if (face != null && interval != null) {
@@ -168,9 +170,13 @@ class PoseLandmarkerEngine(
                     val faceTimestamp = synchronized(lock) {
                         maxOf(poseTimestamp, lastFaceTimestampMs + 1L).also { lastFaceTimestampMs = it }
                     }
-                    handleFaceResult(face.detectForVideo(image, faceTimestamp), frame)
+                    lastFaceScaleGeometry = handleFaceResult(face.detectForVideo(image, faceTimestamp), frame)
                 }
             }
+            val faceGeometry = lastFaceScaleGeometry?.takeIf {
+                poseTimestamp >= it.observedAtMonoMs && poseTimestamp - it.observedAtMonoMs <= FACE_SCALE_MAX_AGE_MS
+            }
+            handlePoseResult(poseResult, frame, faceGeometry)
         } catch (error: RuntimeException) {
             onDiagnostic("MediaPipe inference lỗi ${error.javaClass.simpleName}")
         } finally {
@@ -180,7 +186,11 @@ class PoseLandmarkerEngine(
         }
     }
 
-    private fun handlePoseResult(result: PoseLandmarkerResult, frame: LocalFramePacket) {
+    private fun handlePoseResult(
+        result: PoseLandmarkerResult,
+        frame: LocalFramePacket,
+        faceScaleGeometry: PoseFaceScaleGeometry?,
+    ) {
         val points = result.landmarks().firstOrNull().orEmpty().map { landmark ->
             PoseLandmarkPoint(
                 x = landmark.x().toDouble(),
@@ -196,11 +206,12 @@ class PoseLandmarkerEngine(
                 observedAtMonoMs = frame.receivedAtMonoMs,
                 landmarks = points,
                 faceMeta = frame.faceMetaV1,
+                faceScaleGeometry = faceScaleGeometry,
             ),
         )
     }
 
-    private fun handleFaceResult(result: FaceLandmarkerResult, frame: LocalFramePacket) {
+    private fun handleFaceResult(result: FaceLandmarkerResult, frame: LocalFramePacket): PoseFaceScaleGeometry? {
         val face = result.faceLandmarks().firstOrNull()
         val mar = if (face != null && face.size > RIGHT_MOUTH_INDEX) {
             val upper = face[UPPER_LIP_INDEX]
@@ -226,6 +237,12 @@ class PoseLandmarkerEngine(
                 observedEspUptimeMs = frame.observedEspUptimeMs,
             ),
         )
+        if (face == null || face.size <= RIGHT_FACE_EYE_INDEX) return null
+        val leftEye = face[LEFT_FACE_EYE_INDEX]
+        val rightEye = face[RIGHT_FACE_EYE_INDEX]
+        val eyeScale = hypot((leftEye.x() - rightEye.x()).toDouble(), (leftEye.y() - rightEye.y()).toDouble())
+        return eyeScale.takeIf { it.isFinite() && it > MINIMUM_FACE_EYE_SCALE }
+            ?.let { PoseFaceScaleGeometry(it, frame.receivedAtMonoMs) }
     }
 
     companion object {
@@ -238,5 +255,9 @@ class PoseLandmarkerEngine(
         private const val LEFT_MOUTH_INDEX = 78
         private const val RIGHT_MOUTH_INDEX = 308
         private const val MINIMUM_MOUTH_WIDTH = 0.01
+        private const val LEFT_FACE_EYE_INDEX = 33
+        private const val RIGHT_FACE_EYE_INDEX = 263
+        private const val MINIMUM_FACE_EYE_SCALE = 0.005
+        private const val FACE_SCALE_MAX_AGE_MS = 700L
     }
 }

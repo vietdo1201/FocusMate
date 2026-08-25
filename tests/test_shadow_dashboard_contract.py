@@ -144,7 +144,14 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("kStationReconnectIntervalMs = 30000U", source)
         self.assertIn("WIFI_EVENT_AP_STACONNECTED", source)
         self.assertIn("WIFI_EVENT_AP_STADISCONNECTED", source)
-        self.assertIn("!online && !associated && !ap_client_connected && reconnect_due", source)
+        self.assertIn("!online && !associated && retry_allowed && !ap_client_connected && reconnect_due", source)
+        self.assertIn("station_disconnect_should_retry", source)
+        self.assertIn("WIFI_REASON_NO_AP_FOUND", source)
+        self.assertIn("station_retry_allowed_", source)
+        self.assertIn("kStationAttemptTimeoutMs = 10000U", source)
+        self.assertIn("saved Wi-Fi attempt timed out; setup AP radio restored", source)
+        self.assertIn("setup AP has priority", source)
+        self.assertIn("connection deferred until dashboard request", source)
         self.assertLess(source.index("mdns_init()"), source.index("esp_wifi_start()"))
         self.assertIn("mdns_netif_action(ap_netif, MDNS_EVENT_ENABLE_IP4)", source)
         self.assertIn('focusmate_dns_start(kCanonicalHostname, "WIFI_AP_DEF")', source)
@@ -152,6 +159,10 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("DNS_TYPE_A", dns)
         self.assertIn('"302 Found"', source)
         self.assertIn('"http://focusmate.local/"', source)
+        self.assertIn("request_arrived_on_setup_ap", source)
+        self.assertIn("Android may bypass the AP DNS", source)
+        self.assertIn('std::strcmp(host.data(), "192.168.4.1") == 0', source)
+        self.assertNotIn("getsockname(socket", source)
         self.assertIn("kAdvertisedEndpointReady = 1U << 0U", source)
         self.assertNotIn("(wifi.station_online ? 1U : 0U) | kTokenRequired", source)
 
@@ -167,11 +178,14 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "leanEnterDelta": ("kLeanDelta", 0.15, 150000),
             "headDownEnterDelta": ("kHeadDownDelta", 0.12, 120000),
             "slumpedEnterDelta": ("kSlumpedDelta", 0.18, 180000),
-            "tooCloseAreaRatio": ("kTooCloseRatio", 1.60, 1600000),
         }
         for kotlin_name, (firmware_name, decimal, scaled) in expected.items():
             self.assertRegex(kotlin, rf"{kotlin_name}: Double = {decimal:.2f}")
             self.assertRegex(firmware, rf"{firmware_name} = {scaled}")
+        self.assertNotIn("tooCloseAreaRatio", kotlin)
+        self.assertIn("Never create\n            // TOO_CLOSE from that source alone", kotlin)
+        self.assertIn("kTooCloseRatio = 1350000U", firmware)
+        self.assertIn("kTooCloseExitRatio = 1200000U", firmware)
 
     def test_live_confidence_debounce_and_slumped_timer_are_fail_safe(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")
@@ -192,7 +206,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn('"live_confidence"', dashboard)
         self.assertIn('"calibration_confidence"', dashboard)
         self.assertIn('"baseline_revision"', dashboard)
-        self.assertIn("esp_bbox_fallback_v2", dashboard)
+        self.assertIn("esp_face_scale_consensus_v3", dashboard)
         self.assertIn("watch_geometry_v2_experimental", kotlin)
         self.assertIn("rawConfidence", html)
 
@@ -236,12 +250,13 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn('console.error("FocusMate Vision"', read("firmware/main/web/index.html"))
         worker = read("firmware/main/web/pose_worker.mjs")
         bootstrap = read("firmware/main/web/pose_worker_bootstrap.js")
-        self.assertIn("wasm-classic-v1", worker)
-        self.assertIn("wasm-classic-v1", bootstrap)
-        self.assertIn("wasm-classic-v1", assets)
+        self.assertIn("wasm-compatible-v1", worker)
+        self.assertIn("wasm-compatible-v1", bootstrap)
+        self.assertIn("vision_wasm_nosimd_internal", assets)
+        self.assertIn("vision_wasm_nosimd_internal", script)
         self.assertIn("importScripts", bootstrap)
-        self.assertIn("pose-stability-4", bootstrap)
-        self.assertIn("vision-worker-pose-stability-3", read("firmware/main/web/index.html"))
+        self.assertIn("scale-consensus-1", bootstrap)
+        self.assertIn("vision-worker-scale-consensus-4", read("firmware/main/web/index.html"))
         self.assertIn("schedulePoseWorkerRetry", read("firmware/main/web/index.html"))
         self.assertIn("yawnUnavailable", worker)
         self.assertIn('!poseLandmarker || !poseClassifier || !message.bitmap', worker)
@@ -251,7 +266,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertNotIn('id="framingWarning"', read("firmware/main/web/index.html"))
         self.assertNotIn("Muốn tay chính xác hơn", read("firmware/main/web/index.html"))
         self.assertIn("function landmarkQuality(point)", read("firmware/main/web/index.html"))
-        self.assertIn("classifier-3", worker)
+        self.assertIn("classifier-4", worker)
         self.assertIn('asset->content_encoding', assets)
         self.assertIn('"no-cache"', assets)
 
@@ -261,7 +276,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "wear/app/src/main/kotlin/"
             "vn/edu/uit/tpkd/wear/cogload/PostureClassifier.kt"
         )
-        self.assertIn("kBaselineRevision = 2U", firmware)
+        self.assertIn("kBaselineRevision = 3U", firmware)
         self.assertIn("kProfileFingerprint = 0x4A032182U", firmware)
         self.assertIn("runtime.baseline_cx) - static_cast<int32_t>(result->cx_q6", firmware)
         self.assertIn("baselineCxQ6 - observedCxQ6", kotlin)
@@ -295,7 +310,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
             lean_dominant = lean_candidate and (
                 not head_candidate or lateral_q6 * 120_000 >= dy_q6 * 150_000
             )
-            if ratio_q6 >= 1_600_000:
+            if ratio_q6 >= 1_822_500:
                 actual = "TOO_CLOSE"
             elif lean_dominant:
                 actual = "LEAN_LEFT" if dx_q6 < 0 else "LEAN_RIGHT"

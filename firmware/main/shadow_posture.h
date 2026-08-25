@@ -35,9 +35,15 @@ typedef struct {
     int32_t dx_q6;
     int32_t dy_q6;
     uint32_t area_ratio_q6;
+    uint32_t bbox_scale_ratio_q6;
+    uint32_t eye_scale_ratio_q6;
+    uint8_t scale_valid_votes;
+    uint8_t scale_close_votes;
+    bool scale_ready;
     uint32_t baseline_cx_q6;
     uint32_t baseline_cy_q6;
     uint32_t baseline_area_q6;
+    uint32_t baseline_eye_scale_q6;
 } focusmate_posture_snapshot_t;
 
 typedef struct {

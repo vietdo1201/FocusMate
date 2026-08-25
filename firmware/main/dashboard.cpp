@@ -15,6 +15,7 @@
 #include "cJSON.h"
 #include "dashboard_runtime.h"
 #include "esp_event.h"
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -54,6 +55,25 @@ constexpr char kCanonicalUrl[] = "http://focusmate.local/";
 // saved network is no longer nearby. Keep a generous setup window and stop
 // background STA retries while somebody is connected to the setup AP.
 constexpr uint32_t kStationReconnectIntervalMs = 30000U;
+constexpr uint32_t kStationAttemptTimeoutMs = 10000U;
+
+bool station_disconnect_should_retry(uint8_t reason)
+{
+    switch (static_cast<wifi_err_reason_t>(reason)) {
+    case WIFI_REASON_ASSOC_LEAVE:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_NO_AP_FOUND:
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_ASSOC_FAIL:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+    case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
+    case WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD:
+        return false;
+    default:
+        return true;
+    }
+}
 
 struct WifiStatus {
     bool station_online = false;
@@ -128,10 +148,13 @@ private:
     bool pending_connection_started_ = false;
     bool pending_switch_requested_ = false;
     bool station_associated_ = false;
+    bool station_retry_allowed_ = false;
+    bool station_connecting_ = false;
     uint8_t ap_client_count_ = 0U;
     uint64_t pending_deadline_ms_ = 0;
     uint64_t pending_switch_at_ms_ = 0;
     uint64_t last_reconnect_ms_ = 0;
+    uint64_t station_attempt_started_ms_ = 0;
     YawnSyncBroker yawn_broker_{};
     LegacyYawnSyncSnapshot legacy_yawn_sync_{};
     uint32_t yawn_event_id_ = 0;
@@ -398,6 +421,21 @@ bool request_host_is_ipv4(httpd_req_t *request)
     return inet_pton(AF_INET, host.data(), &address) == 1;
 }
 
+bool request_arrived_on_setup_ap(httpd_req_t *request)
+{
+    // esp_http_server listens on INADDR_ANY, so getsockname() may report
+    // 0.0.0.0 even when the request arrived through the setup AP. The Host
+    // header is the browser origin we must preserve and is therefore the
+    // reliable discriminator for redirect behavior.
+    const size_t length = httpd_req_get_hdr_value_len(request, "Host");
+    if (length == 0U || length >= 64U) return false;
+    std::array<char, 64> host{};
+    if (httpd_req_get_hdr_value_str(request, "Host", host.data(), host.size()) != ESP_OK)
+        return false;
+    if (char *port = std::strchr(host.data(), ':'); port != nullptr) *port = '\0';
+    return std::strcmp(host.data(), "192.168.4.1") == 0;
+}
+
 bool Dashboard::initialize_network()
 {
     esp_err_t result = esp_netif_init();
@@ -447,17 +485,17 @@ bool Dashboard::initialize_network()
     if (!focusmate_dns_start(kCanonicalHostname, "WIFI_AP_DEF"))
         ESP_LOGE(kTag, "could not start setup AP DNS responder");
 
-    std::string ssid = nvs_string("pending_ssid");
-    std::string password = nvs_string("pending_pass");
-    if (!ssid.empty()) {
-        pending_active_ = true;
-        pending_connection_started_ = true;
-        pending_deadline_ms_ = now_ms() + 20000U;
-    } else {
-        ssid = nvs_string("wifi_ssid");
-        password = nvs_string("wifi_pass");
+    // AP-first boot is deliberate. Starting a STA connection with a missing
+    // saved SSID can leave some ESP32-S3 Wi-Fi driver/phone combinations in a
+    // long channel scan where the co-hosted setup AP is not discoverable.
+    // Keep the AP stable after every reboot and only start STA from an explicit
+    // /api/wifi/connect request. An interrupted pending transaction is stale.
+    if (!nvs_string("pending_ssid").empty()) {
+        erase_nvs_keys({"pending_ssid", "pending_pass"});
+        ESP_LOGW(kTag, "discarded interrupted Wi-Fi transaction; setup AP has priority");
     }
-    if (!ssid.empty()) configure_station(ssid, password);
+    if (!nvs_string("wifi_ssid").empty())
+        ESP_LOGI(kTag, "saved Wi-Fi retained; connection deferred until dashboard request");
 
     if (xTaskCreate(network_task_thunk, "focusmate-network", 4096, this, 3, nullptr) != pdPASS)
         return false;
@@ -551,9 +589,11 @@ bool Dashboard::watch_authenticated(httpd_req_t *request) const
 
 esp_err_t Dashboard::root(httpd_req_t *request)
 {
-    // One hostname means one browser origin/localStorage/cache regardless of
-    // whether the ESP is reached through the setup AP or the home/office LAN.
-    if (request_host_is_ipv4(request)) {
+    // Keep one hostname on a real LAN, but retain the numeric origin on the
+    // no-Internet setup AP. Android may bypass the AP DNS via mobile data or
+    // private DNS after the first page load; redirecting 192.168.4.1 in that
+    // situation makes later WASM/model requests resolve to the wrong host.
+    if (request_host_is_ipv4(request) && !request_arrived_on_setup_ap(request)) {
         httpd_resp_set_status(request, "302 Found");
         httpd_resp_set_hdr(request, "Location", kCanonicalUrl);
         httpd_resp_set_hdr(request, "Cache-Control", "no-store");
@@ -977,7 +1017,7 @@ esp_err_t Dashboard::status(httpd_req_t *request)
         ? static_cast<double>(current - face.observed_uptime_ms) : -1.0);
 
     cJSON *posture_json = cJSON_AddObjectToObject(root, "posture");
-    cJSON_AddStringToObject(posture_json, "source", "esp_bbox_fallback_v2");
+    cJSON_AddStringToObject(posture_json, "source", "esp_face_scale_consensus_v3");
     cJSON_AddBoolToObject(posture_json, "calibrated", posture.calibrated);
     cJSON_AddBoolToObject(posture_json, "calibration_active", posture.calibration_active);
     cJSON_AddNumberToObject(posture_json, "calibration_progress", posture.calibration_progress);
@@ -989,10 +1029,19 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddNumberToObject(posture_json, "stable_ms", static_cast<double>(posture.stable_ms));
     add_q6(posture_json, "dx", posture.dx_q6); add_q6(posture_json, "dy", posture.dy_q6);
     add_q6(posture_json, "area_ratio", posture.area_ratio_q6);
+    cJSON *scale_evidence = cJSON_AddObjectToObject(posture_json, "scale_evidence");
+    cJSON_AddBoolToObject(scale_evidence, "ready", posture.scale_ready);
+    add_q6(scale_evidence, "bbox_ratio", posture.bbox_scale_ratio_q6);
+    add_q6(scale_evidence, "eye_ratio", posture.eye_scale_ratio_q6);
+    cJSON_AddNumberToObject(scale_evidence, "valid_votes", posture.scale_valid_votes);
+    cJSON_AddNumberToObject(scale_evidence, "close_votes", posture.scale_close_votes);
+    cJSON_AddNumberToObject(scale_evidence, "required_votes", 2);
+    cJSON_AddBoolToObject(scale_evidence, "consensus", posture.scale_ready && posture.scale_close_votes >= 2U);
     cJSON *baseline = cJSON_AddObjectToObject(posture_json, "baseline");
     add_q6(baseline, "cx", posture.baseline_cx_q6);
     add_q6(baseline, "cy", posture.baseline_cy_q6);
     add_q6(baseline, "area", posture.baseline_area_q6);
+    add_q6(baseline, "eye_scale", posture.baseline_eye_scale_q6);
     cJSON_AddNumberToObject(baseline, "revision", posture_thresholds.baseline_revision);
     cJSON *thresholds = cJSON_AddObjectToObject(posture_json, "thresholds");
     add_q6(thresholds, "calibration_confidence", posture_thresholds.calibration_min_confidence_q6);
@@ -1004,6 +1053,10 @@ esp_err_t Dashboard::status(httpd_req_t *request)
     cJSON_AddNumberToObject(thresholds, "slumped_ms", static_cast<double>(posture_thresholds.slumped_minimum_ms));
     cJSON_AddNumberToObject(thresholds, "stable_samples", posture_thresholds.stable_samples);
     cJSON_AddNumberToObject(thresholds, "baseline_revision", posture_thresholds.baseline_revision);
+
+    cJSON *build_json = cJSON_AddObjectToObject(root, "build");
+    cJSON_AddStringToObject(build_json, "firmware_version", esp_app_get_description()->version);
+    cJSON_AddStringToObject(build_json, "asset_manifest_sha256", focusmate_web_assets_manifest_sha256());
 
     cJSON *memory = cJSON_AddObjectToObject(root, "memory");
     cJSON_AddNumberToObject(memory, "free_internal_heap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -1102,6 +1155,9 @@ esp_err_t Dashboard::wifi_reset(httpd_req_t *request)
     pending_active_ = false;
     pending_connection_started_ = false;
     pending_switch_requested_ = false;
+    station_retry_allowed_ = false;
+    station_connecting_ = false;
+    station_attempt_started_ms_ = 0;
     pending_deadline_ms_ = 0;
     pending_switch_at_ms_ = 0;
     xSemaphoreGive(mutex_);
@@ -1145,6 +1201,9 @@ void Dashboard::on_event(esp_event_base_t base, int32_t id, void *data)
         wifi_ap_record_t record{};
         xSemaphoreTake(mutex_, portMAX_DELAY);
         station_associated_ = true;
+        station_retry_allowed_ = true;
+        station_connecting_ = false;
+        station_attempt_started_ms_ = 0;
         wifi_.station_online = true;
         std::memcpy(wifi_.ip, ip, sizeof(wifi_.ip));
         wifi_config_t station{};
@@ -1162,13 +1221,23 @@ void Dashboard::on_event(esp_event_base_t base, int32_t id, void *data)
         station_associated_ = true;
         xSemaphoreGive(mutex_);
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const auto *event = static_cast<wifi_event_sta_disconnected_t *>(data);
+        const uint8_t reason = event == nullptr
+            ? static_cast<uint8_t>(WIFI_REASON_UNSPECIFIED) : event->reason;
+        const bool retry_allowed = station_disconnect_should_retry(reason);
         xSemaphoreTake(mutex_, portMAX_DELAY);
         station_associated_ = false;
+        station_retry_allowed_ = retry_allowed;
+        station_connecting_ = false;
+        station_attempt_started_ms_ = 0;
         wifi_.station_online = false;
         std::strncpy(wifi_.ip, "192.168.4.1", sizeof(wifi_.ip));
         std::strncpy(wifi_.ssid, kApSsid, sizeof(wifi_.ssid));
         wifi_.rssi = 0;
         xSemaphoreGive(mutex_);
+        if (!retry_allowed)
+            ESP_LOGW(kTag, "saved Wi-Fi unavailable (reason %u); keeping setup AP continuously discoverable",
+                     static_cast<unsigned>(reason));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_STACONNECTED) {
         xSemaphoreTake(mutex_, portMAX_DELAY);
         if (ap_client_count_ < UINT8_MAX) ++ap_client_count_;
@@ -1196,13 +1265,25 @@ void Dashboard::network_task()
         const uint64_t switch_at = pending_switch_at_ms_;
         const bool online = wifi_.station_online;
         const bool associated = station_associated_;
+        const bool retry_allowed = station_retry_allowed_;
+        const bool connecting = station_connecting_;
+        const uint64_t attempt_started = station_attempt_started_ms_;
         const bool ap_client_connected = ap_client_count_ > 0U;
         const uint64_t deadline = pending_deadline_ms_;
         const bool reconnect_due = current - last_reconnect_ms_ >= kStationReconnectIntervalMs;
         if (reconnect_due) last_reconnect_ms_ = current;
         if (switch_requested && current >= switch_at) pending_switch_requested_ = false;
         xSemaphoreGive(mutex_);
-        if (switch_requested && current >= switch_at) {
+        if (connecting && !online && attempt_started > 0U &&
+            current - attempt_started >= kStationAttemptTimeoutMs) {
+            xSemaphoreTake(mutex_, portMAX_DELAY);
+            station_connecting_ = false;
+            station_retry_allowed_ = false;
+            station_attempt_started_ms_ = 0;
+            xSemaphoreGive(mutex_);
+            esp_wifi_disconnect();
+            ESP_LOGW(kTag, "saved Wi-Fi attempt timed out; setup AP radio restored");
+        } else if (switch_requested && current >= switch_at) {
             const std::string ssid = nvs_string("pending_ssid");
             const std::string password = nvs_string("pending_pass");
             xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -1211,8 +1292,17 @@ void Dashboard::network_task()
             if (ssid.empty() || !configure_station(ssid, password)) rollback_pending();
         } else if (pending && !online && current >= deadline) {
             rollback_pending();
-        } else if (!online && !associated && !ap_client_connected && reconnect_due) {
-            esp_wifi_connect();
+        } else if (!online && !associated && retry_allowed && !ap_client_connected && reconnect_due) {
+            xSemaphoreTake(mutex_, portMAX_DELAY);
+            station_connecting_ = true;
+            station_attempt_started_ms_ = current;
+            xSemaphoreGive(mutex_);
+            if (esp_wifi_connect() != ESP_OK) {
+                xSemaphoreTake(mutex_, portMAX_DELAY);
+                station_connecting_ = false;
+                station_attempt_started_ms_ = 0;
+                xSemaphoreGive(mutex_);
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -1269,12 +1359,22 @@ bool Dashboard::configure_station(const std::string &ssid, const std::string &pa
     station.sta.threshold.authmode = WIFI_AUTH_OPEN;
     station.sta.pmf_cfg.capable = true;
     station.sta.pmf_cfg.required = false;
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(50));
+    if (esp_wifi_set_config(WIFI_IF_STA, &station) != ESP_OK) return false;
     xSemaphoreTake(mutex_, portMAX_DELAY);
     station_associated_ = false;
+    station_retry_allowed_ = true;
+    station_connecting_ = true;
+    station_attempt_started_ms_ = now_ms();
     xSemaphoreGive(mutex_);
-    esp_wifi_disconnect();
-    if (esp_wifi_set_config(WIFI_IF_STA, &station) != ESP_OK) return false;
     const esp_err_t result = esp_wifi_connect();
+    if (result != ESP_OK && result != ESP_ERR_WIFI_CONN) {
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+        station_connecting_ = false;
+        station_attempt_started_ms_ = 0;
+        xSemaphoreGive(mutex_);
+    }
     return result == ESP_OK || result == ESP_ERR_WIFI_CONN;
 }
 

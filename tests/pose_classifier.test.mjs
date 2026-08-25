@@ -19,6 +19,9 @@ const neutral = Object.freeze({
   eyeHeight: 0.9,
   facePitch: 0.5,
   faceScale: 0.2,
+  poseEyeScale: 0.2,
+  faceEyeScale: 0.2,
+  espBboxScale: 0.2,
   shoulderWidth: 0.3,
   torsoLength: 0.4,
   hasHips: true,
@@ -40,6 +43,9 @@ function calibrated() {
   assert.ok(classifier.persistedBaseline(), "automatic baseline should complete");
   return classifier;
 }
+
+const scaledFace = ratio => ({...neutral, faceScale: 0.2 * ratio, poseEyeScale: 0.2 * ratio,
+  faceEyeScale: 0.2 * ratio, espBboxScale: 0.2 * ratio});
 
 function settle(
   classifier,
@@ -78,16 +84,17 @@ test("automatic baseline never reports NORMAL before 20 unique samples and five 
 
 test("calibration rejects discontinuous samples and Pose remains primary without an ESP bbox", () => {
   const classifier = new PosePostureClassifier({fingerprint: "test-profile-v1"});
+  const poseOnly = {...neutral, faceEyeScale: null, espBboxScale: null};
   for (let index = 0; index < 19; index += 1) {
-    classifier.observeFeatures({sequence: index + 1, timestampMs: index * 250, features: neutral, faceDetected: false});
+    classifier.observeFeatures({sequence: index + 1, timestampMs: index * 250, features: poseOnly, faceDetected: false});
   }
-  classifier.observeFeatures({sequence: 20, timestampMs: 7000, features: neutral, faceDetected: false});
+  classifier.observeFeatures({sequence: 20, timestampMs: 7000, features: poseOnly, faceDetected: false});
   assert.equal(classifier.persistedBaseline(), null, "a >1.5s gap must reset calibration");
   for (let index = 0; index < 21; index += 1) {
-    classifier.observeFeatures({sequence: 21 + index, timestampMs: 7300 + index * 300, features: neutral, faceDetected: false});
+    classifier.observeFeatures({sequence: 21 + index, timestampMs: 7300 + index * 300, features: poseOnly, faceDetected: false});
   }
   assert.ok(classifier.persistedBaseline(), "valid Pose landmarks do not require an ESP bbox");
-  const leaned = settle(classifier, {...neutral, headRollDeg: 13}, 50, 14000);
+  const leaned = settle(classifier, {...poseOnly, headRollDeg: 13}, 50, 14000);
   assert.equal(leaned.state, "LEAN_LEFT");
 });
 
@@ -113,7 +120,7 @@ test("head down, too close, slumped and missing use distinct evidence", () => {
   assert.equal(settle(head, {...neutral, headHeight: 0.75, eyeHeight: 0.68}, 30, 7000).state, "HEAD_DOWN");
 
   const close = calibrated();
-  assert.equal(settle(close, {...neutral, faceScale: 0.29}, 30, 7000).state, "TOO_CLOSE");
+  assert.equal(settle(close, scaledFace(1.45), 30, 7000).state, "TOO_CLOSE");
 
   const slump = calibrated();
   const collapsed = {...neutral, headHeight: 0.70, eyeHeight: 0.63, torsoLength: 0.34};
@@ -142,13 +149,44 @@ test("duplicate frames do not advance debounce", () => {
 
 test("explicit exit hysteresis and monotonic stale transition are fail-closed", () => {
   const classifier = calibrated();
-  let result = settle(classifier, {...neutral, faceScale: 0.29}, 30, 7000);
+  let result = settle(classifier, scaledFace(1.45), 30, 7000);
   assert.equal(result.state, "TOO_CLOSE");
-  result = settle(classifier, {...neutral, faceScale: 0.245}, 35, 8500);
+  result = settle(classifier, scaledFace(1.225), 35, 8500);
   assert.equal(result.state, "TOO_CLOSE", "1.225x remains TOO_CLOSE until below 1.20x");
-  result = settle(classifier, {...neutral, faceScale: 0.235}, 40, 10000);
+  result = settle(classifier, scaledFace(1.175), 40, 10000);
   assert.equal(result.state, "NORMAL");
   assert.equal(classifier.stale(14_201).state, "UNKNOWN");
+});
+
+test("an enlarged ESP bbox alone cannot report TOO_CLOSE when resting a hand on the face", () => {
+  const classifier = calibrated();
+  const handOcclusion = {...neutral, faceScale: 0.31, espBboxScale: 0.31};
+  const result = settle(classifier, handOcclusion, 30, 7000, 36);
+  assert.equal(result.state, "NORMAL");
+  assert.equal(result.features.scaleEvidence.closeVotes, 1);
+  assert.equal(result.features.scaleEvidence.consensus, false);
+});
+
+test("two fresh face-scale sources are sufficient when a third source is unavailable", () => {
+  const classifier = calibrated();
+  const close = {...scaledFace(1.45), espBboxScale: null};
+  const result = settle(classifier, close, 30, 7000);
+  assert.equal(result.state, "TOO_CLOSE");
+  assert.equal(result.features.scaleEvidence.validVotes, 2);
+});
+
+test("v2 posture baseline migrates without blocking non-scale labels", () => {
+  const source = calibrated().persistedBaseline();
+  source.version = 2;
+  for (const name of ["poseEyeScale", "faceEyeScale", "espBboxScale"]) {
+    delete source.values[name];
+    delete source.noise[name];
+  }
+  delete source.scaleReady;
+  const classifier = new PosePostureClassifier({fingerprint: "test-profile-v1", baseline: source});
+  const result = settle(classifier, {...neutral, headRollDeg: 13}, 30, 7000);
+  assert.equal(result.state, "LEAN_LEFT");
+  assert.equal(result.scaleCalibrationProgress > 0, true);
 });
 
 test("camera mirror and rotation are undone before anatomical extraction", () => {
@@ -193,6 +231,9 @@ test("shared landmark golden vectors preserve label vocabulary and precedence", 
       eyeHeight: Number(row.eye_height),
       facePitch: Number(row.face_pitch),
       faceScale: Number(row.face_scale),
+      poseEyeScale: Number(row.face_scale),
+      faceEyeScale: Number(row.face_scale),
+      espBboxScale: Number(row.face_scale),
       torsoLength: Number(row.torso_length),
     };
     const holdMs = Number(row.hold_ms);

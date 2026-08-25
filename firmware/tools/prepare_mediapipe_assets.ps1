@@ -61,13 +61,13 @@ New-Item -ItemType Directory -Path (Join-Path $generatedRoot 'wasm') -Force | Ou
 
 $packageRoot = Join-Path $extractRoot 'package'
 Copy-Item -LiteralPath (Join-Path $packageRoot 'vision_bundle.mjs') -Destination $generatedRoot
-$wasmLoaderSource = Join-Path $packageRoot 'wasm/vision_wasm_internal.js'
+$wasmLoaderSource = Join-Path $packageRoot 'wasm/vision_wasm_nosimd_internal.js'
 $wasmLoaderTarget = Join-Path $generatedRoot 'wasm/vwi.js'
 Copy-Item -LiteralPath $wasmLoaderSource -Destination $wasmLoaderTarget
-# MediaPipe 1.0.1 falls back to dynamic import inside a module Worker. In that
-# mode its top-level `var ModuleFactory` is module-scoped, while vision_bundle
-# expects `self.ModuleFactory`. Export it explicitly after the pinned upstream
-# loader so the same verified package works in both classic and module Workers.
+# Use the no-SIMD runtime as the common local runtime. Older Android browsers
+# fail MediaPipe's SIMD probe and request vision_wasm_nosimd_internal; keeping
+# one compatible binary avoids exceeding the fixed 0xBF0000 asset partition.
+# Its top-level `var ModuleFactory` must also be exported for module Workers.
 Add-Content -LiteralPath $wasmLoaderTarget -Encoding utf8NoBOM -Value "`nglobalThis.ModuleFactory = ModuleFactory;`n"
 Copy-Item -LiteralPath (Join-Path $firmwareRoot 'main/web/pose_worker.mjs') -Destination $generatedRoot
 Copy-Item -LiteralPath (Join-Path $firmwareRoot 'main/web/pose_worker_bootstrap.js') -Destination $generatedRoot
@@ -88,7 +88,7 @@ const input = fs.readFileSync(process.argv[1]);
 const output = zlib.brotliCompressSync(input, {params: {[zlib.constants.BROTLI_PARAM_QUALITY]: 11}});
 fs.writeFileSync(process.argv[2], output);
 '@
-$wasmSource = Join-Path $packageRoot 'wasm/vision_wasm_internal.wasm'
+$wasmSource = Join-Path $packageRoot 'wasm/vision_wasm_nosimd_internal.wasm'
 $wasmTarget = Join-Path $generatedRoot 'wasm/vwi.wasm.br'
 $modelTarget = Join-Path $generatedRoot 'pose_landmarker_lite.task.gz'
 $faceModelTarget = Join-Path $generatedRoot 'face_landmarker.task.gz'

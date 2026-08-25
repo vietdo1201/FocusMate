@@ -4,7 +4,6 @@ package vn.edu.uit.tpkd.wear.cogload
 
 import vn.edu.uit.tpkd.wear.cogload.protocol.FaceObservationV1
 import kotlin.math.abs
-import kotlin.math.roundToLong
 
 enum class PostureState {
     NORMAL,
@@ -39,7 +38,6 @@ data class PostureGeometryConfig(
     val leanEnterDelta: Double = 0.15,
     val headDownEnterDelta: Double = 0.12,
     val slumpedEnterDelta: Double = 0.18,
-    val tooCloseAreaRatio: Double = 1.60,
     val slumpedMinimumMs: Long = 5_000L,
     val calibrationSamples: Int = 20,
     val calibrationCenterSpread: Double = 0.04,
@@ -130,27 +128,22 @@ class GeometryPostureClassifier(
         // negative means their left and positive means their right.
         val baselineCxQ6 = FaceObservationV1.toScaledUnit(reference.centerX)
         val baselineCyQ6 = FaceObservationV1.toScaledUnit(reference.centerY)
-        val baselineAreaQ6 = FaceObservationV1.toScaledUnit(reference.area)
         val observedCxQ6 = FaceObservationV1.toScaledUnit(requireNotNull(observation.centerX))
         val observedCyQ6 = FaceObservationV1.toScaledUnit(requireNotNull(observation.centerY))
-        val observedAreaQ6 = FaceObservationV1.toScaledUnit(requireNotNull(observation.area))
         val dxQ6 = baselineCxQ6 - observedCxQ6
         val dyQ6 = observedCyQ6 - baselineCyQ6
-        val areaRatioQ6 = ratioQ6(observedAreaQ6, baselineAreaQ6)
         val leanDeltaQ6 = unitThresholdQ6(config.leanEnterDelta)
         val headDownDeltaQ6 = unitThresholdQ6(config.headDownEnterDelta)
         val slumpedDeltaQ6 = unitThresholdQ6(config.slumpedEnterDelta)
-        val tooCloseRatioQ6 = scaledNonNegative(config.tooCloseAreaRatio)
         val lateralQ6 = abs(dxQ6)
         val leanCandidate = lateralQ6 >= leanDeltaQ6
         val headCandidate = dyQ6 >= headDownDeltaQ6
         val leanDominant = leanCandidate &&
             (!headCandidate || lateralQ6 * headDownDeltaQ6 >= dyQ6 * leanDeltaQ6)
         val state = when {
-            areaRatioQ6 >= tooCloseRatioQ6 -> {
-                slumpedSinceMs = null
-                PostureState.TOO_CLOSE
-            }
+            // FaceObservationV1 carries only one bbox scale. Never create
+            // TOO_CLOSE from that source alone; the local Pose pipeline uses
+            // the required fresh 2-of-3 landmark/bbox consensus.
             leanDominant -> {
                 slumpedSinceMs = null
                 if (dxQ6 < 0L) PostureState.LEAN_LEFT else PostureState.LEAN_RIGHT
@@ -177,8 +170,6 @@ class GeometryPostureClassifier(
             }
         }
         val geometryConfidenceQ6 = when (state) {
-            PostureState.TOO_CLOSE -> if (areaRatioQ6 <= SCALE) 0L else
-                (areaRatioQ6 - SCALE) * SCALE / (tooCloseRatioQ6 - SCALE)
             PostureState.HEAD_DOWN, PostureState.SLUMPED -> if (dyQ6 <= 0L) 0L else
                 dyQ6 * SCALE / headDownDeltaQ6
             PostureState.LEAN_LEFT, PostureState.LEAN_RIGHT -> lateralQ6 * SCALE / leanDeltaQ6
@@ -213,11 +204,6 @@ class GeometryPostureClassifier(
     }
 
     private fun unitThresholdQ6(value: Double): Long = FaceObservationV1.toScaledUnit(value)
-
-    private fun scaledNonNegative(value: Double): Long {
-        require(value.isFinite() && value >= 0.0)
-        return (value * SCALE).roundToLong()
-    }
 
     private fun ratioQ6(numerator: Long, denominator: Long): Long {
         if (denominator <= 0L) return 0L

@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -19,9 +20,9 @@ namespace {
 constexpr char kTag[] = "focusmate-posture";
 constexpr char kNvsNamespace[] = "focusmate_web";
 constexpr uint32_t kScale = 1000000U;
-// Revision 2 changes horizontal geometry from camera/image direction to the
-// seated person's left/right and requires a freshly collected baseline.
-constexpr uint8_t kBaselineRevision = 2U;
+// Revision 3 preserves v2 center/area and adds eye scale so an enlarged bbox
+// alone (for example a hand against the cheek) cannot report TOO_CLOSE.
+constexpr uint8_t kBaselineRevision = 3U;
 constexpr uint32_t kProfileFingerprint = 0x4A032182U; // JPEG QVGA, 180-degree correction, subject-relative X v2.
 // Calibration remains deliberately strict. Live tracking can use the lower
 // confidence bbox after a high-confidence baseline exists: the real OV2640 +
@@ -32,7 +33,8 @@ constexpr uint32_t kLiveMinimumConfidence = 500000U;
 constexpr int32_t kLeanDelta = 150000;
 constexpr int32_t kHeadDownDelta = 120000;
 constexpr int32_t kSlumpedDelta = 180000;
-constexpr uint32_t kTooCloseRatio = 1600000U;
+constexpr uint32_t kTooCloseRatio = 1350000U;
+constexpr uint32_t kTooCloseExitRatio = 1200000U;
 constexpr uint64_t kSlumpedMinimumMs = 5000U;
 constexpr uint64_t kNoSlumpStart = UINT64_MAX;
 constexpr uint64_t kSamplePeriodMs = 200U;
@@ -44,6 +46,7 @@ constexpr uint64_t kCalibrationSettleMs = 1000U;
 constexpr uint64_t kCalibrationCollectionMs = 15000U;
 constexpr uint64_t kCalibrationWindowMs = kCalibrationSettleMs + kCalibrationCollectionMs;
 constexpr uint64_t kCalibrationMaximumGapMs = 1500U;
+constexpr uint64_t kScaleCalibrationMinimumSpanMs = 5000U;
 constexpr size_t kCalibrationSamples = 20U;
 constexpr uint32_t kCalibrationCropLeft = 145000U;
 constexpr uint32_t kCalibrationCropRight = 855000U;
@@ -66,10 +69,16 @@ struct Runtime {
     std::array<uint32_t, kCalibrationSamples> xs{};
     std::array<uint32_t, kCalibrationSamples> ys{};
     std::array<uint32_t, kCalibrationSamples> areas{};
+    std::array<uint32_t, kCalibrationSamples> eyes{};
     size_t sample_count = 0;
     uint32_t baseline_cx = 0;
     uint32_t baseline_cy = 0;
     uint32_t baseline_area = 0;
+    uint32_t baseline_eye_scale = 0;
+    bool scale_ready = false;
+    uint8_t scale_sample_count = 0;
+    uint64_t scale_first_sample_ms = 0;
+    uint64_t scale_last_sample_ms = 0;
     focusmate_posture_state_t raw_state = FOCUSMATE_POSTURE_UNKNOWN;
     focusmate_posture_state_t stable_state = FOCUSMATE_POSTURE_UNKNOWN;
     focusmate_posture_state_t candidate_state = FOCUSMATE_POSTURE_UNKNOWN;
@@ -79,6 +88,10 @@ struct Runtime {
     int32_t dx = 0;
     int32_t dy = 0;
     uint32_t area_ratio = 0;
+    uint32_t bbox_scale_ratio = 0;
+    uint32_t eye_scale_ratio = 0;
+    uint8_t scale_valid_votes = 0;
+    uint8_t scale_close_votes = 0;
     uint64_t stable_since_ms = 0;
     uint64_t slumped_since_ms = kNoSlumpStart;
     uint64_t last_observed_ms = 0;
@@ -106,6 +119,38 @@ uint64_t now_ms()
 uint32_t area_q6(const focusmate_face_result_t &result)
 {
     return static_cast<uint32_t>((static_cast<uint64_t>(result.width_q6) * result.height_q6 + kScale / 2U) / kScale);
+}
+
+uint32_t eye_scale_q6(const focusmate_face_result_t &result)
+{
+    if (!result.face_detected || result.keypoint_count <= FOCUSMATE_FACE_KEYPOINT_RIGHT_EYE) return 0U;
+    const auto &left = result.keypoints[FOCUSMATE_FACE_KEYPOINT_LEFT_EYE];
+    const auto &right = result.keypoints[FOCUSMATE_FACE_KEYPOINT_RIGHT_EYE];
+    const double dx = static_cast<double>(left.x_q6) - right.x_q6;
+    const double dy = static_cast<double>(left.y_q6) - right.y_q6;
+    const double value = std::hypot(dx, dy);
+    return std::isfinite(value) && value > 0.0
+        ? static_cast<uint32_t>(std::min<double>(value, UINT32_MAX)) : 0U;
+}
+
+uint32_t linear_scale_ratio_q6(uint32_t area_ratio)
+{
+    if (area_ratio == 0U) return 0U;
+    const double value = std::sqrt(static_cast<double>(area_ratio) / kScale) * kScale;
+    return std::isfinite(value) ? static_cast<uint32_t>(std::min<double>(value, UINT32_MAX)) : 0U;
+}
+
+bool scale_consensus(uint32_t bbox_ratio, uint32_t eye_ratio, bool scale_ready,
+                     bool already_too_close, uint8_t *valid_votes = nullptr,
+                     uint8_t *close_votes = nullptr)
+{
+    const uint32_t threshold = already_too_close ? kTooCloseExitRatio : kTooCloseRatio;
+    const uint8_t valid = static_cast<uint8_t>((bbox_ratio > 0U ? 1U : 0U) + (eye_ratio > 0U ? 1U : 0U));
+    const uint8_t close = static_cast<uint8_t>((bbox_ratio >= threshold ? 1U : 0U) +
+                                               (eye_ratio >= threshold ? 1U : 0U));
+    if (valid_votes != nullptr) *valid_votes = valid;
+    if (close_votes != nullptr) *close_votes = close;
+    return scale_ready && valid >= 2U && close >= 2U;
 }
 
 bool calibration_bbox_fully_visible(const focusmate_face_result_t &result)
@@ -138,13 +183,14 @@ uint32_t ratio_q6(uint32_t numerator, uint32_t denominator)
 }
 
 uint32_t geometry_confidence(focusmate_posture_state_t state, int32_t dx, int32_t dy,
-                             uint32_t area_ratio)
+                             uint32_t bbox_scale_ratio, uint32_t eye_scale_ratio)
 {
     uint64_t value = kScale;
     switch (state) {
         case FOCUSMATE_POSTURE_TOO_CLOSE:
-            value = area_ratio <= kScale ? 0U
-                : static_cast<uint64_t>(area_ratio - kScale) * kScale / (kTooCloseRatio - kScale);
+            value = std::min(bbox_scale_ratio, eye_scale_ratio) <= kScale ? 0U
+                : static_cast<uint64_t>(std::min(bbox_scale_ratio, eye_scale_ratio) - kScale) * kScale /
+                    (kTooCloseRatio - kScale);
             break;
         case FOCUSMATE_POSTURE_HEAD_DOWN:
         case FOCUSMATE_POSTURE_SLUMPED:
@@ -160,7 +206,7 @@ uint32_t geometry_confidence(focusmate_posture_state_t state, int32_t dx, int32_
     return static_cast<uint32_t>(std::min<uint64_t>(value, kScale));
 }
 
-focusmate_posture_state_t classify_geometry(int32_t dx, int32_t dy, uint32_t area_ratio,
+focusmate_posture_state_t classify_geometry(int32_t dx, int32_t dy, bool too_close_consensus,
                                              uint64_t at_ms, uint64_t &slumped_since_ms)
 {
     const uint32_t lateral = static_cast<uint32_t>(dx < 0 ? -static_cast<int64_t>(dx) : dx);
@@ -173,7 +219,7 @@ focusmate_posture_state_t classify_geometry(int32_t dx, int32_t dy, uint32_t are
         static_cast<uint64_t>(lateral) * kHeadDownDelta >=
             static_cast<uint64_t>(dy) * kLeanDelta);
     focusmate_posture_state_t state;
-    if (area_ratio >= kTooCloseRatio) {
+    if (too_close_consensus) {
         slumped_since_ms = kNoSlumpStart;
         state = FOCUSMATE_POSTURE_TOO_CLOSE;
     } else if (lean_dominant) {
@@ -218,32 +264,32 @@ bool advance_stable_state(focusmate_posture_state_t raw,
 void geometry_self_test()
 {
     uint64_t since = kNoSlumpStart;
-    assert(classify_geometry(0, 0, kScale, 1000, since) == FOCUSMATE_POSTURE_NORMAL);
-    assert(classify_geometry(0, 130000, kScale, 2000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(-160000, 0, kScale, 3000, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
-    assert(classify_geometry(160000, 0, kScale, 4000, since) == FOCUSMATE_POSTURE_LEAN_RIGHT);
-    assert(classify_geometry(-250000, 130000, kScale, 4100, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
-    assert(classify_geometry(250000, 130000, kScale, 4200, since) == FOCUSMATE_POSTURE_LEAN_RIGHT);
-    assert(classify_geometry(160000, 170000, kScale, 4300, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(-150080, 120064, kScale, 4400, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
+    assert(classify_geometry(0, 0, false, 1000, since) == FOCUSMATE_POSTURE_NORMAL);
+    assert(classify_geometry(0, 130000, false, 2000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(-160000, 0, false, 3000, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
+    assert(classify_geometry(160000, 0, false, 4000, since) == FOCUSMATE_POSTURE_LEAN_RIGHT);
+    assert(classify_geometry(-250000, 130000, false, 4100, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
+    assert(classify_geometry(250000, 130000, false, 4200, since) == FOCUSMATE_POSTURE_LEAN_RIGHT);
+    assert(classify_geometry(160000, 170000, false, 4300, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(-150080, 120064, false, 4400, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
     assert(ratio_q6(55835U, 13U) == UINT32_MAX);
-    assert(classify_geometry(0, 0, ratio_q6(55835U, 13U), 4500, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
-    assert(classify_geometry(0, 0, 1600000, 5000, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
-    assert(classify_geometry(0, 130000, kScale, 6000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 0, true, 4500, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
+    assert(classify_geometry(0, 0, false, 5000, since) == FOCUSMATE_POSTURE_NORMAL);
+    assert(classify_geometry(0, 130000, false, 6000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
     assert(since == kNoSlumpStart);
-    assert(classify_geometry(0, 190000, kScale, 7000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(0, 190000, kScale, 11999, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(0, 190000, kScale, 12000, since) == FOCUSMATE_POSTURE_SLUMPED);
-    assert(classify_geometry(0, 190000, kTooCloseRatio, 12001, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
+    assert(classify_geometry(0, 190000, false, 7000, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 11999, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 12000, since) == FOCUSMATE_POSTURE_SLUMPED);
+    assert(classify_geometry(0, 190000, true, 12001, since) == FOCUSMATE_POSTURE_TOO_CLOSE);
     assert(since == kNoSlumpStart);
-    assert(classify_geometry(0, 190000, kScale, 12002, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 12002, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
     since = kNoSlumpStart;
-    assert(classify_geometry(0, 190000, kScale, 0, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(0, 190000, kScale, 4999, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
-    assert(classify_geometry(0, 190000, kScale, 5000, since) == FOCUSMATE_POSTURE_SLUMPED);
-    assert(classify_geometry(-250000, 190000, kScale, 6000, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
+    assert(classify_geometry(0, 190000, false, 0, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 4999, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 5000, since) == FOCUSMATE_POSTURE_SLUMPED);
+    assert(classify_geometry(-250000, 190000, false, 6000, since) == FOCUSMATE_POSTURE_LEAN_LEFT);
     assert(since == kNoSlumpStart);
-    assert(classify_geometry(0, 190000, kScale, 6001, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
+    assert(classify_geometry(0, 190000, false, 6001, since) == FOCUSMATE_POSTURE_HEAD_DOWN);
 
     focusmate_posture_state_t stable = FOCUSMATE_POSTURE_UNKNOWN;
     focusmate_posture_state_t candidate = FOCUSMATE_POSTURE_UNKNOWN;
@@ -267,6 +313,10 @@ void geometry_self_test()
     assert(calibration_bbox_fully_visible(visible));
     visible.cy_q6 = 150000U;
     assert(!calibration_bbox_fully_visible(visible));
+    assert(!scale_consensus(1500000U, 1000000U, true, false));
+    assert(scale_consensus(1400000U, 1400000U, true, false));
+    assert(scale_consensus(1210000U, 1210000U, true, true));
+    assert(!scale_consensus(1190000U, 1190000U, true, true));
     visible.cy_q6 = 400000U;
     visible.cx_q6 = 200000U;
     visible.width_q6 = 150000U;
@@ -281,6 +331,8 @@ bool persist_baseline()
     if (error == ESP_OK) error = nvs_set_u32(handle, "base_cx", runtime.baseline_cx);
     if (error == ESP_OK) error = nvs_set_u32(handle, "base_cy", runtime.baseline_cy);
     if (error == ESP_OK) error = nvs_set_u32(handle, "base_area", runtime.baseline_area);
+    if (error == ESP_OK && runtime.scale_ready) error = nvs_set_u32(handle, "base_eye", runtime.baseline_eye_scale);
+    if (error == ESP_OK) error = nvs_set_u32(handle, "base_rev", runtime.scale_ready ? kBaselineRevision : 2U);
     if (error == ESP_OK) error = nvs_commit(handle);
     nvs_close(handle);
     if (error != ESP_OK) ESP_LOGE(kTag, "cannot persist baseline error=0x%x", error);
@@ -292,7 +344,7 @@ bool erase_baseline()
     nvs_handle_t handle;
     if (nvs_open(kNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) return false;
     esp_err_t error = ESP_OK;
-    for (const char *key : {"base_profile", "base_cx", "base_cy", "base_area"}) {
+    for (const char *key : {"base_profile", "base_cx", "base_cy", "base_area", "base_eye", "base_rev"}) {
         const esp_err_t result = nvs_erase_key(handle, key);
         if (result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND && error == ESP_OK) error = result;
     }
@@ -306,12 +358,14 @@ bool load_baseline()
 {
     nvs_handle_t handle;
     if (nvs_open(kNvsNamespace, NVS_READONLY, &handle) != ESP_OK) return false;
-    uint32_t profile = 0, cx = 0, cy = 0, area = 0;
+    uint32_t profile = 0, cx = 0, cy = 0, area = 0, eye = 0, revision = 2U;
     const bool valid = nvs_get_u32(handle, "base_profile", &profile) == ESP_OK &&
         nvs_get_u32(handle, "base_cx", &cx) == ESP_OK &&
         nvs_get_u32(handle, "base_cy", &cy) == ESP_OK &&
         nvs_get_u32(handle, "base_area", &area) == ESP_OK &&
         profile == kProfileFingerprint && cx <= kScale && cy <= kScale && area > 0U && area <= kScale;
+    const bool eye_valid = nvs_get_u32(handle, "base_eye", &eye) == ESP_OK && eye > 0U && eye <= kScale;
+    (void)nvs_get_u32(handle, "base_rev", &revision);
     nvs_close(handle);
     if (!valid) {
         if (profile != 0U) {
@@ -327,8 +381,10 @@ bool load_baseline()
     runtime.baseline_cx = cx;
     runtime.baseline_cy = cy;
     runtime.baseline_area = area;
+    runtime.baseline_eye_scale = eye_valid ? eye : 0U;
+    runtime.scale_ready = eye_valid && revision >= kBaselineRevision;
     runtime.calibrated = true;
-    runtime.calibration_reason = "persisted";
+    runtime.calibration_reason = runtime.scale_ready ? "persisted" : "persisted_scale_migration";
     return true;
 }
 
@@ -362,11 +418,12 @@ void set_raw_state(focusmate_posture_state_t state, uint32_t confidence, uint64_
 bool calibration_samples_stable()
 {
     const uint32_t area = median(runtime.areas);
+    const uint32_t eye = median(runtime.eyes);
     const auto [min_x, max_x] = std::minmax_element(runtime.xs.begin(), runtime.xs.end());
     const auto [min_y, max_y] = std::minmax_element(runtime.ys.begin(), runtime.ys.end());
     const auto [min_area, max_area] = std::minmax_element(runtime.areas.begin(), runtime.areas.end());
     return *max_x - *min_x <= kMaximumCenterSpread &&
-        *max_y - *min_y <= kMaximumCenterSpread && area > 0U &&
+        *max_y - *min_y <= kMaximumCenterSpread && area > 0U && eye > 0U &&
         ratio_q6(*max_area - *min_area, area) <= kMaximumAreaSpreadRatio;
 }
 
@@ -375,6 +432,7 @@ void finish_calibration()
     const uint32_t cx = median(runtime.xs);
     const uint32_t cy = median(runtime.ys);
     const uint32_t area = median(runtime.areas);
+    const uint32_t eye = median(runtime.eyes);
     runtime.calibration_active = false;
     runtime.last_calibration_sample_ms = 0;
     if (!calibration_samples_stable()) {
@@ -385,11 +443,16 @@ void finish_calibration()
     runtime.baseline_cx = cx;
     runtime.baseline_cy = cy;
     runtime.baseline_area = area;
+    runtime.baseline_eye_scale = eye;
+    runtime.scale_ready = true;
+    runtime.scale_sample_count = 0;
+    runtime.scale_first_sample_ms = runtime.scale_last_sample_ms = 0;
     reset_live_temporal_state(now_ms());
     if (!persist_baseline()) {
         runtime.calibrated = false;
         runtime.sample_count = 0;
-        runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = 0;
+        runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = runtime.baseline_eye_scale = 0;
+        runtime.scale_ready = false;
         runtime.calibration_reason = "storage_error";
         return;
     }
@@ -409,11 +472,13 @@ extern "C" bool focusmate_shadow_posture_init(void)
     xSemaphoreTake(runtime.mutex, portMAX_DELAY);
     const bool loaded = load_baseline();
     xSemaphoreGive(runtime.mutex);
-    ESP_LOGI(kTag, "shadow classifier ready baseline=%s cx_q6=%lu cy_q6=%lu area_q6=%lu live_confidence_q6=%lu calibration_confidence_q6=%lu",
+    ESP_LOGI(kTag, "shadow classifier ready baseline=%s scale=%s cx_q6=%lu cy_q6=%lu area_q6=%lu eye_q6=%lu live_confidence_q6=%lu calibration_confidence_q6=%lu",
              loaded ? "persisted" : "required",
+             runtime.scale_ready ? "consensus" : "migrating",
              static_cast<unsigned long>(runtime.baseline_cx),
              static_cast<unsigned long>(runtime.baseline_cy),
              static_cast<unsigned long>(runtime.baseline_area),
+             static_cast<unsigned long>(runtime.baseline_eye_scale),
              static_cast<unsigned long>(kLiveMinimumConfidence),
              static_cast<unsigned long>(kCalibrationMinimumConfidence));
     return true;
@@ -436,6 +501,7 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
     runtime.last_sample_ms = at_ms;
 
     const uint32_t observed_area = result->face_detected ? area_q6(*result) : 0U;
+    const uint32_t observed_eye_scale = result->face_detected ? eye_scale_q6(*result) : 0U;
     if (runtime.calibration_active) {
         if (at_ms > runtime.calibration_deadline_ms) {
             runtime.calibration_active = false;
@@ -446,7 +512,8 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
         } else {
             const bool visible = result->face_detected && observed_area > 0U &&
                 calibration_bbox_fully_visible(*result);
-            const bool valid_sample = visible && result->confidence_q6 >= kCalibrationMinimumConfidence;
+            const bool valid_sample = visible && observed_eye_scale > 0U &&
+                result->confidence_q6 >= kCalibrationMinimumConfidence;
             if (valid_sample) {
                 if (runtime.last_calibration_sample_ms != 0U &&
                     (at_ms <= runtime.last_calibration_sample_ms ||
@@ -459,6 +526,7 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
                     runtime.xs[index] = result->cx_q6;
                     runtime.ys[index] = result->cy_q6;
                     runtime.areas[index] = observed_area;
+                    runtime.eyes[index] = observed_eye_scale;
                     runtime.calibration_reason = "collecting";
                     if (runtime.sample_count == kCalibrationSamples) finish_calibration();
                 }
@@ -475,10 +543,44 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
         }
     }
 
+    // A v2 baseline remains useful for center/area posture immediately. Add
+    // the missing eye baseline in the background only while geometry is close
+    // to the saved neutral scale and the face is fully visible.
+    if (runtime.calibrated && !runtime.scale_ready && !runtime.calibration_active &&
+        observed_area > 0U && observed_eye_scale > 0U && result->confidence_q6 >= kCalibrationMinimumConfidence &&
+        calibration_bbox_fully_visible(*result)) {
+        const uint32_t migration_area_ratio = ratio_q6(observed_area, runtime.baseline_area);
+        const bool neutral_scale = migration_area_ratio >= 722500U && migration_area_ratio <= 1322500U;
+        if (!neutral_scale || (runtime.scale_last_sample_ms != 0U &&
+            (at_ms <= runtime.scale_last_sample_ms || at_ms - runtime.scale_last_sample_ms > kCalibrationMaximumGapMs))) {
+            runtime.scale_sample_count = 0;
+            runtime.scale_first_sample_ms = 0;
+        }
+        if (neutral_scale) {
+            if (runtime.scale_sample_count == 0U) runtime.scale_first_sample_ms = at_ms;
+            runtime.scale_last_sample_ms = at_ms;
+            if (runtime.scale_sample_count < kCalibrationSamples) {
+                runtime.eyes[runtime.scale_sample_count++] = observed_eye_scale;
+            }
+            if (runtime.scale_sample_count == kCalibrationSamples &&
+                at_ms - runtime.scale_first_sample_ms >= kScaleCalibrationMinimumSpanMs) {
+                runtime.baseline_eye_scale = median(runtime.eyes);
+                runtime.scale_ready = runtime.baseline_eye_scale > 0U;
+                runtime.calibration_reason = runtime.scale_ready ? "scale_migration_complete" : "scale_migration_invalid";
+                if (runtime.scale_ready && !persist_baseline()) {
+                    runtime.scale_ready = false;
+                    runtime.calibration_reason = "storage_error";
+                }
+            }
+        }
+    }
+
     if (!result->face_detected) {
         runtime.slumped_since_ms = kNoSlumpStart;
         runtime.dx = runtime.dy = 0;
         runtime.area_ratio = 0;
+        runtime.bbox_scale_ratio = runtime.eye_scale_ratio = 0;
+        runtime.scale_valid_votes = runtime.scale_close_votes = 0;
         set_raw_state(FOCUSMATE_POSTURE_FACE_MISSING, kScale, at_ms);
         xSemaphoreGive(runtime.mutex);
         return;
@@ -490,21 +592,29 @@ extern "C" void focusmate_shadow_posture_observe(const focusmate_face_result_t *
         runtime.dx = static_cast<int32_t>(runtime.baseline_cx) - static_cast<int32_t>(result->cx_q6);
         runtime.dy = static_cast<int32_t>(result->cy_q6) - static_cast<int32_t>(runtime.baseline_cy);
         runtime.area_ratio = ratio_q6(observed_area, runtime.baseline_area);
+        runtime.bbox_scale_ratio = linear_scale_ratio_q6(runtime.area_ratio);
+        runtime.eye_scale_ratio = runtime.scale_ready ? ratio_q6(observed_eye_scale, runtime.baseline_eye_scale) : 0U;
     } else {
         runtime.dx = runtime.dy = 0;
         runtime.area_ratio = 0;
+        runtime.bbox_scale_ratio = runtime.eye_scale_ratio = 0;
     }
     if (result->confidence_q6 < kLiveMinimumConfidence || !runtime.calibrated || observed_area == 0U) {
         runtime.slumped_since_ms = kNoSlumpStart;
+        runtime.scale_valid_votes = runtime.scale_close_votes = 0;
         set_raw_state(FOCUSMATE_POSTURE_UNKNOWN, result->confidence_q6, at_ms);
         xSemaphoreGive(runtime.mutex);
         return;
     }
 
+    const bool too_close_consensus = scale_consensus(runtime.bbox_scale_ratio, runtime.eye_scale_ratio,
+        runtime.scale_ready, runtime.stable_state == FOCUSMATE_POSTURE_TOO_CLOSE,
+        &runtime.scale_valid_votes, &runtime.scale_close_votes);
     const focusmate_posture_state_t state = classify_geometry(
-        runtime.dx, runtime.dy, runtime.area_ratio, at_ms, runtime.slumped_since_ms);
+        runtime.dx, runtime.dy, too_close_consensus, at_ms, runtime.slumped_since_ms);
     const uint32_t confidence = std::min(result->confidence_q6,
-        geometry_confidence(state, runtime.dx, runtime.dy, runtime.area_ratio));
+        geometry_confidence(state, runtime.dx, runtime.dy,
+                            runtime.bbox_scale_ratio, runtime.eye_scale_ratio));
     set_raw_state(state, confidence, at_ms);
     xSemaphoreGive(runtime.mutex);
 }
@@ -522,9 +632,13 @@ extern "C" void focusmate_shadow_posture_start_calibration(void)
     runtime.sample_count = 0;
     runtime.calibration_reason = "waiting_for_face";
     reset_live_temporal_state(current);
-    runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = 0;
+    runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = runtime.baseline_eye_scale = 0;
+    runtime.scale_ready = false;
+    runtime.scale_sample_count = 0;
     runtime.dx = runtime.dy = 0;
     runtime.area_ratio = 0;
+    runtime.bbox_scale_ratio = runtime.eye_scale_ratio = 0;
+    runtime.scale_valid_votes = runtime.scale_close_votes = 0;
     if (!erase_baseline()) {
         runtime.calibration_active = false;
         runtime.calibration_reason = "storage_error";
@@ -542,9 +656,13 @@ extern "C" void focusmate_shadow_posture_reset(void)
     runtime.sample_count = 0;
     runtime.calibration_reason = "not_calibrated";
     reset_live_temporal_state(now_ms());
-    runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = 0;
+    runtime.baseline_cx = runtime.baseline_cy = runtime.baseline_area = runtime.baseline_eye_scale = 0;
+    runtime.scale_ready = false;
+    runtime.scale_sample_count = 0;
     runtime.dx = runtime.dy = 0;
     runtime.area_ratio = 0;
+    runtime.bbox_scale_ratio = runtime.eye_scale_ratio = 0;
+    runtime.scale_valid_votes = runtime.scale_close_votes = 0;
     if (!erase_baseline()) runtime.calibration_reason = "storage_error";
     xSemaphoreGive(runtime.mutex);
 }
@@ -575,9 +693,15 @@ extern "C" void focusmate_shadow_posture_snapshot(focusmate_posture_snapshot_t *
         .dx_q6 = runtime.dx,
         .dy_q6 = runtime.dy,
         .area_ratio_q6 = runtime.area_ratio,
+        .bbox_scale_ratio_q6 = runtime.bbox_scale_ratio,
+        .eye_scale_ratio_q6 = runtime.eye_scale_ratio,
+        .scale_valid_votes = runtime.scale_valid_votes,
+        .scale_close_votes = runtime.scale_close_votes,
+        .scale_ready = runtime.scale_ready,
         .baseline_cx_q6 = runtime.baseline_cx,
         .baseline_cy_q6 = runtime.baseline_cy,
         .baseline_area_q6 = runtime.baseline_area,
+        .baseline_eye_scale_q6 = runtime.baseline_eye_scale,
     };
     xSemaphoreGive(runtime.mutex);
 }

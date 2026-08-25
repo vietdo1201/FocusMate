@@ -11,12 +11,15 @@ export const POSTURE_STATES = Object.freeze([
   "UNKNOWN",
 ]);
 
-export const POSE_CLASSIFIER_VERSION = 2;
+export const POSE_CLASSIFIER_VERSION = 3;
 export const REQUIRED_BASELINE_SAMPLES = 20;
 export const REQUIRED_BASELINE_MS = 5000;
 export const STALE_MS = 3000;
 const LABEL_DEBOUNCE_MS = 1000;
 const INVALID_HOLD_MS = 800;
+const SCALE_SOURCE_NAMES = Object.freeze(["poseEyeScale", "faceEyeScale", "espBboxScale"]);
+const SCALE_ENTER_RATIO = 1.35;
+const SCALE_EXIT_RATIO = 1.20;
 
 const LANDMARK = Object.freeze({
   NOSE: 0,
@@ -75,7 +78,7 @@ function q(value, fallback = 0) {
  * Positive lateral values always mean the person's left, independent of the
  * display mirror setting. Classification must receive the unmirrored image.
  */
-export function extractPoseFeatures(landmarks, faceMeta = null) {
+export function extractPoseFeatures(landmarks, faceMeta = null, faceGeometry = null) {
   if (!Array.isArray(landmarks) || landmarks.length < 25) return null;
   const nose = landmarks[LANDMARK.NOSE];
   const leftEye = landmarks[LANDMARK.LEFT_EYE];
@@ -121,10 +124,10 @@ export function extractPoseFeatures(landmarks, faceMeta = null) {
   }
 
   let facePitch = null;
-  let faceScale = shoulderWidth;
+  let espBboxScale = null;
   if (faceMeta?.detected) {
     if (Number.isFinite(faceMeta.width) && Number.isFinite(faceMeta.height)) {
-      faceScale = Math.sqrt(Math.max(0.000001, faceMeta.width * faceMeta.height));
+      espBboxScale = Math.sqrt(Math.max(0.000001, faceMeta.width * faceMeta.height));
     }
     const points = faceMeta.points;
     if (points?.leftEye && points?.rightEye && points?.leftMouth && points?.rightMouth && points?.nose) {
@@ -144,23 +147,45 @@ export function extractPoseFeatures(landmarks, faceMeta = null) {
     headHeight,
     eyeHeight,
     facePitch,
-    faceScale,
+    // Keep faceScale for v2 fixture/export compatibility. Classification uses
+    // the explicit sources below and never trusts a single enlarged bbox.
+    faceScale: espBboxScale ?? eyeWidth,
+    poseEyeScale: eyeWidth > 0.005 ? eyeWidth : null,
+    faceEyeScale: Number.isFinite(faceGeometry?.eyeScale) && faceGeometry.ageMs <= 700
+      ? faceGeometry.eyeScale : null,
+    espBboxScale,
     shoulderWidth,
     torsoLength,
     hasHips: Boolean(hasHips),
   };
 }
 
-function validPersistedBaseline(candidate, fingerprint) {
-  if (!candidate || candidate.version !== POSE_CLASSIFIER_VERSION || candidate.fingerprint !== fingerprint) return false;
+function validPostureBaseline(candidate, fingerprint) {
+  if (!candidate || ![2, POSE_CLASSIFIER_VERSION].includes(candidate.version) || candidate.fingerprint !== fingerprint) return false;
   const required = ["headRollDeg", "torsoLeanDeg", "lateralHead", "headHeight", "eyeHeight", "faceScale"];
   return required.every(name => Number.isFinite(candidate.values?.[name]) && Number.isFinite(candidate.noise?.[name]));
+}
+
+function restoreBaseline(candidate, fingerprint) {
+  if (!validPostureBaseline(candidate, fingerprint)) return null;
+  const restored = JSON.parse(JSON.stringify(candidate));
+  restored.version = POSE_CLASSIFIER_VERSION;
+  restored.values ||= {};
+  restored.noise ||= {};
+  if (candidate.version === 2 && Number.isFinite(candidate.values.faceScale)) {
+    restored.values.espBboxScale = candidate.values.faceScale;
+    restored.noise.espBboxScale = q(candidate.noise.faceScale);
+    restored.migratedFromVersion = 2;
+  }
+  restored.scaleReady = SCALE_SOURCE_NAMES.filter(name =>
+    Number.isFinite(restored.values[name]) && restored.values[name] > 0).length >= 2;
+  return restored;
 }
 
 export class PosePostureClassifier {
   constructor({fingerprint, baseline = null} = {}) {
     this.fingerprint = fingerprintOf(fingerprint);
-    this.baseline = validPersistedBaseline(baseline, this.fingerprint) ? baseline : null;
+    this.baseline = restoreBaseline(baseline, this.fingerprint);
     this.samples = [];
     this.baselineStartedAt = 0;
     this.baselineLastAt = 0;
@@ -178,6 +203,9 @@ export class PosePostureClassifier {
     this.slumpedSinceMs = 0;
     this.normalSinceMs = 0;
     this.adaptationSamples = [];
+    this.scaleSamples = [];
+    this.scaleLastAt = 0;
+    this.scaleLastFeatures = null;
   }
 
   reset() {
@@ -198,6 +226,9 @@ export class PosePostureClassifier {
     this.normalSinceMs = 0;
     this.lastUsableAtMs = 0;
     this.adaptationSamples = [];
+    this.scaleSamples = [];
+    this.scaleLastAt = 0;
+    this.scaleLastFeatures = null;
   }
 
   captureBaseline() {
@@ -209,8 +240,8 @@ export class PosePostureClassifier {
     return this.baseline ? JSON.parse(JSON.stringify(this.baseline)) : null;
   }
 
-  observe({sequence, timestampMs, landmarks, faceMeta}) {
-    const features = extractPoseFeatures(landmarks, faceMeta);
+  observe({sequence, timestampMs, landmarks, faceMeta, faceGeometry}) {
+    const features = extractPoseFeatures(landmarks, faceMeta, faceGeometry);
     return this.observeFeatures({sequence, timestampMs, features, faceDetected: Boolean(faceMeta?.detected)});
   }
 
@@ -238,9 +269,12 @@ export class PosePostureClassifier {
         this.baseline ? "baseline_ready" : calibrationReason);
     }
 
-    const classification = this.classify(features, timestampMs);
+    const scaleBaselineChanged = this.collectScaleBaseline(features, timestampMs);
+    const evaluatedFeatures = {...features};
+    const classification = this.classify(evaluatedFeatures, timestampMs);
     const result = this.commit(classification.state, timestampMs, classification.confidence,
-      features, classification.reason, classification.rawState);
+      evaluatedFeatures, classification.reason, classification.rawState);
+    if (scaleBaselineChanged) result.baselineChanged = true;
     this.maybeAdapt(features, timestampMs, result.state);
     return result;
   }
@@ -291,7 +325,8 @@ export class PosePostureClassifier {
     }
 
     const names = ["headRollDeg", "torsoLeanDeg", "shoulderAngleDeg", "lateralHead", "headHeight",
-      "eyeHeight", "facePitch", "faceScale", "shoulderWidth", "torsoLength"];
+      "eyeHeight", "facePitch", "faceScale", "poseEyeScale", "faceEyeScale", "espBboxScale",
+      "shoulderWidth", "torsoLength"];
     const values = {}, noise = {};
     for (const name of names) {
       const summary = featureSummary(this.samples, name);
@@ -304,6 +339,9 @@ export class PosePostureClassifier {
       createdAtMs: timestampMs,
       values,
       noise,
+      scaleReady: SCALE_SOURCE_NAMES.filter(name =>
+        this.samples.filter(sample => Number.isFinite(sample[name])).length >= REQUIRED_BASELINE_SAMPLES &&
+        Number.isFinite(values[name]) && values[name] > 0).length >= 2,
     };
     this.samples = [];
     this.baselineStartedAt = 0;
@@ -318,6 +356,67 @@ export class PosePostureClassifier {
       Math.abs(current.torsoLeanDeg - previous.torsoLeanDeg) <= 4 &&
       Math.abs(current.lateralHead - previous.lateralHead) <= 0.04 &&
       Math.abs(current.headHeight - previous.headHeight) <= 0.08;
+  }
+
+  collectScaleBaseline(features, timestampMs) {
+    if (!this.baseline || this.baseline.scaleReady) return false;
+    const validSources = SCALE_SOURCE_NAMES.filter(name => Number.isFinite(features[name]) && features[name] > 0);
+    if (validSources.length < 2 || (this.scaleLastFeatures && !this.isStablePair(features, this.scaleLastFeatures))) {
+      this.scaleSamples = [];
+      this.scaleLastAt = 0;
+      this.scaleLastFeatures = null;
+      return false;
+    }
+    if (this.scaleLastAt && (timestampMs <= this.scaleLastAt || timestampMs - this.scaleLastAt > 1500)) {
+      this.scaleSamples = [];
+    }
+    this.scaleLastAt = timestampMs;
+    this.scaleLastFeatures = features;
+    this.scaleSamples.push({...features, _timestampMs: timestampMs});
+    if (this.scaleSamples.length > 60) this.scaleSamples.shift();
+    if (this.scaleSamples.length < REQUIRED_BASELINE_SAMPLES ||
+        this.scaleSamples.at(-1)._timestampMs - this.scaleSamples[0]._timestampMs < REQUIRED_BASELINE_MS) return false;
+    let ready = 0;
+    for (const name of SCALE_SOURCE_NAMES) {
+      const samples = this.scaleSamples.filter(sample => Number.isFinite(sample[name]));
+      if (samples.length < REQUIRED_BASELINE_SAMPLES) continue;
+      const summary = featureSummary(samples, name);
+      if (!Number.isFinite(summary.value) || summary.value <= 0) continue;
+      this.baseline.values[name] = summary.value;
+      this.baseline.noise[name] = summary.noise;
+      ready += 1;
+    }
+    this.baseline.scaleReady = ready >= 2;
+    if (!this.baseline.scaleReady) return false;
+    delete this.baseline.migratedFromVersion;
+    this.scaleSamples = [];
+    this.scaleLastAt = 0;
+    this.scaleLastFeatures = null;
+    return true;
+  }
+
+  scaleEvidence(features) {
+    const threshold = this.state === "TOO_CLOSE" ? SCALE_EXIT_RATIO : SCALE_ENTER_RATIO;
+    const sources = SCALE_SOURCE_NAMES.map(name => {
+      const current = features?.[name];
+      const baseline = this.baseline?.values?.[name];
+      const ratio = Number.isFinite(current) && Number.isFinite(baseline) && baseline > 0
+        ? current / baseline : null;
+      return {name, ratio, valid: Number.isFinite(ratio), close: Number.isFinite(ratio) && ratio >= threshold};
+    });
+    const valid = sources.filter(source => source.valid);
+    const close = valid.filter(source => source.close);
+    const agreeingRatio = close.map(source => source.ratio).sort((a, b) => b - a)[1] ?? null;
+    return {
+      ready: Boolean(this.baseline?.scaleReady),
+      threshold,
+      requiredVotes: 2,
+      validVotes: valid.length,
+      closeVotes: close.length,
+      consensus: Boolean(this.baseline?.scaleReady) && valid.length >= 2 && close.length >= 2,
+      agreeingRatio,
+      sources,
+    };
   }
 
   classify(features, timestampMs) {
@@ -340,7 +439,8 @@ export class PosePostureClassifier {
     const eyeDrop = base.eyeHeight - features.eyeHeight;
     const pitch = Number.isFinite(features.facePitch) && Number.isFinite(base.facePitch)
       ? features.facePitch - base.facePitch : 0;
-    const scaleRatio = base.faceScale > 0 ? features.faceScale / base.faceScale : 1;
+    const scaleEvidence = this.scaleEvidence(features);
+    features.scaleEvidence = scaleEvidence;
     const torsoCompression = Number.isFinite(features.torsoLength) && base.torsoLength > 0
       ? (base.torsoLength - features.torsoLength) / base.torsoLength : 0;
 
@@ -358,10 +458,10 @@ export class PosePostureClassifier {
     const downScore = [...downSignals].sort((a, b) => b - a)[1] ?? 0;
     const headDown = downCount >= 2 || headDrop / enter.headDrop >= 1.5;
 
-    const closeThreshold = this.state === "TOO_CLOSE" ? 1.20 : 1.35;
-    if (scaleRatio >= closeThreshold) {
+    if (scaleEvidence.consensus) {
       this.slumpedSinceMs = 0;
-      return {state: "TOO_CLOSE", rawState: "TOO_CLOSE", confidence: clamp((scaleRatio - 1) / 0.55, 0, 1), reason: "scale"};
+      return {state: "TOO_CLOSE", rawState: "TOO_CLOSE",
+        confidence: clamp((scaleEvidence.agreeingRatio - 1) / 0.55, 0, 1), reason: "scale_consensus"};
     }
 
     const slumpEvidence = headDown && (torsoCompression >= 0.10 ||
@@ -409,6 +509,7 @@ export class PosePostureClassifier {
     if (this.adaptationSamples.length < 20) return;
     const rate = 0.02;
     for (const name of Object.keys(this.baseline.values)) {
+      if (SCALE_SOURCE_NAMES.includes(name)) continue;
       const candidate = featureSummary(this.adaptationSamples, name).value;
       if (!Number.isFinite(candidate)) continue;
       const current = this.baseline.values[name];
@@ -435,6 +536,8 @@ export class PosePostureClassifier {
       calibrationMode: this.manualCalibration ? "manual" : "auto",
       features,
       baselineChanged: reason === "baseline_ready",
+      scaleCalibrationProgress: this.baseline?.scaleReady ? REQUIRED_BASELINE_SAMPLES : this.scaleSamples.length,
+      scaleCalibrationRequired: REQUIRED_BASELINE_SAMPLES,
     };
   }
 }

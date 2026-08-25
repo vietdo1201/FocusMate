@@ -103,13 +103,20 @@ def prepare(force: bool) -> None:
     (WEB_ASSETS / "wasm").mkdir(parents=True)
     package_root = extracted / "package"
     shutil.copy2(bundle, WEB_ASSETS / "vision_bundle.mjs")
-    loader = (package_root / "wasm" / "vision_wasm_internal.js").read_bytes()
+    # Use one no-SIMD runtime for both MediaPipe probe outcomes. Older Android
+    # browsers can reject the SIMD build, while shipping both binaries would
+    # exceed the fixed mp_assets partition. The URL mapper in web_assets.cpp
+    # serves these verified bytes for both upstream filenames.
+    loader = (package_root / "wasm" / "vision_wasm_nosimd_internal.js").read_bytes()
     (WEB_ASSETS / "wasm" / "vwi.js").write_bytes(
         loader + b"\nglobalThis.ModuleFactory = ModuleFactory;\n"
     )
     for name in ("pose_worker.mjs", "pose_worker_bootstrap.js", "pose_classifier.mjs", "yawn_classifier.mjs"):
         shutil.copy2(ROOT / "firmware" / "main" / "web" / name, WEB_ASSETS / name)
-    compress_brotli(package_root / "wasm" / "vision_wasm_internal.wasm", WEB_ASSETS / "wasm" / "vwi.wasm.br")
+    compress_brotli(
+        package_root / "wasm" / "vision_wasm_nosimd_internal.wasm",
+        WEB_ASSETS / "wasm" / "vwi.wasm.br",
+    )
     for source, target in (
         (pose, WEB_ASSETS / "pose_landmarker_lite.task.gz"),
         (face, WEB_ASSETS / "face_landmarker.task.gz"),

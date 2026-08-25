@@ -20,7 +20,7 @@ class PostureClassifierTest {
         assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(22, cy = 0.53), 2_000).state)
         assertEquals(PostureState.LEAN_LEFT, classifier.classify(face(23, cx = 0.66), 3_000).state)
         assertEquals(PostureState.LEAN_RIGHT, classifier.classify(face(24, cx = 0.34), 4_000).state)
-        assertEquals(PostureState.TOO_CLOSE, classifier.classify(face(25, width = 0.3, height = 0.33), 5_000).state)
+        assertEquals(PostureState.NORMAL, classifier.classify(face(25, width = 0.3, height = 0.33), 5_000).state)
     }
 
     @Test
@@ -67,22 +67,23 @@ class PostureClassifierTest {
         assertEquals(PostureState.SLUMPED, classifier.classify(face(24, cy = 0.59), 12_000).state)
 
         assertEquals(
-            PostureState.TOO_CLOSE,
+            PostureState.SLUMPED,
             classifier.classify(face(25, cy = 0.59, width = 0.30, height = 0.33), 12_100).state,
         )
-        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 12_200).state)
-        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 14_200).state)
-        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(26, cy = 0.59), 16_200).state)
-        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(27, cy = 0.59), 17_199).state)
-        assertEquals(PostureState.SLUMPED, classifier.classify(face(28, cy = 0.59), 17_200).state)
+        assertEquals(PostureState.NORMAL, classifier.classify(face(26), 12_200).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(27, cy = 0.59), 12_201).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(28, cy = 0.59), 14_201).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(29, cy = 0.59), 16_201).state)
+        assertEquals(PostureState.HEAD_DOWN, classifier.classify(face(30, cy = 0.59), 17_200).state)
+        assertEquals(PostureState.SLUMPED, classifier.classify(face(31, cy = 0.59), 17_201).state)
     }
 
     @Test
-    fun tooCloseKeepsPrecedenceOverCombinedHeadAndLeanGeometry() {
+    fun bboxInflationAloneCannotOverrideAnatomicalFallbackGeometry() {
         val classifier = GeometryPostureClassifier()
         assertTrue(classifier.calibrate((0 until 20).map { face(it.toLong()) }))
         assertEquals(
-            PostureState.TOO_CLOSE,
+            PostureState.HEAD_DOWN,
             classifier.classify(face(21, cx = 0.30, cy = 0.59, width = 0.30, height = 0.33), 1_000).state,
         )
     }
@@ -137,7 +138,7 @@ class PostureClassifierTest {
             ),
         )
         assertEquals(
-            PostureState.TOO_CLOSE,
+            PostureState.NORMAL,
             classifier.classify(face(21, width = 0.22334, height = 0.25), 1_000).state,
         )
     }
@@ -186,7 +187,7 @@ class PostureClassifierTest {
     }
 
     @Test
-    fun sharedGoldenVectorsMatchFirmwareShadowClassifier() {
+    fun sharedGoldenVectorsMatchExceptFirmwareOnlyTwoSourceCloseVote() {
         val startDirectory = File(System.getProperty("user.dir") ?: ".").canonicalFile
         val fixture = generateSequence(startDirectory) { it.parentFile }
             .map { it.resolve("tests/golden/posture_geometry_v2.tsv") }
@@ -221,7 +222,8 @@ class PostureClassifierTest {
                         elapsed += 2_000L
                     }
                 }
-                assertEquals(columns[0], expected, classifier.classify(observation, 1_000L + holdMs).state)
+                val watchExpected = if (expected == PostureState.TOO_CLOSE) PostureState.NORMAL else expected
+                assertEquals(columns[0], watchExpected, classifier.classify(observation, 1_000L + holdMs).state)
             }
     }
 

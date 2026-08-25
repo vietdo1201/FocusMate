@@ -104,6 +104,28 @@ class PosePostureClassifierTest {
     }
 
     @Test
+    fun handInflatedEspBoxAloneCannotReportTooClose() {
+        val classifier = calibratedAndSettled()
+        val hand = neutral(faceScale = 0.31, poseEyeScale = 0.20, faceEyeScale = 0.20, espBboxScale = 0.31)
+        var result: PoseClassifierUpdate? = null
+        repeat(8) { index ->
+            result = classifier.observeFeatures(40L + index, 7_000L + index * 300L, hand, true)
+        }
+        assertEquals(PostureState.NORMAL, result?.classification?.state)
+    }
+
+    @Test
+    fun twoFaceScaleSourcesMustAgreeBeforeTooClose() {
+        val classifier = calibratedAndSettled()
+        val close = neutral(faceScale = 0.29, poseEyeScale = 0.29, faceEyeScale = 0.29, espBboxScale = null)
+        var result: PoseClassifierUpdate? = null
+        repeat(8) { index ->
+            result = classifier.observeFeatures(40L + index, 7_000L + index * 300L, close, true)
+        }
+        assertEquals(PostureState.TOO_CLOSE, result?.classification?.state)
+    }
+
+    @Test
     fun sharedWebAndWatchGoldenFeaturesProduceSameVocabularyAndPrecedence() {
         val fixture = findFixture("tests/golden/posture_landmarks_v1.tsv")
         val rows = fixture.readLines().filter(String::isNotBlank)
@@ -120,6 +142,9 @@ class PosePostureClassifierTest {
                 eyeHeight = row.getValue("eye_height").toDouble(),
                 facePitch = row.getValue("face_pitch").toDouble(),
                 faceScale = row.getValue("face_scale").toDouble(),
+                poseEyeScale = row.getValue("face_scale").toDouble(),
+                faceEyeScale = row.getValue("face_scale").toDouble(),
+                espBboxScale = row.getValue("face_scale").toDouble(),
                 torsoLength = row.getValue("torso_length").toDouble(),
             )
             val holdMs = row.getValue("hold_ms").toLong()
@@ -162,6 +187,9 @@ class PosePostureClassifierTest {
         eyeHeight: Double = 0.9,
         facePitch: Double? = 0.5,
         faceScale: Double = 0.20,
+        poseEyeScale: Double? = faceScale,
+        faceEyeScale: Double? = faceScale,
+        espBboxScale: Double? = faceScale,
         torsoLength: Double? = 0.40,
     ) = PoseFeatures(
         quality = quality,
@@ -173,6 +201,9 @@ class PosePostureClassifierTest {
         eyeHeight = eyeHeight,
         facePitch = facePitch,
         faceScale = faceScale,
+        poseEyeScale = poseEyeScale,
+        faceEyeScale = faceEyeScale,
+        espBboxScale = espBboxScale,
         shoulderWidth = 0.20,
         torsoLength = torsoLength,
     )

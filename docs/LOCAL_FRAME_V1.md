@@ -127,7 +127,9 @@ Hệ trục “subject-left” lấy từ right shoulder tới left shoulder tr�
 - head/eye height = khoảng cách nose/eye-mid tới shoulder-mid, chia shoulder width;
 - torso lean/compression dùng shoulder-mid và hip-mid khi cả hai hông đủ quality;
 - face pitch dùng nose so với eye/mouth midpoint từ FaceMeta khi năm keypoint detector hợp lệ;
-- close scale ưu tiên face scale `sqrt(width × height)`, fallback shoulder width.
+- close scale giữ riêng ba nguồn: khoảng cách hai mắt Pose, khoảng cách hai mắt
+  Face Landmarker và `sqrt(width × height)` của bbox ESP. Chỉ dùng nguồn quality
+  đạt ngưỡng và tuổi không quá 700 ms.
 
 Baseline dùng 20 frame sequence forward, không trùng, và mẫu đầu/cuối phải cách nhau ít nhất 5 giây. Mẫu upright cần `|head_roll| ≤ 10°`, `|torso_lean| ≤ 8°` khi có hông, `|lateral_head| ≤ 0.12` shoulder width và head-height trong `0.35..2.50`. Giữa hai mẫu liên tiếp, head roll/torso lean/lateral/head-height không được nhảy quá `4°/4°/0.04/0.08`. Baseline và noise là median/MAD theo từng feature.
 
@@ -135,7 +137,12 @@ Watch **CÓ THỂ** giữ baseline session-only. Browser **CÓ THỂ** persist d
 
 Ngưỡng enter là `max(floor, 6 × baseline MAD)`: head roll `10°`, torso lean `8°`, lateral head `0.12`, head drop `0.12`, eye drop `0.10`, face pitch `0.08`. Luật nhãn/precedence:
 
-1. `TOO_CLOSE` enter ở scale ratio `1.35`, giữ tới khi ratio < `1.20` để chống rung.
+1. `TOO_CLOSE` enter ở scale tuyến tính `1.35`, giữ tới khi ratio < `1.20` để
+   chống rung. Web/Watch cần tối thiểu 2/3 nguồn cùng vượt ngưỡng; firmware
+   fallback cần 2/2 giữa bbox và khoảng cách hai mắt của detector năm keypoint.
+   Một mình bbox không được tạo `TOO_CLOSE`. Thiếu đồng thuận bỏ nhánh close và
+   tiếp tục phân loại tư thế khác; thiếu luôn anatomy thì trả `UNKNOWN`, không
+   đổi thành `FACE_MISSING`.
 2. `SLUMPED` cần head-down và collapse liên tục 5 giây: torso compression ≥ `0.10` khi có hips, hoặc đồng thời head drop ≥ `max(0.18, threshold)` và eye drop ≥ `max(0.16, threshold)`. Mất continuity >3 giây reset timer.
 3. Lean score là mức vượt lớn nhất của head roll, torso lean và lateral head. Tín hiệu trái/phải đối nghịch gần nhau (trong tỉ lệ `1.2`) trả `UNKNOWN`.
 4. `HEAD_DOWN` cần ít nhất hai trong ba signal head-drop/eye-drop/face-pitch vượt ngưỡng, hoặc head-drop đạt `1.5 × threshold`.

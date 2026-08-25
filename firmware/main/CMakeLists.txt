@@ -6,8 +6,8 @@ idf_component_register(
          "yawn_sync_broker.cpp"
     INCLUDE_DIRS "."
     EMBED_TXTFILES "web/index.html"
-    REQUIRES bt nvs_flash esp_timer esp32-camera human_face_detect esp_http_server
-             esp_wifi esp_event esp_netif mdns json heap spiffs focusmate_dns
+    REQUIRES bt nvs_flash esp_timer esp_app_format esp32-camera human_face_detect esp_http_server
+             esp_wifi esp_event esp_netif mdns json heap spiffs mbedtls focusmate_dns
 )
 
 spiffs_create_partition_image(mp_assets "${CMAKE_CURRENT_LIST_DIR}/../generated_web_assets" FLASH_IN_PROJECT)

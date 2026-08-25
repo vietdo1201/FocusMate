@@ -13,6 +13,7 @@ extern "C" {
 
 bool focusmate_web_assets_mount(void);
 esp_err_t focusmate_web_assets_serve(httpd_req_t *request, const char *uri);
+const char *focusmate_web_assets_manifest_sha256(void);
 
 #ifdef __cplusplus
 }
