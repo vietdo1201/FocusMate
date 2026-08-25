@@ -27,6 +27,8 @@ Galaxy Watch: Motion/HR + Pose/Face Landmarker → posture/yawn advisory
   lúc build; runtime không tải CDN.
 - Yawn Sync V2 chống đếm trùng qua reconnect/reboot và có fallback với firmware
   cũ. Yawn/posture chỉ là lời khuyên, không thay đổi quyết định nghỉ.
+- `TOO_CLOSE` dùng đồng thuận scale khuôn mặt từ Pose, Face và detector ESP;
+  một bbox phình do bàn tay không còn đủ để kết luận người dùng ngồi quá gần.
 - Chính sách pin Watch: BLE 5 Hz khi màn hình bật, 2 Hz khi tắt, 1 Hz khi nóng;
   inference/frame polling thích ứng, sensor batching 2 giây và retry backoff.
 - Dự án không phải thiết bị y tế và không dùng kết quả để chẩn đoán.
@@ -82,7 +84,7 @@ benchmark trước–sau.
 Mã dự án dùng Apache-2.0, ngoại trừ component `focusmate_dns` dùng MIT. Mỗi tệp
 nguồn có SPDX; toàn văn giấy phép nằm trong `LICENSES/`. Dependency và model
 được liệt kê trong [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) và
-[SPDX SBOM](sbom/focusmate-v2.2.0.spdx.json).
+[SPDX SBOM](sbom/focusmate-v2.2.1.spdx.json).
 
 ## English summary
 

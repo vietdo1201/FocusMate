@@ -4,7 +4,7 @@
 |---|---|
 | Mã nguồn công khai | GitHub public, lịch sử commit, web viewer, Issues |
 | OSI-approved license | Apache-2.0 + MIT, SPDX/REUSE, `LICENSES/`, NOTICE |
-| Release có phiên bản | GitHub Release v2.2.0; artifact độc lập, hash và chữ ký APK |
+| Release có phiên bản | GitHub Release v2.2.1; artifact cập nhật độc lập, factory image ghi nhãn riêng, hash và chữ ký APK |
 | Build từ source | `docs/BUILDING.md`, bootstrap hash-pinned, CI Android + ESP-IDF |
 | Dependency/bundling | Lockfile, verification metadata, IDF pin, notices, SPDX SBOM |
 | Tài liệu/giao tiếp | README, changelog, security, contributing, issue templates |

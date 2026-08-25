@@ -61,14 +61,14 @@ all_text = "\n".join(
 )
 if ("soucre_code/from_On_Hand_3_" + "android_wear") in all_text:
     errors.append("Stale pre-v2.2.0 Wear path remains")
-if 'versionCode     = 23' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionCode is not 23")
-if 'versionName     = "2.2.0"' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionName is not 2.2.0")
-if 'set(PROJECT_VER "2.2.0")' not in (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8"):
-    errors.append("Firmware version is not 2.2.0")
+if 'versionCode     = 24' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
+    errors.append("Android versionCode is not 24")
+if 'versionName     = "2.2.1"' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
+    errors.append("Android versionName is not 2.2.1")
+if 'set(PROJECT_VER "2.2.1")' not in (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8"):
+    errors.append("Firmware version is not 2.2.1")
 
-sbom = json.loads((ROOT / "sbom" / "focusmate-v2.2.0.spdx.json").read_text(encoding="utf-8"))
+sbom = json.loads((ROOT / "sbom" / "focusmate-v2.2.1.spdx.json").read_text(encoding="utf-8"))
 if sbom.get("spdxVersion") != "SPDX-2.3" or len(sbom.get("packages", [])) < 10:
     errors.append("SPDX 2.3 SBOM is missing or incomplete")
 battery = ROOT / "reports" / "assets" / "2026-08-25-galaxy-watch5-pro-battery-usage.png"

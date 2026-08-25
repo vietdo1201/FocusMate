@@ -26,8 +26,8 @@ android {
         applicationId   = "vn.edu.uit.tpkd.wear.cogload"
         minSdk          = 30
         targetSdk       = 35
-        versionCode     = 23
-        versionName     = "2.2.0"
+        versionCode     = 24
+        versionName     = "2.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // Device-locked build for the current SM-R925F test image.

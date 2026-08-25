@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.2.1 — 2026-08-25
+
+- Sửa báo nhầm `TOO_CLOSE` khi chống tay bằng đồng thuận scale: Web/Watch cần
+  tối thiểu hai trong ba nguồn Pose-eye, Face-eye và bbox ESP; firmware cần cả
+  bbox lẫn khoảng cách hai mắt từ detector năm keypoint.
+- Chuẩn hóa scale tuyến tính `1,35×`, hysteresis thoát `1,20×`, freshness 700 ms
+  và baseline riêng 20 mẫu/5 giây; migration revision 3 giữ nguyên baseline tư
+  thế, Wi-Fi và NVS hiện có.
+- Dashboard vẽ ellipse/đường mắt màu cyan, hiển thị từng ratio, số vote, firmware
+  version và hash manifest assets để phát hiện ngay app/Web bị lệch phiên bản.
+- Đồng nhất bootstrap Windows, clean checkout và CI trên MediaPipe WASM không-SIMD
+  tương thích Chrome Android; không thêm model hay lượt inference.
+- Tách firmware update app/assets khỏi factory image để cập nhật mà không xóa NVS.
+
 ## 2.2.0 — 2026-08-25
 
 - Thêm Yawn Sync V2 qua GATT với HTTP local fallback, checkpoint phiên và chống

@@ -41,10 +41,10 @@ jobs:
       - name: Validate immutable release identity
         shell: bash
         run: |
-          test "$GITHUB_REF_NAME" = "v2.2.0"
-          grep -F 'versionCode     = 23' wear/app/build.gradle.kts
-          grep -F 'versionName     = "2.2.0"' wear/app/build.gradle.kts
-          grep -F 'set(PROJECT_VER "2.2.0")' firmware/CMakeLists.txt
+          test "$GITHUB_REF_NAME" = "v2.2.1"
+          grep -F 'versionCode     = 24' wear/app/build.gradle.kts
+          grep -F 'versionName     = "2.2.1"' wear/app/build.gradle.kts
+          grep -F 'set(PROJECT_VER "2.2.1")' firmware/CMakeLists.txt
       - name: Restore release keystore without logging secrets
         shell: bash
         env:
@@ -65,13 +65,13 @@ jobs:
           python tools/check_compliance.py
           python -m reuse lint
           python tools/verify.py --no-firmware --no-assets
-      - name: Build merged ESP32-S3 firmware
+      - name: Build ESP32-S3 update and factory firmware
         uses: espressif/esp-idf-ci-action@e6f5c74232b1ccd4c97ed641f1e48553853f1fd5 # v1.2.0
         with:
           esp_idf_version: v5.5.5
           target: esp32s3
           path: firmware
-          command: idf.py build && cd build && esptool.py --chip esp32s3 merge_bin -o FocusMate-ESP32S3-v2.2.0.bin @flash_args
+          command: idf.py build && cd build && esptool.py --chip esp32s3 merge_bin -o FocusMate-ESP32S3-v2.2.1-factory-full.bin @flash_args
       - name: Verify and stage open release artifacts
         shell: bash
         run: |
@@ -87,17 +87,20 @@ jobs:
             -storepass "$FOCUSMATE_RELEASE_STORE_PASSWORD" \
             -alias "$FOCUSMATE_RELEASE_KEY_ALIAS" \
             > release-assets/FocusMate-release-cert.pem
-          cp "$APK" release-assets/FocusMate-Wear-v2.2.0.apk
-          cp firmware/build/FocusMate-ESP32S3-v2.2.0.bin release-assets/
-          cp sbom/focusmate-v2.2.0.spdx.json release-assets/
+          cp "$APK" release-assets/FocusMate-Wear-v2.2.1.apk
+          cp firmware/build/focusmate_esp.bin release-assets/FocusMate-ESP32S3-v2.2.1-update-app.bin
+          cp firmware/build/mp_assets.bin release-assets/FocusMate-ESP32S3-v2.2.1-update-assets.bin
+          cp firmware/build/FocusMate-ESP32S3-v2.2.1-factory-full.bin release-assets/
+          cp sbom/focusmate-v2.2.1.spdx.json release-assets/
+          cp docs/FLASHING_v2.2.1.md release-assets/FLASHING.txt
           cp THIRD_PARTY_NOTICES.md release-assets/THIRD_PARTY_NOTICES.txt
-          (cd release-assets && sha256sum APK-SIGNATURE.txt FocusMate-* focusmate-v2.2.0.spdx.json THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
+          (cd release-assets && sha256sum APK-SIGNATURE.txt FLASHING.txt FocusMate-* focusmate-v2.2.1.spdx.json THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
       - name: Publish release only after all gates pass
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* \
-            --verify-tag --draft --title "FocusMate v2.2.0" \
-            --notes-file docs/RELEASE_NOTES_v2.2.0.md
+            --verify-tag --draft --title "FocusMate v2.2.1" \
+            --notes-file docs/RELEASE_NOTES_v2.2.1.md
           gh release edit "$GITHUB_REF_NAME" --draft=false

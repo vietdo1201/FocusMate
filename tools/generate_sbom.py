@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "sbom" / "focusmate-v2.2.0.spdx.json"
+OUTPUT = ROOT / "sbom" / "focusmate-v2.2.1.spdx.json"
 PROJECT_ID = "SPDXRef-Package-FocusMate"
 
 
@@ -62,7 +62,7 @@ for name, version, license_id in (
 project = {
     "SPDXID": PROJECT_ID,
     "name": "FocusMate",
-    "versionInfo": "2.2.0",
+    "versionInfo": "2.2.1",
     "downloadLocation": "https://github.com/vietdo1201/FocusMate",
     "filesAnalyzed": False,
     "licenseConcluded": "Apache-2.0 AND MIT",
@@ -86,8 +86,8 @@ document = {
     "spdxVersion": "SPDX-2.3",
     "dataLicense": "CC0-1.0",
     "SPDXID": "SPDXRef-DOCUMENT",
-    "name": "FocusMate-v2.2.0",
-    "documentNamespace": "https://github.com/vietdo1201/FocusMate/releases/tag/v2.2.0#spdx",
+    "name": "FocusMate-v2.2.1",
+    "documentNamespace": "https://github.com/vietdo1201/FocusMate/releases/tag/v2.2.1#spdx",
     "creationInfo": {
         "created": "2026-08-25T00:00:00Z",
         "creators": ["Tool: FocusMate-tools-generate-sbom-1.0", "Person: vietdo1201"],

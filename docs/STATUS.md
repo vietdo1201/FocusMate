@@ -11,7 +11,7 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 | Motion collection/rule immobility | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Thiếu HR permission không dừng motion; chưa device test |
 | `FaceObservationV1` protocol codec | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Canonical encode/strict decode, golden vectors, uint32 gate, monotonic freshness |
 | Canonical wire format + GATT profile | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Kotlin↔C byte equality, CRC/framing MTU 23–517, Device Info 34 byte |
-| Geometry classifier/calibration | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 10 fixture geometry v2 chung; trục X theo người ngồi, Q6 mixed-axis dominant, baseline revision 2; `FACE_MISSING`/`UNKNOWN` fail-closed; live 0,50/calibration 0,70 |
+| Geometry classifier/calibration | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Scale consensus Web/Watch 2/3 và ESP 2/2; baseline revision 3 migration giữ posture/NVS; `FACE_MISSING`/`UNKNOWN` fail-closed; live 0,50/calibration 0,70 |
 | Posture insight/report policy | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 180 s và 4 episode/15 phút tests |
 | BLE GATT Watch ↔ ESP | `IN_PROGRESS` | `TARGET` | `VERIFIED_LOCAL` | Queue control, jitter backoff, Bluetooth state wake và rate 5/2/1 Hz đã build/test local; phần adaptive mới cần device retest. Bằng chứng cũ: encrypted bond, MTU 23→256, 5,0 Hz, reboot reconnect; [Gate B report](../reports/2026-08-22-gate-b-ble-vertical-slice.md) |
 | Firmware ESP-IDF | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | GATT + camera + detector/no-face/positive-bbox chạy trên ESP32-S3 thật; long-run còn thiếu; [Gate C detector report](../reports/2026-08-22-gate-c-face-detector.md) |
