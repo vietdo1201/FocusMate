@@ -10,6 +10,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -72,15 +73,6 @@ def safe_extract(archive: Path, destination: Path) -> None:
         package.extractall(destination, filter="data")
 
 
-def compress_brotli(source: Path, destination: Path) -> None:
-    script = (
-        "const fs=require('fs'),z=require('zlib');"
-        "const b=fs.readFileSync(process.argv[1]);"
-        "fs.writeFileSync(process.argv[2],z.brotliCompressSync(b,{params:{[z.constants.BROTLI_PARAM_QUALITY]:11}}));"
-    )
-    subprocess.run(["node", "-e", script, str(source), str(destination)], check=True)
-
-
 def prepare(force: bool) -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
     package = download("tasks-vision-1.0.1.tgz", force)
@@ -113,13 +105,23 @@ def prepare(force: bool) -> None:
     )
     for name in ("pose_worker.mjs", "pose_worker_bootstrap.js", "pose_classifier.mjs", "yawn_classifier.mjs"):
         shutil.copy2(ROOT / "firmware" / "main" / "web" / name, WEB_ASSETS / name)
-    compress_brotli(
-        package_root / "wasm" / "vision_wasm_nosimd_internal.wasm",
-        WEB_ASSETS / "wasm" / "vwi.wasm.br",
+    compact_face = CACHE / "face_landmarker_landmarks_only.task"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "compact_face_landmarker.py"),
+            str(face),
+            str(compact_face),
+        ],
+        check=True,
     )
     for source, target in (
+        (
+            package_root / "wasm" / "vision_wasm_nosimd_internal.wasm",
+            WEB_ASSETS / "wasm" / "vwi.wasm.gz",
+        ),
         (pose, WEB_ASSETS / "pose_landmarker_lite.task.gz"),
-        (face, WEB_ASSETS / "face_landmarker.task.gz"),
+        (compact_face, WEB_ASSETS / "face_landmarker.task.gz"),
     ):
         with source.open("rb") as input_file, target.open("wb") as compressed_file:
             with gzip.GzipFile(filename="", mode="wb", compresslevel=9, fileobj=compressed_file, mtime=0) as output_file:
@@ -138,6 +140,8 @@ def prepare(force: bool) -> None:
         "tasks_vision_package_sha256": FILES[package.name][1],
         "pose_model_sha256": FILES[pose.name][1],
         "face_model_sha256": FILES[face.name][1],
+        "face_model_profile": "landmarks-only-v1",
+        "face_asset_sha256": sha256(compact_face),
         "files": generated,
     }
     (WEB_ASSETS / "asset-manifest.json").write_text(

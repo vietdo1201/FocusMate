@@ -39,7 +39,7 @@ async function initialize(savedBaseline, savedYawnBaseline) {
   // bundled compatibility runtime. This is required by older Android Chrome,
   // whose SIMD probe selects the `_nosimd` filenames.
   const nativeSimd = await FilesetResolver.isSimdSupported(false);
-  const fileset = await FilesetResolver.forVisionTasks("/assets/wasm-compatible-v1", false);
+  const fileset = await FilesetResolver.forVisionTasks("/assets/wasm-compatible-v2", false);
   poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
     baseOptions: {
       modelAssetPath: POSE_MODEL_URL,
@@ -68,7 +68,9 @@ async function initialize(savedBaseline, savedYawnBaseline) {
       minFaceDetectionConfidence: 0.6,
       minFacePresenceConfidence: 0.6,
       minTrackingConfidence: 0.6,
-      outputFaceBlendshapes: true,
+      // The optional blendshape head costs almost 1 MB in the fixed flash
+      // partition. Mouth aspect ratio remains the local yawn signal.
+      outputFaceBlendshapes: false,
       outputFacialTransformationMatrixes: false,
     });
     yawnClassifier = new YawnClassifier({

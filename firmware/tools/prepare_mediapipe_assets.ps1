@@ -81,22 +81,19 @@ const input = fs.readFileSync(process.argv[1]);
 const output = zlib.gzipSync(input, {level: 9});
 fs.writeFileSync(process.argv[2], output);
 '@
-$brotliScript = @'
-const fs = require("fs");
-const zlib = require("zlib");
-const input = fs.readFileSync(process.argv[1]);
-const output = zlib.brotliCompressSync(input, {params: {[zlib.constants.BROTLI_PARAM_QUALITY]: 11}});
-fs.writeFileSync(process.argv[2], output);
-'@
 $wasmSource = Join-Path $packageRoot 'wasm/vision_wasm_nosimd_internal.wasm'
-$wasmTarget = Join-Path $generatedRoot 'wasm/vwi.wasm.br'
+$wasmTarget = Join-Path $generatedRoot 'wasm/vwi.wasm.gz'
 $modelTarget = Join-Path $generatedRoot 'pose_landmarker_lite.task.gz'
 $faceModelTarget = Join-Path $generatedRoot 'face_landmarker.task.gz'
-& node -e $brotliScript $wasmSource $wasmTarget
-if ($LASTEXITCODE -ne 0) { throw 'Cannot Brotli-compress MediaPipe WASM' }
+$compactFaceModelPath = Join-Path $cacheRoot 'face_landmarker_landmarks_only.task'
+$compactScript = [IO.Path]::GetFullPath((Join-Path $firmwareRoot '../tools/compact_face_landmarker.py'))
+& python $compactScript $faceModelPath $compactFaceModelPath
+if ($LASTEXITCODE -ne 0) { throw 'Cannot create compact Face Landmarker bundle' }
+& node -e $gzipScript $wasmSource $wasmTarget
+if ($LASTEXITCODE -ne 0) { throw 'Cannot gzip-compress MediaPipe WASM' }
 & node -e $gzipScript $modelPath $modelTarget
 if ($LASTEXITCODE -ne 0) { throw 'Cannot gzip-compress Pose Landmarker model' }
-& node -e $gzipScript $faceModelPath $faceModelTarget
+& node -e $gzipScript $compactFaceModelPath $faceModelTarget
 if ($LASTEXITCODE -ne 0) { throw 'Cannot gzip-compress Face Landmarker model' }
 
 $manifest = [ordered]@{
@@ -105,6 +102,8 @@ $manifest = [ordered]@{
     tasks_vision_package_sha256 = $packageSha256.ToLowerInvariant()
     pose_model_sha256 = $modelSha256.ToLowerInvariant()
     face_model_sha256 = $faceModelSha256.ToLowerInvariant()
+    face_model_profile = 'landmarks-only-v1'
+    face_asset_sha256 = (Get-FileHash $compactFaceModelPath -Algorithm SHA256).Hash.ToLowerInvariant()
     files = @(Get-ChildItem $generatedRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
         [ordered]@{
             path = $_.FullName.Substring($generatedRoot.Length + 1).Replace('\', '/')
