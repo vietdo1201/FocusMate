@@ -2,11 +2,22 @@
 
 ## Checkpoint hiện tại
 
-- Ngày cập nhật: 2026-08-23.
-- Watch app standalone `versionCode 16`, `1.15-posture-orientation` đã được clean-build, cài và xác nhận bằng ADB trên Watch 5 Pro.
+- Ngày cập nhật: 2026-08-26.
+- Watch source hiện là `versionCode 24`, `versionName 2.2.1`; bằng chứng cài Watch gần nhất vẫn phải đọc theo report tương ứng, không suy diễn từ source.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
-- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera/detector có bằng chứng thiết bị thật, nhưng posture/soak vẫn chưa đạt.
+- Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera/detector có bằng chứng thiết bị thật, nhưng posture/yawn accuracy và soak vẫn chưa đạt.
+- Yawn Shape V5 kế thừa bản sửa `64fcc7a`, thêm loại cười theo độ giãn ngang khóe miệng và đã build/flash app/assets lên COM4; boot smoke pass nhưng descriptor vẫn là `2.2.1` và chưa phải release artifact mới.
+
+## Yawn Shape V5 firmware flash (2026-08-26)
+
+- `focusmate_esp.bin` SHA-256 `77D30FC4…EB219`, `mp_assets.bin` SHA-256
+  `1167CD8B…64412`; esptool xác minh hash và hard reset thành công.
+- Boot xác nhận OV2640, detector self-test/inference, camera smoke 25/25, asset
+  mount, dashboard và BLE capability `0x3f`.
+- Automated tests phủ yawn MAR-only, mở ngắn/nông, cười vừa/rộng và scale theo
+  khoảng cách camera. Không coi test này là accuracy trên người.
+- Xem [report flash](reports/2026-08-26-yawn-shape-v5-firmware-flash.md).
 
 ## Orientation/baseline correction (2026-08-23)
 
@@ -33,9 +44,9 @@
 
 ## Hành động tiếp theo
 
-1. Trên baseline revision 2 đã đạt `NORMAL`, thu bbox thật cho trái, phải, cúi, quá gần và gù; chạy low-light acceptance.
-2. Chốt geometry threshold từ số đo thật; đo RAM/nhiệt/nguồn và xác nhận posture không đổi quyết định Rule Engine.
-3. Chạy phiên 2–3 giờ trên Galaxy Watch 5 Pro; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
+1. Đưa CI của commit hiện hành về xanh và chuẩn bị identity release tiếp theo đồng bộ thay vì phát hành binary mới dưới tên `2.2.1`.
+2. Chạy posture 90 giây/đủ tám state và yawn acceptance có negative controls, low-light và network capture.
+3. Chạy thermal 30 phút + soak tối thiểu hai giờ trên Galaxy Watch 5 Pro/ESP; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 
 ## Gate B — protocol + BLE vertical slice (đạt mức local 2026-08-22)
 

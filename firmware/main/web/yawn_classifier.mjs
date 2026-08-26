@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 vietdo1201
 // SPDX-License-Identifier: Apache-2.0
-export const YAWN_CLASSIFIER_VERSION = "YAWN_MAR_V4";
+export const YAWN_CLASSIFIER_VERSION = "YAWN_SHAPE_V5";
 
 const REQUIRED_SAMPLES = 20;
 const CALIBRATION_SPAN_MS = 5000;
@@ -10,7 +10,10 @@ const CALIBRATION_JAW_MAX = 0.30;
 // The compact Web face task intentionally omits the blendshape head, so MAR
 // must also be able to reject an open mouth during calibration by itself.
 const CALIBRATION_MAR_MAX = 0.30;
-const OPEN_DURATION_MS = 1000;
+const OPEN_MAR_FLOOR = 0.32;
+const PEAK_MAR_FLOOR = 0.55;
+const MAX_MOUTH_WIDTH_EXPANSION = 1.35;
+const OPEN_DURATION_MS = 1600;
 const OPEN_GAP_MS = 250;
 // Face inference normally arrives every 350-500 ms. Consecutive open samples
 // must not be mistaken for a >250 ms interruption merely because of cadence.
@@ -39,17 +42,30 @@ function validBaseline(value, fingerprint) {
     value?.fingerprint === fingerprint && Number.isFinite(value.center) && value.center > 0 &&
     Number.isFinite(value.noise) && value.noise > 0 &&
     Number.isFinite(value.jawCenter) && value.jawCenter >= 0 &&
-    Number.isFinite(value.jawNoise) && value.jawNoise > 0;
+    Number.isFinite(value.jawNoise) && value.jawNoise > 0 &&
+    Number.isFinite(value.mouthWidthCenter) && value.mouthWidthCenter > 0 &&
+    Number.isFinite(value.mouthWidthNoise) && value.mouthWidthNoise > 0;
+}
+
+function extractMouthFeatures(landmarks) {
+  if (!Array.isArray(landmarks) || landmarks.length <= 308) return null;
+  const upper = landmarks[13], lower = landmarks[14], left = landmarks[78], right = landmarks[308];
+  const leftEye = landmarks[33], rightEye = landmarks[263];
+  if (![upper, lower, left, right, leftEye, rightEye].every(
+    point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return null;
+  const mouthWidth = distance(left, right);
+  const eyeWidth = distance(leftEye, rightEye);
+  if (!Number.isFinite(mouthWidth) || mouthWidth < 0.01 ||
+      !Number.isFinite(eyeWidth) || eyeWidth < 0.01) return null;
+  const mar = distance(upper, lower) / mouthWidth;
+  const mouthWidthRatio = mouthWidth / eyeWidth;
+  return Number.isFinite(mar) && mar >= 0 && mar < 2 &&
+    Number.isFinite(mouthWidthRatio) && mouthWidthRatio > 0 && mouthWidthRatio < 4
+    ? {mar, mouthWidthRatio} : null;
 }
 
 export function extractMouthAspectRatio(landmarks) {
-  if (!Array.isArray(landmarks) || landmarks.length <= 308) return null;
-  const upper = landmarks[13], lower = landmarks[14], left = landmarks[78], right = landmarks[308];
-  if (![upper, lower, left, right].every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return null;
-  const width = distance(left, right);
-  if (!Number.isFinite(width) || width < 0.01) return null;
-  const mar = distance(upper, lower) / width;
-  return Number.isFinite(mar) && mar >= 0 && mar < 2 ? mar : null;
+  return extractMouthFeatures(landmarks)?.mar ?? null;
 }
 
 export class YawnClassifier {
@@ -88,12 +104,14 @@ export class YawnClassifier {
   }
 
   observe({sequence, timestampMs, landmarks, jawOpen}) {
-    const mar = extractMouthAspectRatio(landmarks);
+    const mouth = extractMouthFeatures(landmarks);
+    const mar = mouth?.mar;
+    const mouthWidthRatio = mouth?.mouthWidthRatio;
     // Number(null) is 0, which previously made an unavailable blendshape look
     // like a real closed-jaw measurement and permanently blocked Web yawns.
     const jaw = jawOpen == null ? null : Number(jawOpen);
     const hasJaw = Number.isFinite(jaw);
-    if (!Number.isFinite(mar) || (jaw != null && !hasJaw)) {
+    if (!Number.isFinite(mar) || !Number.isFinite(mouthWidthRatio) || (jaw != null && !hasJaw)) {
       return this.unavailable(timestampMs, "face_missing");
     }
 
@@ -101,16 +119,20 @@ export class YawnClassifier {
       const calibrationEligible = mar < CALIBRATION_MAR_MAX && (!hasJaw || jaw < CALIBRATION_JAW_MAX);
       if (calibrationEligible) {
         const previous = this.samples.at(-1);
-        if (!previous || previous.sequence !== sequence) this.samples.push({sequence, timestampMs, mar, jaw});
+        if (!previous || previous.sequence !== sequence) {
+          this.samples.push({sequence, timestampMs, mar, jaw, mouthWidthRatio});
+        }
       }
       while (this.samples.length > REQUIRED_SAMPLES) this.samples.shift();
       let reason = calibrationEligible ? "collecting_closed_mouth" : "mouth_moving";
       if (this.samples.length === REQUIRED_SAMPLES &&
           this.samples.at(-1).timestampMs - this.samples[0].timestampMs >= CALIBRATION_SPAN_MS) {
         const summary = summarize(this.samples.map(sample => sample.mar));
+        const mouthWidthSummary = summarize(this.samples.map(sample => sample.mouthWidthRatio));
         const jawSamples = this.samples.map(sample => sample.jaw).filter(Number.isFinite);
         const jawSummary = jawSamples.length === REQUIRED_SAMPLES ? summarize(jawSamples) : {center: 0, noise: 0.002};
-        if (summary.noise <= 0.025 && (!hasJaw || jawSummary.noise <= 0.04)) {
+        if (summary.noise <= 0.025 && mouthWidthSummary.noise <= 0.04 &&
+            (!hasJaw || jawSummary.noise <= 0.04)) {
           this.baseline = {
             schema: 2,
             classifierVersion: YAWN_CLASSIFIER_VERSION,
@@ -119,6 +141,8 @@ export class YawnClassifier {
             noise: summary.noise,
             jawCenter: jawSummary.center,
             jawNoise: jawSummary.noise,
+            mouthWidthCenter: mouthWidthSummary.center,
+            mouthWidthNoise: mouthWidthSummary.noise,
           };
           this.samples = [];
           reason = "baseline_ready";
@@ -128,7 +152,7 @@ export class YawnClassifier {
         }
       }
       return this.publish({
-        state: "CALIBRATING", timestampMs, jawOpen: jaw, mar,
+        state: "CALIBRATING", timestampMs, jawOpen: jaw, mar, mouthWidthRatio,
         calibrationProgress: this.samples.length,
         calibrationRequired: REQUIRED_SAMPLES,
         calibrationSpanMs: this.samples.length > 1 ? this.samples.at(-1).timestampMs - this.samples[0].timestampMs : 0,
@@ -138,18 +162,21 @@ export class YawnClassifier {
     }
 
     this.pruneEvents(timestampMs);
-    const marThreshold = this.baseline.center + Math.max(3 * this.baseline.noise, 0.05);
-    const marPeakThreshold = this.baseline.center + Math.max(5 * this.baseline.noise, 0.10);
+    const marThreshold = Math.max(OPEN_MAR_FLOOR,
+      this.baseline.center + Math.max(3 * this.baseline.noise, 0.05));
+    const marPeakThreshold = Math.max(PEAK_MAR_FLOOR,
+      this.baseline.center + Math.max(5 * this.baseline.noise, 0.10));
     const closeThreshold = this.baseline.center + Math.max(2 * this.baseline.noise, 0.035);
     const jawThreshold = Math.max(OPEN_JAW_FLOOR,
       this.baseline.jawCenter + Math.max(4 * this.baseline.jawNoise, 0.18));
     const jawPeakThreshold = Math.max(PEAK_JAW_FLOOR,
       this.baseline.jawCenter + Math.max(6 * this.baseline.jawNoise, 0.28));
     const jawCloseThreshold = this.baseline.jawCenter + Math.max(2 * this.baseline.jawNoise, 0.10);
-    // Web ships the landmarks-only face task to fit the fixed flash partition.
-    // MAR is therefore the primary signal there; jaw remains a corroborating
-    // signal on runtimes (such as Watch) that actually provide blendshapes.
-    const open = mar >= marThreshold && (!hasJaw || jaw >= jawThreshold);
+    const mouthWidthExpansion = mouthWidthRatio / this.baseline.mouthWidthCenter;
+    const smileLike = mouthWidthExpansion > MAX_MOUTH_WIDTH_EXPANSION;
+    // A laugh commonly opens the lips while stretching both corners sideways.
+    // A yawn must be vertically dominant relative to the calibrated mouth.
+    const open = mar >= marThreshold && !smileLike && (!hasJaw || jaw >= jawThreshold);
     let eventJustCounted = false;
     let alertJustTriggered = false;
     let persistenceChanged = false;
@@ -212,8 +239,10 @@ export class YawnClassifier {
     const advisory = this.events.length >= 3;
     return this.publish({
       state, timestampMs, jawOpen: jaw, mar, marThreshold, jawThreshold,
+      mouthWidthRatio, mouthWidthExpansion, maxMouthWidthExpansion: MAX_MOUTH_WIDTH_EXPANSION,
       calibrationProgress: REQUIRED_SAMPLES, calibrationRequired: REQUIRED_SAMPLES,
-      calibrationSpanMs: CALIBRATION_SPAN_MS, reason: advisory ? "repeated_yawn" : "live",
+      calibrationSpanMs: CALIBRATION_SPAN_MS,
+      reason: advisory ? "repeated_yawn" : (smileLike ? "smile_like" : "live"),
       totalCount: this.totalCount, totalDurationMs: this.totalDurationMs,
       eventsInWindow: this.events.length, advisory, eventJustCounted, alertJustTriggered,
       persistenceChanged,

@@ -10,7 +10,7 @@
 - Architecture selected: two-stage `MSRMNP_S8_V1` (MSR proposal network +
   MNP landmark/refinement network).
 - License: MIT for `human_face_detect`, the selected model file, and ESP-DL. See
-  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+  [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
 Pinned S3 model files:
 
@@ -24,7 +24,7 @@ package SHA-256 is `3195826BCCB7AF3A8262B3DE188D2120A4C858BEA96B9A6708B0F55BAA97
 
 ## Input, processing and output
 
-- Camera input: direct JPEG QVGA 320×240, quality 8, one framebuffer in PSRAM.
+- Camera input: direct JPEG QVGA 320×240, quality 6, one framebuffer in PSRAM.
 - Firmware decodes RGB888 at 320×240 and center-crops 240×240 without aspect
   distortion before the vendor model preprocessing.
 - Firmware score threshold: 0.35. Calibration requires confidence ≥0.70 and a fully visible bbox; live posture after a valid baseline requires confidence ≥0.50.
@@ -63,10 +63,13 @@ from build or CI success.
 ## Local yawn consumer
 
 - Web and Watch additionally run the pinned MediaPipe Face Landmarker float16
-  revision 1 locally. It supplies lip landmarks and `jawOpen`; no face image,
-  landmark list or embedding is persisted.
-- A temporal MAR/`jawOpen` heuristic counts a yawn only after about one second
-  of sustained opening. Three events in ten minutes create an advisory
+  revision 1 locally. The compact Web task supplies lip landmarks only; Watch
+  also enables the `jawOpen` blendshape. No face image, landmark list or
+  embedding is persisted.
+- Yawn classifier V5 uses MAR plus mouth-width/eye-width expansion on Web and
+  Watch to reject wide smiles; Watch additionally requires `jawOpen`. The
+  conservative gate requires MAR ≥0.32, peak ≥0.55, at least 1.6 seconds open and horizontal
+  expansion ≤1.35× the personal baseline. Three events in ten minutes create an advisory
   sleepiness/fatigue signal; they do not diagnose boredom or alter Rule Engine
   decisions.
 - This path is `EXPERIMENTAL` and `UNVERIFIED` on device until camera angle,

@@ -1,5 +1,23 @@
 # Changelog
 
+## Chưa phát hành — sau v2.2.1 (2026-08-26)
+
+- Sửa Web yawn classifier khi Face Landmarker bản compact không có blendshape
+  `jawOpen`: giữ `null` thay vì đổi thành `0` và dùng MAR làm tín hiệu chính.
+- Nâng classifier baseline lên `YAWN_SHAPE_V5`: yêu cầu MAR ≥0,32, peak ≥0,55,
+  mở liên tục ít nhất 1,6 giây và độ giãn ngang khóe miệng không quá 1,35×
+  baseline để cười không bị tính là ngáp.
+- Không thu mẫu hiệu chỉnh khi miệng đang mở; regression tests phủ ngáp
+  MAR-only, mở ngắn/nông, cười vừa/cười rộng và thay đổi khoảng cách camera.
+- Đồng bộ Watch classifier với cùng MAR floor, mouth-width/eye-width và thời
+  lượng 1,6 giây; không còn tiêu chuẩn 1,0 giây nhạy hơn Web.
+- Dashboard ưu tiên khung Face Landmarker còn mới trong 700 ms; bbox detector
+  ESP chỉ còn là fallback nét đứt, không còn bị điều kiện sequence làm mất
+  overlay chính xác.
+- V5 đã build và flash app/assets kế thừa commit `64fcc7a` lên ESP32-S3 thật; đây là
+  bằng chứng boot/smoke có giới hạn, chưa phải accuracy/thermal/soak và chưa là
+  GitHub Release mới.
+
 ## 2.2.1 — 2026-08-25
 
 - Sửa báo nhầm `TOO_CLOSE` khi chống tay bằng đồng thuận scale: Web/Watch cần

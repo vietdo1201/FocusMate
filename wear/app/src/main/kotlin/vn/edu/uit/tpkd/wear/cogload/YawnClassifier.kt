@@ -17,6 +17,7 @@ data class YawnFrameObservation(
     val observedAtWallMs: Long,
     val jawOpen: Double?,
     val mouthAspectRatio: Double?,
+    val mouthWidthRatio: Double? = null,
     val frameSequence: Long = 0L,
     val observedEspUptimeMs: Long = 0L,
 )
@@ -36,6 +37,7 @@ data class YawnDetection(
     val observedEspUptimeMs: Long = 0L,
     val jawOpen: Double? = null,
     val mouthAspectRatio: Double? = null,
+    val mouthWidthExpansion: Double? = null,
     val calibrated: Boolean = false,
     val calibrationProgress: Int = 0,
     val calibrationRequired: Int = REQUIRED_SAMPLES,
@@ -58,12 +60,19 @@ data class YawnDetection(
 }
 
 class YawnClassifier(seed: YawnSeed = YawnSeed()) {
-    private data class CalibrationSample(val monoMs: Long, val mar: Double, val jaw: Double)
+    private data class CalibrationSample(
+        val monoMs: Long,
+        val mar: Double,
+        val jaw: Double,
+        val mouthWidthRatio: Double,
+    )
     private data class Baseline(
         val center: Double,
         val noise: Double,
         val jawCenter: Double,
         val jawNoise: Double,
+        val mouthWidthCenter: Double,
+        val mouthWidthNoise: Double,
     )
 
     private val samples = ArrayDeque<CalibrationSample>()
@@ -92,7 +101,10 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
         pruneEvents(observation.observedAtWallMs)
         val jaw = observation.jawOpen
         val mar = observation.mouthAspectRatio
-        if (jaw == null || mar == null || !jaw.isFinite() || !mar.isFinite()) {
+        val mouthWidthRatio = observation.mouthWidthRatio
+        if (jaw == null || mar == null || mouthWidthRatio == null ||
+            !jaw.isFinite() || !mar.isFinite() || !mouthWidthRatio.isFinite()
+        ) {
             candidateStartedAtMono = null
             lastOpenAtMono = null
             peakJaw = 0.0
@@ -104,10 +116,16 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
             )
         }
 
-        if (baseline == null) return calibrate(observation, jaw, mar)
+        if (baseline == null) return calibrate(observation, jaw, mar, mouthWidthRatio)
         val currentBaseline = requireNotNull(baseline)
-        val marOpenThreshold = currentBaseline.center + maxOf(3.0 * currentBaseline.noise, 0.05)
-        val marPeakThreshold = currentBaseline.center + maxOf(5.0 * currentBaseline.noise, 0.10)
+        val marOpenThreshold = maxOf(
+            OPEN_MAR_FLOOR,
+            currentBaseline.center + maxOf(3.0 * currentBaseline.noise, 0.05),
+        )
+        val marPeakThreshold = maxOf(
+            PEAK_MAR_FLOOR,
+            currentBaseline.center + maxOf(5.0 * currentBaseline.noise, 0.10),
+        )
         val marCloseThreshold = currentBaseline.center + maxOf(2.0 * currentBaseline.noise, 0.035)
         val jawOpenThreshold = maxOf(
             OPEN_JAW_FLOOR,
@@ -118,7 +136,9 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
             currentBaseline.jawCenter + maxOf(6.0 * currentBaseline.jawNoise, 0.28),
         )
         val jawCloseThreshold = currentBaseline.jawCenter + maxOf(2.0 * currentBaseline.jawNoise, 0.10)
-        val open = jaw >= jawOpenThreshold && mar >= marOpenThreshold
+        val mouthWidthExpansion = mouthWidthRatio / currentBaseline.mouthWidthCenter
+        val smileLike = mouthWidthExpansion > MAX_MOUTH_WIDTH_EXPANSION
+        val open = jaw >= jawOpenThreshold && mar >= marOpenThreshold && !smileLike
         var eventJustCounted = false
         var alertJustTriggered = false
         var persistenceChanged = false
@@ -197,7 +217,14 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
             observation = observation,
             jaw = jaw,
             mar = mar,
-            reason = if (eventsInWindowCount() >= ALERT_EVENT_COUNT) "repeated_yawn" else "live",
+            mouthWidthExpansion = mouthWidthExpansion,
+            reason = if (eventsInWindowCount() >= ALERT_EVENT_COUNT) {
+                "repeated_yawn"
+            } else if (smileLike) {
+                "smile_like"
+            } else {
+                "live"
+            },
             eventJustCounted = eventJustCounted,
             alertJustTriggered = alertJustTriggered,
             persistenceChanged = persistenceChanged,
@@ -270,10 +297,16 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
         )
     }
 
-    private fun calibrate(observation: YawnFrameObservation, jaw: Double, mar: Double): YawnDetection {
-        var reason = if (jaw < CALIBRATION_JAW_MAX) "collecting_closed_mouth" else "mouth_moving"
-        if (jaw < CALIBRATION_JAW_MAX) {
-            samples.addLast(CalibrationSample(observation.observedAtMonoMs, mar, jaw))
+    private fun calibrate(
+        observation: YawnFrameObservation,
+        jaw: Double,
+        mar: Double,
+        mouthWidthRatio: Double,
+    ): YawnDetection {
+        val eligible = jaw < CALIBRATION_JAW_MAX && mar < CALIBRATION_MAR_MAX
+        var reason = if (eligible) "collecting_closed_mouth" else "mouth_moving"
+        if (eligible) {
+            samples.addLast(CalibrationSample(observation.observedAtMonoMs, mar, jaw, mouthWidthRatio))
         }
         while (samples.size > REQUIRED_SAMPLES) samples.removeFirst()
         var baselineReady = false
@@ -284,8 +317,13 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
             val jawValues = samples.map(CalibrationSample::jaw)
             val jawCenter = median(jawValues)
             val jawNoise = maxOf(0.002, median(jawValues.map { abs(it - jawCenter) }))
-            if (noise <= MAX_CALIBRATION_MAD && jawNoise <= MAX_JAW_CALIBRATION_MAD) {
-                baseline = Baseline(center, noise, jawCenter, jawNoise)
+            val mouthWidthValues = samples.map(CalibrationSample::mouthWidthRatio)
+            val mouthWidthCenter = median(mouthWidthValues)
+            val mouthWidthNoise = maxOf(0.002, median(mouthWidthValues.map { abs(it - mouthWidthCenter) }))
+            if (noise <= MAX_CALIBRATION_MAD && jawNoise <= MAX_JAW_CALIBRATION_MAD &&
+                mouthWidthNoise <= MAX_MOUTH_WIDTH_CALIBRATION_MAD
+            ) {
+                baseline = Baseline(center, noise, jawCenter, jawNoise, mouthWidthCenter, mouthWidthNoise)
                 samples.clear()
                 baselineReady = true
                 reason = "baseline_ready"
@@ -308,6 +346,7 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
         observation: YawnFrameObservation,
         jaw: Double? = null,
         mar: Double? = null,
+        mouthWidthExpansion: Double? = null,
         reason: String,
         eventJustCounted: Boolean = false,
         alertJustTriggered: Boolean = false,
@@ -322,6 +361,7 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
             observedEspUptimeMs = observation.observedEspUptimeMs,
             jawOpen = jaw,
             mouthAspectRatio = mar,
+            mouthWidthExpansion = mouthWidthExpansion,
             calibrated = baseline != null,
             calibrationProgress = if (baseline == null) samples.size else REQUIRED_SAMPLES,
             calibrationSpanMs = if (baseline == null) span else CALIBRATION_SPAN_MS,
@@ -363,10 +403,15 @@ class YawnClassifier(seed: YawnSeed = YawnSeed()) {
         private const val CALIBRATION_SPAN_MS = 5_000L
         private const val MAX_CALIBRATION_MAD = 0.025
         private const val MAX_JAW_CALIBRATION_MAD = 0.04
+        private const val MAX_MOUTH_WIDTH_CALIBRATION_MAD = 0.04
         private const val CALIBRATION_JAW_MAX = 0.30
+        private const val CALIBRATION_MAR_MAX = 0.30
         private const val OPEN_JAW_FLOOR = 0.32
         private const val PEAK_JAW_FLOOR = 0.42
-        private const val OPEN_DURATION_MS = 1_000L
+        private const val OPEN_MAR_FLOOR = 0.32
+        private const val PEAK_MAR_FLOOR = 0.55
+        private const val MAX_MOUTH_WIDTH_EXPANSION = 1.35
+        private const val OPEN_DURATION_MS = 1_600L
         private const val OPEN_GAP_MS = 250L
         // Face runs at 2-2.5 FPS. This is the maximum gap between consecutive
         // open observations, not the permitted duration of a measured closure.

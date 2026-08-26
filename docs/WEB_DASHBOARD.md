@@ -61,6 +61,11 @@ Posture vocabulary cố định: `NORMAL`, `HEAD_DOWN`, `LEAN_LEFT`, `LEAN_RIGHT
 
 Firmware đóng gói runtime WASM không-SIMD tương thích làm runtime chung và phục vụ cả hai tên file SIMD/no-SIMD mà MediaPipe có thể chọn. Nhờ đó Chrome Android cũ vẫn khởi tạo Pose hoàn toàn local; laptop dùng cùng pipeline và không phụ thuộc cache/CDN.
 
+Overlay khuôn mặt ưu tiên geometry Face Landmarker còn mới tối đa 700 ms và vẽ
+khung xanh liền. Bbox MSR/MNP của ESP chỉ là fallback nét đứt màu vàng khi
+geometry landmark thiếu/cũ; nó không được trình bày như khung landmark chính
+xác. Pose skeleton và mouth contour cũng chỉ được tái dùng trong giới hạn 700 ms.
+
 JPEG camera dùng QVGA quality 6 (ít nén hơn quality 8). Worker giữ ngưỡng tracking `0.65` và lọc thích nghi chỉ cho landmark hiển thị để giảm rung khuỷu/cổ tay; classifier posture và baseline vẫn nhận landmark thô, nên bộ lọc không che một chuyển động/tư thế thật. Xương tay có visibility/presence dưới `0.65` không được vẽ. Dashboard cảnh báo khi hai khuỷu/cổ tay không nằm trọn trong khung vì landmark ngoài ảnh chỉ là suy đoán và không thể được coi là chính xác.
 
 Các luật dưới đây áp dụng cho fallback firmware `esp_face_scale_consensus_v3`/`BBOX_FALLBACK`:
@@ -78,6 +83,6 @@ Các luật dưới đây áp dụng cho fallback firmware `esp_face_scale_conse
 - `POST /api/posture/reset`: xóa baseline bbox shadow khỏi RAM/NVS. Pose baseline tự thu 20 frame ổn định và reset riêng. Browser được lưu **chỉ** median/MAD số trong `localStorage` cùng classifier version, model hash, camera/source fingerprint và boot/session scope; mismatch hoặc record hỏng phải xóa. **CẤM** lưu frame, landmark list, token hoặc identifier người dùng. Watch có thể giữ baseline session-only.
 - `GET /api/wifi/scan`, `POST /api/wifi/connect`, `POST /api/wifi/reset`, `POST /api/wifi/ap-password`: semantics tương đương dashboard camera lịch sử, có validate length và không echo password.
 - Khởi động theo nguyên tắc AP-first: firmware luôn phát `FocusMate-Setup` ổn định và giữ thông tin SSID đã lưu nhưng không tự scan STA khi boot. STA chỉ bắt đầu sau thao tác “Lưu và kết nối”; nếu SSID không tồn tại/sai xác thực, firmware dừng retry nền để AP không biến mất theo chu kỳ scan. Mất kết nối tạm thời sau khi đã online vẫn được reconnect.
-- WASM no-SIMD dùng `Content-Encoding: gzip` vì Chrome/Android không giải nén Brotli trên HTTP nội bộ. Gói Face Landmarker bỏ head blendshape tùy chọn để vừa phân vùng cố định; theo dõi ngáp vẫn dùng landmark môi và mouth-aspect ratio chạy local.
+- WASM no-SIMD dùng `Content-Encoding: gzip` vì Chrome/Android không giải nén Brotli trên HTTP nội bộ. Gói Face Landmarker bỏ head blendshape tùy chọn để vừa phân vùng cố định. Yawn V5 giữ `jawOpen` là unavailable thay vì `0%`, hiệu chỉnh chỉ khi MAR ở vùng miệng khép và yêu cầu MAR ≥0,32, peak ≥0,55, mở ≥1,6 giây. Độ rộng miệng được chuẩn hóa theo khoảng cách hai mắt; giãn ngang quá 1,35× baseline được ghi `smile_like` và không đếm ngáp.
 
 Dashboard giữ tối đa hai phút telemetry số trong RAM browser. Export JSON/CSV chỉ gồm status/geometry, không chứa JPEG hoặc identifier.

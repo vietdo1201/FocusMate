@@ -13,7 +13,7 @@
 | Phạm vi release | `wear/ROADMAP.md` |
 | Definition of Done | `wear/IMPLEMENTATION_PLAN.md` |
 | Hành vi triển khai | Source code + automated tests |
-| Sơ đồ chân | `data/So_do_chan.md` — draft đến khi verified device |
+| Sơ đồ chân | `data/So_do_chan.md` — pinout hiện đã `VERIFIED_DEVICE`; mọi đổi dây/board phải tạo evidence mới |
 | Golden vectors | `tests/golden/` — byte/label exact, sinh theo `docs/GATT_PROFILE.md` và `docs/LOCAL_FRAME_V1.md` |
 | Model/dependency provenance | `docs/LICENSING.md`, lockfile, verification metadata và generated asset manifest |
 | Báo cáo cũ | `CLEANUP_REPORT.md`, `reports/` — historical |

@@ -6,19 +6,20 @@ Phạm vi: `wear`
 ## Căn cứ quyết định
 
 Phần này ghi lại căn cứ tại thời điểm cleanup. Sau khi Git baseline được tạo,
-quyền ưu tiên hiện hành nằm trong [`../../docs/GOVERNANCE.md`](../../docs/GOVERNANCE.md).
+quyền ưu tiên hiện hành nằm trong [`../docs/GOVERNANCE.md`](../docs/GOVERNANCE.md).
 
 > **Addendum 2026-08-22 (historical, không sửa thân báo cáo).** Ba câu trong báo cáo
 > này đã lệch so với hiện tại và **không** được dùng làm nguồn chuẩn:
 > `settings.gradle.kts` nay là `:app` + `:protocol` (không còn `:shared`); repo Git
 > đã được khởi tạo lại tại `D:\FocusMate-main` nên commit `726430a` không tồn tại
 > trong lịch sử hiện hành; thiết bị kiểm chứng nay là Galaxy Watch 5 Pro
-> ([ROADMAP.md](ROADMAP.md)). Trạng thái hiện hành: [`../../docs/STATUS.md`](../../docs/STATUS.md).
+> ([ROADMAP.md](ROADMAP.md)). Trạng thái hiện hành: [`../docs/STATUS.md`](../docs/STATUS.md).
 
-1. `../../help.md` là nguồn yêu cầu kỹ thuật ưu tiên cao nhất.
-2. `../../Readme.md` xác định hai thành phần chính là Galaxy Watch FE và ESP32-S3.
-3. `../../docs/Vi_du.md` mô tả event posture/yawn trong một phiên.
-4. `../../data/So_do_chan.md` xác định phần cứng OV2640 và ESP32-S3.
+1. `../help.md` là nguồn yêu cầu kỹ thuật ưu tiên cao nhất.
+2. `../README.md` là README hiện hành; mô tả thiết bị cũ trong bản cleanup đã
+   được addendum phía trên vô hiệu hóa.
+3. `../docs/Vi_du.md` mô tả event posture/yawn trong một phiên.
+4. `../data/So_do_chan.md` xác định phần cứng OV2640 và ESP32-S3.
 5. README/PHONE_WEAR_SYNC cũ mô tả Phone-Wear, Gemma và llama.cpp; phần này mâu
    thuẫn với kiến trúc local face detector trên ESP32-S3 nên không còn là nguồn chuẩn.
 

@@ -213,6 +213,7 @@ class PoseLandmarkerEngine(
 
     private fun handleFaceResult(result: FaceLandmarkerResult, frame: LocalFramePacket): PoseFaceScaleGeometry? {
         val face = result.faceLandmarks().firstOrNull()
+        var observedMouthWidth: Double? = null
         val mar = if (face != null && face.size > RIGHT_MOUTH_INDEX) {
             val upper = face[UPPER_LIP_INDEX]
             val lower = face[LOWER_LIP_INDEX]
@@ -220,6 +221,7 @@ class PoseLandmarkerEngine(
             val right = face[RIGHT_MOUTH_INDEX]
             val width = hypot((left.x() - right.x()).toDouble(), (left.y() - right.y()).toDouble())
             if (width >= MINIMUM_MOUTH_WIDTH) {
+                observedMouthWidth = width
                 hypot((upper.x() - lower.x()).toDouble(), (upper.y() - lower.y()).toDouble()) / width
             } else null
         } else null
@@ -227,12 +229,19 @@ class PoseLandmarkerEngine(
             ?.firstOrNull { it.categoryName().equals("jawOpen", ignoreCase = true) }
             ?.score()
             ?.toDouble()
+        val mouthWidthRatio = if (face != null && face.size > RIGHT_FACE_EYE_INDEX) {
+            val leftEye = face[LEFT_FACE_EYE_INDEX]
+            val rightEye = face[RIGHT_FACE_EYE_INDEX]
+            val eyeWidth = hypot((leftEye.x() - rightEye.x()).toDouble(), (leftEye.y() - rightEye.y()).toDouble())
+            if (eyeWidth > MINIMUM_FACE_EYE_SCALE) observedMouthWidth?.div(eyeWidth) else null
+        } else null
         onYawnObservation(
             YawnFrameObservation(
                 observedAtMonoMs = frame.receivedAtMonoMs,
                 observedAtWallMs = System.currentTimeMillis(),
                 jawOpen = jawOpen,
                 mouthAspectRatio = mar,
+                mouthWidthRatio = mouthWidthRatio,
                 frameSequence = frame.sequence,
                 observedEspUptimeMs = frame.observedEspUptimeMs,
             ),
