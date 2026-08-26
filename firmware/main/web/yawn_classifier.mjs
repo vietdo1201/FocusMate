@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 vietdo1201
 // SPDX-License-Identifier: Apache-2.0
-export const YAWN_CLASSIFIER_VERSION = "YAWN_MAR_V3";
+export const YAWN_CLASSIFIER_VERSION = "YAWN_MAR_V4";
 
 const REQUIRED_SAMPLES = 20;
 const CALIBRATION_SPAN_MS = 5000;
 const OPEN_JAW_FLOOR = 0.32;
 const PEAK_JAW_FLOOR = 0.42;
 const CALIBRATION_JAW_MAX = 0.30;
+// The compact Web face task intentionally omits the blendshape head, so MAR
+// must also be able to reject an open mouth during calibration by itself.
+const CALIBRATION_MAR_MAX = 0.30;
 const OPEN_DURATION_MS = 1000;
 const OPEN_GAP_MS = 250;
 // Face inference normally arrives every 350-500 ms. Consecutive open samples
@@ -86,21 +89,28 @@ export class YawnClassifier {
 
   observe({sequence, timestampMs, landmarks, jawOpen}) {
     const mar = extractMouthAspectRatio(landmarks);
-    const jaw = Number(jawOpen);
-    if (!Number.isFinite(mar) || !Number.isFinite(jaw)) return this.unavailable(timestampMs, "face_missing");
+    // Number(null) is 0, which previously made an unavailable blendshape look
+    // like a real closed-jaw measurement and permanently blocked Web yawns.
+    const jaw = jawOpen == null ? null : Number(jawOpen);
+    const hasJaw = Number.isFinite(jaw);
+    if (!Number.isFinite(mar) || (jaw != null && !hasJaw)) {
+      return this.unavailable(timestampMs, "face_missing");
+    }
 
     if (!this.baseline) {
-      if (jaw < CALIBRATION_JAW_MAX) {
+      const calibrationEligible = mar < CALIBRATION_MAR_MAX && (!hasJaw || jaw < CALIBRATION_JAW_MAX);
+      if (calibrationEligible) {
         const previous = this.samples.at(-1);
         if (!previous || previous.sequence !== sequence) this.samples.push({sequence, timestampMs, mar, jaw});
       }
       while (this.samples.length > REQUIRED_SAMPLES) this.samples.shift();
-      let reason = jaw >= CALIBRATION_JAW_MAX ? "mouth_moving" : "collecting_closed_mouth";
+      let reason = calibrationEligible ? "collecting_closed_mouth" : "mouth_moving";
       if (this.samples.length === REQUIRED_SAMPLES &&
           this.samples.at(-1).timestampMs - this.samples[0].timestampMs >= CALIBRATION_SPAN_MS) {
         const summary = summarize(this.samples.map(sample => sample.mar));
-        const jawSummary = summarize(this.samples.map(sample => sample.jaw));
-        if (summary.noise <= 0.025 && jawSummary.noise <= 0.04) {
+        const jawSamples = this.samples.map(sample => sample.jaw).filter(Number.isFinite);
+        const jawSummary = jawSamples.length === REQUIRED_SAMPLES ? summarize(jawSamples) : {center: 0, noise: 0.002};
+        if (summary.noise <= 0.025 && (!hasJaw || jawSummary.noise <= 0.04)) {
           this.baseline = {
             schema: 2,
             classifierVersion: YAWN_CLASSIFIER_VERSION,
@@ -136,7 +146,10 @@ export class YawnClassifier {
     const jawPeakThreshold = Math.max(PEAK_JAW_FLOOR,
       this.baseline.jawCenter + Math.max(6 * this.baseline.jawNoise, 0.28));
     const jawCloseThreshold = this.baseline.jawCenter + Math.max(2 * this.baseline.jawNoise, 0.10);
-    const open = jaw >= jawThreshold && mar >= marThreshold;
+    // Web ships the landmarks-only face task to fit the fixed flash partition.
+    // MAR is therefore the primary signal there; jaw remains a corroborating
+    // signal on runtimes (such as Watch) that actually provide blendshapes.
+    const open = mar >= marThreshold && (!hasJaw || jaw >= jawThreshold);
     let eventJustCounted = false;
     let alertJustTriggered = false;
     let persistenceChanged = false;
@@ -146,16 +159,16 @@ export class YawnClassifier {
       this.closedSince = null;
       if (this.lastOpenAt == null || timestampMs - this.lastOpenAt > MAX_OPEN_SAMPLE_GAP_MS) {
         if (!this.countedCurrentOpen) this.candidateStartedAt = timestampMs;
-        this.peakJaw = jaw;
+        this.peakJaw = hasJaw ? jaw : 0;
         this.peakMar = mar;
       }
       this.lastOpenAt = timestampMs;
-      this.peakJaw = Math.max(this.peakJaw, jaw);
+      if (hasJaw) this.peakJaw = Math.max(this.peakJaw, jaw);
       this.peakMar = Math.max(this.peakMar, mar);
       state = this.countedCurrentOpen ? "YAWNING" : "MOUTH_OPEN";
       if (!this.countedCurrentOpen && this.candidateStartedAt != null &&
           timestampMs - this.candidateStartedAt >= OPEN_DURATION_MS &&
-          (this.peakJaw >= jawPeakThreshold || this.peakMar >= marPeakThreshold) &&
+          ((hasJaw && this.peakJaw >= jawPeakThreshold) || this.peakMar >= marPeakThreshold) &&
           timestampMs - this.lastEventAt >= EVENT_COOLDOWN_MS) {
         this.countedCurrentOpen = true;
         this.currentYawnStartedAt = this.candidateStartedAt;
@@ -172,7 +185,7 @@ export class YawnClassifier {
         }
       }
     } else {
-      const clearlyClosed = jaw <= jawCloseThreshold || mar <= closeThreshold;
+      const clearlyClosed = mar <= closeThreshold || (hasJaw && jaw <= jawCloseThreshold);
       if (clearlyClosed) this.closedSince ??= timestampMs;
       if (!this.countedCurrentOpen && this.lastOpenAt != null && timestampMs - this.lastOpenAt > OPEN_GAP_MS) {
         this.candidateStartedAt = null;

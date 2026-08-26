@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import {FaceLandmarker, FilesetResolver, PoseLandmarker} from "/assets/vision_bundle.mjs?v=tasks-vision-1.0.1-classic-1";
 import {PosePostureClassifier, POSE_CLASSIFIER_VERSION} from "/assets/pose_classifier.mjs?v=classifier-4";
-import {YawnClassifier, YAWN_CLASSIFIER_VERSION} from "/assets/yawn_classifier.mjs?v=yawn-3";
+import {YawnClassifier, YAWN_CLASSIFIER_VERSION} from "/assets/yawn_classifier.mjs?v=yawn-4";
 
 const POSE_MODEL_URL = "/assets/pose_landmarker_lite-v2.task";
 const FACE_MODEL_URL = "/assets/face_landmarker-v1.task";

@@ -97,6 +97,11 @@ class ShadowDashboardContractTest(unittest.TestCase):
         worker = read("firmware/main/web/pose_worker.mjs")
         self.assertIn("const yawnForMessage = lastYawn", worker)
         self.assertIn("eventJustCounted: false", worker)
+        self.assertIn("drawFreshOverlays(faceMeta,captureUptimeMs)", html)
+        self.assertIn("age<=700", html)
+        self.assertIn("drawLandmarkFaceBox", html)
+        self.assertIn("drawEspFaceFallback", html)
+        self.assertNotIn("m.sequence===lastFrame", html)
 
     def test_direct_jpeg_camera_and_bounded_broker_are_preserved(self) -> None:
         camera = read("firmware/main/camera_smoke.c")
@@ -258,7 +263,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertIn("compact_face_landmarker.py", script)
         self.assertIn("importScripts", bootstrap)
         self.assertIn("scale-consensus-2", bootstrap)
-        self.assertIn("vision-worker-scale-consensus-5", read("firmware/main/web/index.html"))
+        self.assertIn("vision-worker-yawn-mar-4", read("firmware/main/web/index.html"))
         self.assertIn("schedulePoseWorkerRetry", read("firmware/main/web/index.html"))
         self.assertIn("yawnUnavailable", worker)
         self.assertIn('!poseLandmarker || !poseClassifier || !message.bitmap', worker)
