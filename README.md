@@ -66,7 +66,7 @@ cần sửa header hoặc mã nguồn thủ công. Chi tiết tại [BUILDING.md
 ## Trạng thái và bằng chứng
 
 Xem [STATUS.md](docs/STATUS.md) để phân biệt `VERIFIED_LOCAL`,
-`VERIFIED_DEVICE` và hạng mục còn thử nghiệm. `main` hiện có hai bản vá Web sau
+`VERIFIED_DEVICE` và hạng mục còn thử nghiệm. `main` hiện có các bản vá Web sau
 release `v2.2.1`; source Yawn Shape V5 đã [flash/boot smoke trên ESP](reports/2026-08-26-yawn-shape-v5-firmware-flash.md)
 nhưng chưa phải release mới hoặc accuracy evidence. Ảnh One UI Watch ghi nhận FocusMate
 dùng 1,1% trong 11 giờ 49 phút là
