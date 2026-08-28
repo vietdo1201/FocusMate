@@ -66,9 +66,11 @@ cần sửa header hoặc mã nguồn thủ công. Chi tiết tại [BUILDING.md
 ## Trạng thái và bằng chứng
 
 Xem [STATUS.md](docs/STATUS.md) để phân biệt `VERIFIED_LOCAL`,
-`VERIFIED_DEVICE` và hạng mục còn thử nghiệm. `main` hiện có các bản vá Web sau
-release `v2.2.1`; source Yawn Shape V5 đã [flash/boot smoke trên ESP](reports/2026-08-26-yawn-shape-v5-firmware-flash.md)
-nhưng chưa phải release mới hoặc accuracy evidence. Ảnh One UI Watch ghi nhận FocusMate
+`VERIFIED_DEVICE` và hạng mục còn thử nghiệm. Release hiện hành là `v2.2.2`, gồm
+Wi-Fi setup bền vững, Yawn Shape V5 và báo cáo `session_advice_v1`. Source tổ tiên
+của V5 đã [flash/boot smoke trên ESP](reports/2026-08-26-yawn-shape-v5-firmware-flash.md),
+nhưng artifact `v2.2.2` chính xác chưa được flash lại và không phải accuracy evidence.
+Ảnh One UI Watch ghi nhận FocusMate
 dùng 1,1% trong 11 giờ 49 phút là
 [bằng chứng hỗ trợ](reports/2026-08-25-watch-battery-observation.md), không phải
 benchmark trước–sau.
@@ -86,7 +88,7 @@ benchmark trước–sau.
 Mã dự án dùng Apache-2.0, ngoại trừ component `focusmate_dns` dùng MIT. Mỗi tệp
 nguồn có SPDX; toàn văn giấy phép nằm trong `LICENSES/`. Dependency và model
 được liệt kê trong [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) và
-[SPDX SBOM](sbom/focusmate-v2.2.1.spdx.json).
+[SPDX SBOM](sbom/focusmate-v2.2.2.spdx.json).
 
 ## English summary
 

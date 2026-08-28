@@ -40,7 +40,7 @@ jobs:
           python tools/generate_sbom.py
           python tools/check_compliance.py
           python -m reuse lint
-          git diff --exit-code -- sbom/focusmate-v2.2.1.spdx.json
+          git diff --exit-code -- sbom/focusmate-v2.2.2.spdx.json
       - name: Verify contracts and Wear app
         run: python tools/verify.py --no-firmware --no-assets
 

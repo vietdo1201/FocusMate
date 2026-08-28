@@ -1,10 +1,11 @@
 # Trạng thái dự án
 
-Ngày kiểm chứng tài liệu: 2026-08-27. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
+Ngày kiểm chứng tài liệu: 2026-08-28. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
 
-`main` hiện chứa các bản vá Web sau GitHub Release `v2.2.1`. Yawn Shape V5 đã
-được build/flash trên ESP32-S3 nhưng firmware descriptor vẫn là `2.2.1`; các
-byte này chưa phải artifact release mới. Xem [report flash 2026-08-26](../reports/2026-08-26-yawn-shape-v5-firmware-flash.md).
+Release `v2.2.2` đồng bộ Watch `versionCode 25`/`versionName 2.2.2`, firmware
+descriptor `2.2.2`, SBOM và tên artifact. Build/test tự động áp dụng cho đúng tag;
+không có Watch/ESP tại thời điểm phát hành nên artifact chính xác chưa được cài/
+flash lại. Bằng chứng thiết bị gần nhất và giới hạn xem trong các report lịch sử.
 
 Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3 N16R8 + OV2640. Định nghĩa nằm trong [ROADMAP.md](../wear/ROADMAP.md). `VERIFIED_DEVICE` chỉ được cấp cho hạng mục đã chạy trên đúng cặp thiết bị này và có report trong `reports/`.
 
@@ -19,7 +20,7 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 | Geometry classifier/calibration | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Scale consensus Web/Watch 2/3 và ESP 2/2; baseline revision 3 migration giữ posture/NVS; `FACE_MISSING`/`UNKNOWN` fail-closed; live 0,50/calibration 0,70 |
 | Posture insight/report policy | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | 180 s và 4 episode/15 phút tests |
 | BLE GATT Watch ↔ ESP | `IN_PROGRESS` | `TARGET` | `VERIFIED_LOCAL` | Queue control, jitter backoff, Bluetooth state wake và rate 5/2/1 Hz đã build/test local; phần adaptive mới cần device retest. Bằng chứng cũ: encrypted bond, MTU 23→256, 5,0 Hz, reboot reconnect; [Gate B report](../reports/2026-08-22-gate-b-ble-vertical-slice.md) |
-| Firmware ESP-IDF | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | GATT + camera + detector/no-face/positive-bbox chạy trên ESP32-S3 thật; app/assets Yawn Shape V5 đã flash và boot smoke pass, long-run còn thiếu; [report mới](../reports/2026-08-26-yawn-shape-v5-firmware-flash.md) |
+| Firmware ESP-IDF | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | GATT + camera + detector/no-face/positive-bbox từng chạy trên ESP32-S3 thật; source tổ tiên của Yawn Shape V5 đã flash/boot smoke, nhưng artifact v2.2.2 chính xác chưa flash lại và long-run còn thiếu; [report](../reports/2026-08-26-yawn-shape-v5-firmware-flash.md) |
 | OV2640 camera smoke | `IMPLEMENTED` | `TARGET` | `VERIFIED_DEVICE` | PID 0x26; JPEG QVGA quality 6, sensor xoay đúng 180°, 25/25 frame; [report lịch sử](../reports/2026-08-22-gate-c-camera-smoke.md), realtime retest đang hoàn thiện |
 | Face detector ESP32-S3 | `IN_PROGRESS` | `TARGET` | `VERIFIED_DEVICE` | MSR/MNP 5-point thay ESPDet bbox-only, JPEG QVGA; detector/broker đạt 5,0 FPS trong pass Web + Watch, BLE 5 Hz/0 notify failure; positive landmarks và long-run vẫn cần retest; [landmark progress](../reports/2026-08-23-local-pose-landmark-device-progress.md) |
 | Posture với ESP32-S3 + Galaxy Watch 5 Pro thật | `IN_PROGRESS` | `TARGET` | `UNVERIFIED` | MediaPipe Pose Lite chạy local trên Web/Watch, Web từng tự baseline 20/20; Watch frame transport đã hết HTTP 400 và fail-closed khi mất mặt. Chưa kiểm đủ tám state, 90 giây guided test, low-light, thermal và soak; [landmark progress](../reports/2026-08-23-local-pose-landmark-device-progress.md) |
@@ -35,4 +36,4 @@ Verification chuẩn:
 
 Command chuẩn bị model hash-pinned, chạy Python/Node contracts, Gradle test/lint/APK và ESP-IDF 5.5.5 clean build. Kết quả local/CI không tự chứng minh thiết bị thật.
 
-Gate B vertical slice (2026-08-22) có code, test local và bằng chứng transport trên đúng Watch/ESP. Gate C đạt `VERIFIED_DEVICE` cho camera smoke và detector gồm positive bbox. Flash Yawn Shape V5 ngày 2026-08-26 xác nhận boot, camera smoke, asset mount, dashboard và BLE của source mới; không kiểm chứng accuracy ngáp/overlay. Posture `LIVE`, low-light và bài chạy dài vẫn chưa đạt.
+Gate B vertical slice (2026-08-22) có code, test local và bằng chứng transport trên đúng Watch/ESP. Gate C đạt `VERIFIED_DEVICE` cho camera smoke và detector gồm positive bbox. Flash Yawn Shape V5 ngày 2026-08-26 xác nhận boot, camera smoke, asset mount, dashboard và BLE của source tổ tiên; không kiểm chứng accuracy ngáp/overlay và không tự chuyển thành bằng chứng cho byte-exact artifact v2.2.2. Posture `LIVE`, low-light và bài chạy dài vẫn chưa đạt.

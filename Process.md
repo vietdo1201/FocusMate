@@ -2,8 +2,10 @@
 
 ## Checkpoint hiện tại
 
-- Ngày cập nhật: 2026-08-26.
-- Watch source hiện là `versionCode 24`, `versionName 2.2.1`; bằng chứng cài Watch gần nhất vẫn phải đọc theo report tương ứng, không suy diễn từ source.
+- Ngày cập nhật: 2026-08-28.
+- Watch source hiện là `versionCode 25`, `versionName 2.2.2`; firmware descriptor
+  là `2.2.2`. Bằng chứng cài/flash gần nhất vẫn phải đọc theo report tương ứng,
+  không suy diễn từ source hoặc artifact CI.
 - Module `protocol` chứa `FaceObservationV1`; app chứa Rule Engine v2, geometry classifier và posture insight tracker.
 - Các đường quyết định không deterministic và đường đồng bộ companion cũ đã được loại khỏi app.
 - Protocol canonical đã hoàn tất. BLE runtime đang `IN_PROGRESS / VERIFIED_LOCAL`; camera/detector có bằng chứng thiết bị thật, nhưng posture/yawn accuracy và soak vẫn chưa đạt.
@@ -44,7 +46,7 @@
 
 ## Hành động tiếp theo
 
-1. Đưa CI của commit hiện hành về xanh và chuẩn bị identity release tiếp theo đồng bộ thay vì phát hành binary mới dưới tên `2.2.1`.
+1. Theo dõi CI/release `v2.2.2`, tải artifact và xác minh `SHA256SUMS.txt` trước khi phân phối hoặc flash.
 2. Chạy posture 90 giây/đủ tám state và yawn acceptance có negative controls, low-light và network capture.
 3. Chạy thermal 30 phút + soak tối thiểu hai giờ trên Galaxy Watch 5 Pro/ESP; chỉ khi đủ bằng chứng mới lập report `VERIFIED_DEVICE` toàn hệ thống.
 

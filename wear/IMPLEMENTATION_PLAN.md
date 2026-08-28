@@ -6,7 +6,7 @@ build hoặc unit test.
 
 ## Đã triển khai
 
-- Wear app standalone một variant, `versionCode 24`, `versionName 2.2.1`.
+- Wear app standalone một variant, `versionCode 25`, `versionName 2.2.2`.
 - `protocol`: `FaceObservationV1`, canonical framing, strict codec, sequence và
   freshness gate, Device Info, Frame Access và Yawn Sync V2.
 - Rule Engine `watch_rules_v2`, fatigue `1..10`, focus `1..5`, motion/HR,

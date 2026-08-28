@@ -61,15 +61,23 @@ all_text = "\n".join(
 )
 if ("soucre_code/from_On_Hand_3_" + "android_wear") in all_text:
     errors.append("Stale pre-v2.2.0 Wear path remains")
-if 'versionCode     = 24' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionCode is not 24")
-if 'versionName     = "2.2.1"' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionName is not 2.2.1")
-if 'set(PROJECT_VER "2.2.1")' not in (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8"):
-    errors.append("Firmware version is not 2.2.1")
+if 'versionCode     = 25' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
+    errors.append("Android versionCode is not 25")
+if 'versionName     = "2.2.2"' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
+    errors.append("Android versionName is not 2.2.2")
+if 'set(PROJECT_VER "2.2.2")' not in (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8"):
+    errors.append("Firmware version is not 2.2.2")
 
-sbom = json.loads((ROOT / "sbom" / "focusmate-v2.2.1.spdx.json").read_text(encoding="utf-8"))
-if sbom.get("spdxVersion") != "SPDX-2.3" or len(sbom.get("packages", [])) < 10:
+sbom = json.loads((ROOT / "sbom" / "focusmate-v2.2.2.spdx.json").read_text(encoding="utf-8"))
+project_packages = [item for item in sbom.get("packages", []) if item.get("SPDXID") == "SPDXRef-Package-FocusMate"]
+if (
+    sbom.get("spdxVersion") != "SPDX-2.3"
+    or sbom.get("name") != "FocusMate-v2.2.2"
+    or sbom.get("documentNamespace") != "https://github.com/vietdo1201/FocusMate/releases/tag/v2.2.2#spdx"
+    or len(project_packages) != 1
+    or project_packages[0].get("versionInfo") != "2.2.2"
+    or len(sbom.get("packages", [])) < 10
+):
     errors.append("SPDX 2.3 SBOM is missing or incomplete")
 battery = ROOT / "reports" / "assets" / "2026-08-25-galaxy-watch5-pro-battery-usage.png"
 if hashlib.sha256(battery.read_bytes()).hexdigest().upper() != "1C5029065197E50F28A133518701CD92EB6F77323BAFE7F6679E0758864EC26E":

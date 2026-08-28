@@ -39,18 +39,18 @@ Chỉ flash sau khi người vận hành xác nhận đúng board.
 
 ## Cập nhật thiết bị mà không xóa NVS
 
-Release `v2.2.1` phát hành riêng app firmware và phân vùng Web assets. Sau khi
+Release `v2.2.2` phát hành riêng app firmware và phân vùng Web assets. Sau khi
 xác nhận đúng cổng serial và đúng board, có thể cập nhật hai phân vùng này:
 
 ```bash
 esptool.py --chip esp32s3 --port <PORT> write_flash \
-  0x10000 FocusMate-ESP32S3-v2.2.1-update-app.bin \
-  0x410000 FocusMate-ESP32S3-v2.2.1-update-assets.bin
+  0x10000 FocusMate-ESP32S3-v2.2.2-update-app.bin \
+  0x410000 FocusMate-ESP32S3-v2.2.2-update-assets.bin
 ```
 
 Lệnh này không ghi vào phân vùng NVS. File `factory-full` chỉ dành cho cài mới
 hoặc phục hồi toàn bộ và có thể thay thế NVS/Wi-Fi/baseline; không dùng nó cho
-cập nhật thông thường. Xem [FLASHING_v2.2.1.md](FLASHING_v2.2.1.md).
+cập nhật thông thường. Xem [FLASHING_v2.2.2.md](FLASHING_v2.2.2.md).
 
 ## Kiểm tra toàn bộ
 

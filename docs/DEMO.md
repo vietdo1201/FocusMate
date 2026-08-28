@@ -1,6 +1,6 @@
 # Kịch bản trình diễn
 
-1. Mở dashboard ESP và Watch, xác nhận firmware/app `2.2.1`, hash Web assets,
+1. Mở dashboard ESP và Watch, xác nhận firmware/app `2.2.2`, hash Web assets,
    BLE bonded và model đều sẵn sàng.
 2. Bắt đầu phiên học; cho thấy motion/HR, camera và posture cập nhật cục bộ.
 3. Minh họa màn hình Watch tắt làm BLE/frame giảm rate, bật lại khôi phục 5 Hz.

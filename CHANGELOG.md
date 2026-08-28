@@ -1,6 +1,14 @@
 # Changelog
 
-## Chưa phát hành — sau v2.2.1 (2026-08-26)
+## Chưa phát hành
+
+- Chưa có thay đổi.
+
+## 2.2.2 — 2026-08-28
+
+- Sửa quét Wi-Fi làm dashboard treo, client rời `FocusMate-Setup` hoặc ESP reset:
+  HTTP trả ngay, worker quét từng kênh với coexistence, cache tối đa 24 SSID và
+  dashboard polling trạng thái. Thêm ô nhập SSID thủ công để kết nối không cần quét.
 
 - Thêm `session_advice_v1` deterministic trên Watch: kết hợp reason code v1/v2,
   bất động, posture, ngáp và nhịp tim tương đối để chọn một lời khuyên chính cùng
@@ -26,9 +34,10 @@
 - Dashboard ưu tiên khung Face Landmarker còn mới trong 700 ms; bbox detector
   ESP chỉ còn là fallback nét đứt, không còn bị điều kiện sequence làm mất
   overlay chính xác.
-- V5 đã build và flash app/assets kế thừa commit `64fcc7a` lên ESP32-S3 thật; đây là
-  bằng chứng boot/smoke có giới hạn, chưa phải accuracy/thermal/soak và chưa là
-  GitHub Release mới.
+- V5 đã build và flash app/assets kế thừa commit `64fcc7a` lên ESP32-S3 thật; đây
+  là bằng chứng boot/smoke có giới hạn. Artifact `v2.2.2` chính xác được build/test
+  tự động nhưng chưa flash lại do không có Watch/ESP tại thời điểm phát hành;
+  accuracy/thermal/soak vẫn chưa được tuyên bố.
 
 ## 2.2.1 — 2026-08-25
 
