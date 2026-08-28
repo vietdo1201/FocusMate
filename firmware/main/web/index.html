@@ -77,6 +77,8 @@
         <summary>Cấu hình</summary>
         <h2 style="margin-top:14px">Wi-Fi 2.4 GHz</h2>
         <select id="ssid"><option value="">Bấm quét mạng</option></select><button id="scan" class="secondary">Quét Wi-Fi</button>
+        <label>Hoặc nhập SSID thủ công</label><input id="ssidManual" type="text" maxlength="32" autocomplete="off" placeholder="Tên Wi-Fi 2.4 GHz">
+        <div class="note">Scan chạy nền và ưu tiên giữ kết nối với FocusMate-Setup. Nếu thiết bị của bạn vẫn rời AP, hãy kết nối lại hoặc nhập SSID thủ công.</div>
         <label>Mật khẩu Wi-Fi</label><input id="wifiPass" type="password" autocomplete="new-password">
         <button id="connectWifi">Lưu và kết nối</button><button id="resetWifi" class="danger">Xóa Wi-Fi đã lưu</button>
         <h2 style="margin-top:20px">Mật khẩu AP FocusMate-Setup</h2>
@@ -94,6 +96,7 @@ const el=id=>document.getElementById(id), canvas=el("video"), ctx=canvas.getCont
 let lastFrame=0,lastStatus=null,running=true,telemetry=[];
 let poseWorker=null,poseReady=false,poseBusy=false,poseFailed=false,poseResult=null,lastPoseLandmarks=null,yawnResult=null,lastMouthLandmarks=null,lastFaceGeometry=null,lastOverlayUptimeMs=-Infinity;
 let poseRetryTimer=null,poseRetryCount=0;
+let wifiScanTimer=null,wifiScanActive=false;
 let pendingYawnSync=null,yawnSyncBusy=false,yawnCheckpointBusy=false,canonicalYawnSync=null,lastEspUptimeMs=null,espBootEpoch=0,lastQueuedLocalYawnTotal=0;
 const baselineKey="focusmate_pose_baseline_v3",legacyBaselineKey="focusmate_pose_baseline_v2";
 const yawnBaselineKey="focusmate_yawn_baseline_v2";
@@ -221,13 +224,28 @@ async function frameLoop(){
 el("captureCalibration").onclick=()=>{localStorage.removeItem(baselineKey);localStorage.removeItem(legacyBaselineKey);poseResult=null;poseWorker?.postMessage({type:"captureBaseline"});toast("Giữ tư thế hiện tại tự nhiên, không che mặt, trong khoảng 5 giây")};
 el("resetCalibration").onclick=()=>{if(confirm("Xóa baseline landmark và để hệ thống tự hiệu chỉnh lại?")){localStorage.removeItem(baselineKey);localStorage.removeItem(legacyBaselineKey);poseResult=null;poseWorker?.postMessage({type:"reset"});toast("Đã xóa baseline; hãy giữ tư thế tự nhiên, không che mặt, khoảng 5 giây")}};
 el("resetYawnCalibration").onclick=()=>{localStorage.removeItem(yawnBaselineKey);yawnResult=null;poseWorker?.postMessage({type:"resetYawn"});toast("Giữ miệng khép tự nhiên để hiệu chỉnh lại")};
-el("scan").onclick=async()=>{try{const result=await api("/api/wifi/scan"),select=el("ssid");select.innerHTML="";result.networks.forEach(n=>select.add(new Option(n.ssid+" ("+n.rssi+" dBm)",n.ssid)));toast("Tìm thấy "+result.networks.length+" mạng")}catch(error){toast(error.message)}};
-el("connectWifi").onclick=async()=>{try{await api("/api/wifi/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ssid:el("ssid").value,password:el("wifiPass").value})});el("wifiPass").value="";toast("Đang kết nối Wi-Fi…")}catch(error){toast(error.message)}};
+function renderWifiNetworks(networks){const select=el("ssid");select.innerHTML="<option value=\"\">Chọn mạng đã quét</option>";networks.forEach(n=>select.add(new Option(n.ssid+" ("+n.rssi+" dBm)",n.ssid)));if(networks.length===0)toast("Không tìm thấy Wi-Fi 2.4 GHz")}
+async function pollWifiScan(){
+  if(!wifiScanActive)return;
+  try{
+    const result=await api("/api/wifi/scan/status");
+    if(result.state==="ready"){
+      renderWifiNetworks(result.networks||[]);el("scan").disabled=false;wifiScanTimer=null;wifiScanActive=false;toast("Tìm thấy "+(result.networks||[]).length+" mạng");return;
+    }
+    if(result.state==="error"){
+      el("scan").disabled=false;wifiScanTimer=null;wifiScanActive=false;toast(result.error||"Wi-Fi scan failed");return;
+    }
+  }catch(_){/* AP may hop channels during scan; retry after reconnect. */}
+  wifiScanTimer=setTimeout(pollWifiScan,1000);
+}
+el("scan").onclick=async()=>{el("scan").disabled=true;clearTimeout(wifiScanTimer);wifiScanTimer=null;wifiScanActive=true;try{await api("/api/wifi/scan")}catch(_){/* The start response may be lost during a radio channel hop. */}pollWifiScan()};
+el("ssid").onchange=()=>{if(el("ssid").value)el("ssidManual").value=el("ssid").value};
+el("connectWifi").onclick=async()=>{try{const ssid=(el("ssidManual").value||el("ssid").value).trim();if(!ssid)throw Error("Hãy chọn hoặc nhập SSID Wi-Fi");await api("/api/wifi/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ssid,password:el("wifiPass").value})});el("wifiPass").value="";toast("Đang kết nối Wi-Fi…")}catch(error){toast(error.message)}};
 el("resetWifi").onclick=async()=>{if(confirm("Xóa Wi-Fi đã lưu?"))try{await api("/api/wifi/reset",{method:"POST"});toast("Đã trở về AP FocusMate-Setup")}catch(error){toast(error.message)}};
 el("saveAp").onclick=async()=>{try{await api("/api/wifi/ap-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:el("apPass").value})});el("apPass").value="";toast("Đã đổi mật khẩu AP")}catch(error){toast(error.message)}};
 el("displayMirror").onchange=()=>localStorage.setItem("focusmate_display_mirror_v2",String(el("displayMirror").checked));el("displayFlip").onchange=()=>localStorage.setItem("focusmate_display_flip_v2",String(el("displayFlip").checked));
 el("export").onclick=()=>{const json=JSON.stringify({schema:2,images_saved:false,exported_at:new Date().toISOString(),samples:telemetry},null,2),csv=["at,state,raw_state,confidence,yawn_state,yawn_count,yawns_10m,jaw_open,mar,face_confidence,inference_ms,ble_connected,notify_failures"].concat(telemetry.map(r=>[r.at,r.posture.state,r.posture.raw_state,r.posture.confidence,r.yawn.state,r.yawn.totalCount,r.yawn.eventsInWindow,r.yawn.jawOpen??"",r.yawn.mar??"",r.face.confidence??"",r.face.inference_ms,r.ble.connected,r.ble.notification_failures].join(","))).join("\n");for(const [name,data,type] of [["focusmate-telemetry.json",json,"application/json"],["focusmate-telemetry.csv",csv,"text/csv"]]){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}};
-drawPlaceholder();startPoseWorker();refresh();frameLoop();setInterval(refresh,1000);addEventListener("beforeunload",()=>{running=false;clearTimeout(poseRetryTimer);poseWorker?.terminate();navigator.sendBeacon("/api/viewer/release",new Blob([JSON.stringify({client:viewerClient})],{type:"application/json"}))});
+drawPlaceholder();startPoseWorker();refresh();frameLoop();setInterval(refresh,1000);addEventListener("beforeunload",()=>{running=false;clearTimeout(poseRetryTimer);clearTimeout(wifiScanTimer);poseWorker?.terminate();navigator.sendBeacon("/api/viewer/release",new Blob([JSON.stringify({client:viewerClient})],{type:"application/json"}))});
 </script>
 </body>
 </html>

@@ -88,6 +88,7 @@ data class StudySession(
     val fatigueScore: Int,
     val breakReminderCount: Int,
     val shouldBreak: Boolean,
+    val breakReasonCodes: Set<String> = emptySet(),
     val reviewedShouldBreak: Boolean? = null,
     val interruptRisk: String = "medium",
     val accepted: Boolean?,
@@ -116,7 +117,10 @@ data class StudySession(
     val postureInsightReasonCodes: Set<String> = emptySet(),
     val yawnCount: Int = 0,
     val yawnAlertCount: Int = 0,
+    val yawnRecentWindowCount: Int = 0,
     val yawnTotalDurationMs: Long = 0L,
+    val adviceRuleVersion: String? = null,
+    val sessionAdvice: List<SessionAdviceItem> = emptyList(),
     val breakTargetMinutes: Int = FocusMateRules.DEFAULT_BREAK_MINUTES,
     val breakCount: Int = 0,
     val totalBreakDurationMs: Long = 0L,
@@ -132,6 +136,7 @@ data class StudySession(
         put("fatigue_score", fatigueScore)
         put("break_reminder_count", breakReminderCount)
         put("should_break", shouldBreak)
+        put("break_reason_codes", JSONArray(breakReasonCodes.sorted()))
         put("reviewed_should_break", reviewedShouldBreak ?: JSONObject.NULL)
         put("interrupt_risk", interruptRisk)
         put("accepted", accepted ?: JSONObject.NULL)
@@ -148,7 +153,12 @@ data class StudySession(
         put("posture_insight_reason_codes", JSONArray(postureInsightReasonCodes.sorted()))
         put("yawn_count", yawnCount)
         put("yawn_alert_count", yawnAlertCount)
+        put("yawn_recent_window_count", yawnRecentWindowCount)
         put("yawn_total_duration_ms", yawnTotalDurationMs)
+        put("advice_rule_version", adviceRuleVersion ?: JSONObject.NULL)
+        put("session_advice", JSONArray().apply {
+            sessionAdvice.take(SessionAdviceEngine.MAX_ADVICE_ITEMS).forEach { put(it.toJson()) }
+        })
         put("break_target_minutes", breakTargetMinutes)
         put("break_count", breakCount)
         put("total_break_duration_ms", totalBreakDurationMs)
@@ -168,6 +178,7 @@ data class StudySession(
                 fatigueScore = json.fatigueScore(),
                 breakReminderCount = json.optInt("break_reminder_count", 0).coerceAtLeast(0),
                 shouldBreak = json.optBoolean("should_break", json.optBoolean("rule_should_break", false)),
+                breakReasonCodes = json.stringSet("break_reason_codes"),
                 reviewedShouldBreak = json.optionalBoolean("reviewed_should_break"),
                 interruptRisk = json.optString("interrupt_risk", "medium"),
                 accepted = json.optionalBoolean("accepted"),
@@ -196,7 +207,10 @@ data class StudySession(
                 postureInsightReasonCodes = json.stringSet("posture_insight_reason_codes"),
                 yawnCount = json.optInt("yawn_count", 0).coerceAtLeast(0),
                 yawnAlertCount = json.optInt("yawn_alert_count", 0).coerceAtLeast(0),
+                yawnRecentWindowCount = json.optInt("yawn_recent_window_count", 0).coerceIn(0, 64),
                 yawnTotalDurationMs = json.optLong("yawn_total_duration_ms", 0L).coerceAtLeast(0L),
+                adviceRuleVersion = json.optionalString("advice_rule_version"),
+                sessionAdvice = json.sessionAdvice(),
                 breakTargetMinutes = json.optInt("break_target_minutes", FocusMateRules.DEFAULT_BREAK_MINUTES)
                     .coerceIn(FocusMateRules.MIN_BREAK_MINUTES, FocusMateRules.MAX_BREAK_MINUTES),
                 breakCount = json.optInt("break_count", 0).coerceAtLeast(0),
@@ -584,6 +598,13 @@ private fun JSONObject.postureSummaries(): List<PostureStateSummary> = buildList
         val row = values.optJSONObject(index) ?: continue
         val state = runCatching { PostureState.valueOf(row.optString("state")) }.getOrNull() ?: continue
         add(PostureStateSummary(state, row.optInt("episode_count", 0), row.optLong("total_duration_ms", 0L)))
+    }
+}
+
+private fun JSONObject.sessionAdvice(): List<SessionAdviceItem> = buildList {
+    val values = optJSONArray("session_advice") ?: return@buildList
+    for (index in 0 until minOf(values.length(), SessionAdviceEngine.MAX_ADVICE_ITEMS)) {
+        values.optJSONObject(index)?.let(SessionAdviceItem::fromJson)?.let(::add)
     }
 }
 

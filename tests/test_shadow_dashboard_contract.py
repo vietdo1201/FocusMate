@@ -32,6 +32,7 @@ class ShadowDashboardContractTest(unittest.TestCase):
             "/api/posture/calibrate",
             "/api/posture/reset",
             "/api/wifi/scan",
+            "/api/wifi/scan/status",
             "/api/wifi/connect",
             "/api/wifi/reset",
             "/api/wifi/ap-password",
@@ -170,6 +171,23 @@ class ShadowDashboardContractTest(unittest.TestCase):
         self.assertNotIn("getsockname(socket", source)
         self.assertIn("kAdvertisedEndpointReady = 1U << 0U", source)
         self.assertNotIn("(wifi.station_online ? 1U : 0U) | kTokenRequired", source)
+
+    def test_wifi_scan_is_async_and_manual_ssid_bypasses_scan(self) -> None:
+        source = read("firmware/main/dashboard.cpp")
+        html = read("firmware/main/web/index.html")
+        self.assertIn("xTaskCreate(wifi_scan_task_thunk", source)
+        self.assertIn("esp_wifi_scan_start(&config, true)", source)
+        self.assertIn("config.coex_background_scan = true", source)
+        self.assertIn("config.channel = static_cast<uint8_t>(channel)", source)
+        self.assertIn("vTaskDelay(pdMS_TO_TICKS(40))", source)
+        self.assertIn('"focusmate-wifi-scan", 8192', source)
+        self.assertIn('"/api/wifi/scan/status"', source)
+        self.assertIn("WifiScanState::RUNNING", source)
+        self.assertIn("ssidManual", html)
+        self.assertIn("/api/wifi/scan/status", html)
+        self.assertIn("wifiScanActive", html)
+        self.assertIn("The start response may be lost", html)
+        self.assertIn("el(\"ssidManual\").value||el(\"ssid\").value", html)
 
     def test_kotlin_and_firmware_thresholds_match(self) -> None:
         firmware = read("firmware/main/shadow_posture.cpp")

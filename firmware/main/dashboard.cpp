@@ -82,6 +82,19 @@ struct WifiStatus {
     int rssi = 0;
 };
 
+struct WifiScanNetwork {
+    char ssid[33]{};
+    int rssi = 0;
+    bool secured = false;
+};
+
+enum class WifiScanState : uint8_t {
+    IDLE,
+    RUNNING,
+    READY,
+    ERROR,
+};
+
 struct LegacyYawnSyncSnapshot {
     uint32_t sequence = 0;
     uint32_t client = 0;
@@ -120,13 +133,16 @@ private:
     esp_err_t status(httpd_req_t *request);
     esp_err_t posture(httpd_req_t *request, bool calibrate);
     esp_err_t wifi_scan(httpd_req_t *request);
+    esp_err_t wifi_scan_status(httpd_req_t *request);
     esp_err_t wifi_connect(httpd_req_t *request);
     esp_err_t wifi_reset(httpd_req_t *request);
     esp_err_t ap_password(httpd_req_t *request);
     static void event_thunk(void *argument, esp_event_base_t base, int32_t id, void *data);
     static void network_task_thunk(void *argument);
+    static void wifi_scan_task_thunk(void *argument);
     void on_event(esp_event_base_t base, int32_t id, void *data);
     void network_task();
+    void wifi_scan_task();
     std::string nvs_string(const char *key) const;
     bool set_nvs_string(const char *key, const std::string &value);
     bool erase_nvs_keys(std::initializer_list<const char *> keys);
@@ -155,6 +171,13 @@ private:
     uint64_t pending_switch_at_ms_ = 0;
     uint64_t last_reconnect_ms_ = 0;
     uint64_t station_attempt_started_ms_ = 0;
+    // The scan worker publishes fixed-size metadata through this dedicated
+    // lock without holding up dashboard/BLE state work.
+    portMUX_TYPE wifi_scan_lock_ = portMUX_INITIALIZER_UNLOCKED;
+    volatile WifiScanState wifi_scan_state_ = WifiScanState::IDLE;
+    std::array<WifiScanNetwork, 24> wifi_scan_networks_{};
+    volatile uint8_t wifi_scan_network_count_ = 0U;
+    char wifi_scan_error_[96]{};
     YawnSyncBroker yawn_broker_{};
     LegacyYawnSyncSnapshot legacy_yawn_sync_{};
     uint32_t yawn_event_id_ = 0;
@@ -527,6 +550,7 @@ bool Dashboard::initialize_server()
         {"/api/posture/calibrate", HTTP_POST, dispatch, this},
         {"/api/posture/reset", HTTP_POST, dispatch, this},
         {"/api/wifi/scan", HTTP_GET, dispatch, this},
+        {"/api/wifi/scan/status", HTTP_GET, dispatch, this},
         {"/api/wifi/connect", HTTP_POST, dispatch, this},
         {"/api/wifi/reset", HTTP_POST, dispatch, this},
         {"/api/wifi/ap-password", HTTP_POST, dispatch, this},
@@ -559,6 +583,7 @@ esp_err_t Dashboard::handle(httpd_req_t *request)
     if (uri == "/api/status") return status(request);
     if (uri == "/api/posture/calibrate") return posture(request, true);
     if (uri == "/api/posture/reset") return posture(request, false);
+    if (uri == "/api/wifi/scan/status") return wifi_scan_status(request);
     if (uri == "/api/wifi/scan") return wifi_scan(request);
     if (uri == "/api/wifi/connect") return wifi_connect(request);
     if (uri == "/api/wifi/reset") return wifi_reset(request);
@@ -1089,27 +1114,60 @@ esp_err_t Dashboard::posture(httpd_req_t *request, bool calibrate)
 
 esp_err_t Dashboard::wifi_scan(httpd_req_t *request)
 {
-    wifi_scan_config_t config{};
-    if (esp_wifi_scan_start(&config, true) != ESP_OK)
-        return json_error(request, "503 Service Unavailable", "Wi-Fi scan failed");
-    uint16_t count = 0;
-    esp_wifi_scan_get_ap_num(&count);
-    count = std::min<uint16_t>(count, 24U);
-    std::vector<wifi_ap_record_t> records(count);
-    if (count > 0U && esp_wifi_scan_get_ap_records(&count, records.data()) != ESP_OK)
-        return json_error(request, "503 Service Unavailable", "Wi-Fi results unavailable");
+    portENTER_CRITICAL(&wifi_scan_lock_);
+    const WifiScanState state = wifi_scan_state_;
+    if (state == WifiScanState::RUNNING) {
+        portEXIT_CRITICAL(&wifi_scan_lock_);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "state", "running");
+        return send_json(request, root);
+    }
+    wifi_scan_state_ = WifiScanState::RUNNING;
+    wifi_scan_network_count_ = 0U;
+    wifi_scan_error_[0] = '\0';
+    portEXIT_CRITICAL(&wifi_scan_lock_);
+
+    // esp_wifi_scan_* and the fixed-size AP record buffers need more than the
+    // 4 KiB used by lightweight workers. Keep this task short-lived, but give
+    // it enough stack to avoid rebooting under a populated 2.4 GHz band.
+    if (xTaskCreate(wifi_scan_task_thunk, "focusmate-wifi-scan", 8192, this, 2, nullptr) != pdPASS) {
+        portENTER_CRITICAL(&wifi_scan_lock_);
+        wifi_scan_state_ = WifiScanState::ERROR;
+        std::snprintf(wifi_scan_error_, sizeof wifi_scan_error_, "Cannot create Wi-Fi scan task");
+        portEXIT_CRITICAL(&wifi_scan_lock_);
+        return json_error(request, "503 Service Unavailable", "Wi-Fi scan could not start");
+    }
     cJSON *root = cJSON_CreateObject();
-    cJSON *networks = cJSON_AddArrayToObject(root, "networks");
-    std::vector<std::string> seen;
-    for (uint16_t index = 0; index < count; ++index) {
-        const std::string ssid(reinterpret_cast<const char *>(records[index].ssid));
-        if (ssid.empty() || std::find(seen.begin(), seen.end(), ssid) != seen.end()) continue;
-        seen.push_back(ssid);
-        cJSON *network = cJSON_CreateObject();
-        cJSON_AddStringToObject(network, "ssid", ssid.c_str());
-        cJSON_AddNumberToObject(network, "rssi", records[index].rssi);
-        cJSON_AddBoolToObject(network, "secured", records[index].authmode != WIFI_AUTH_OPEN);
-        cJSON_AddItemToArray(networks, network);
+    cJSON_AddStringToObject(root, "state", "running");
+    return send_json(request, root);
+}
+
+esp_err_t Dashboard::wifi_scan_status(httpd_req_t *request)
+{
+    portENTER_CRITICAL(&wifi_scan_lock_);
+    const WifiScanState state = wifi_scan_state_;
+    const uint8_t count = wifi_scan_network_count_;
+    std::array<char, 96> error{};
+    std::memcpy(error.data(), wifi_scan_error_, error.size());
+    std::array<WifiScanNetwork, 24> networks = wifi_scan_networks_;
+    portEXIT_CRITICAL(&wifi_scan_lock_);
+
+    const char *state_name = "idle";
+    if (state == WifiScanState::RUNNING) state_name = "running";
+    else if (state == WifiScanState::READY) state_name = "ready";
+    else if (state == WifiScanState::ERROR) state_name = "error";
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "state", state_name);
+    if (error[0] != '\0') cJSON_AddStringToObject(root, "error", error.data());
+    if (state == WifiScanState::READY) {
+        cJSON *items = cJSON_AddArrayToObject(root, "networks");
+        for (uint8_t index = 0; index < count; ++index) {
+            cJSON *network = cJSON_CreateObject();
+            cJSON_AddStringToObject(network, "ssid", networks[index].ssid);
+            cJSON_AddNumberToObject(network, "rssi", networks[index].rssi);
+            cJSON_AddBoolToObject(network, "secured", networks[index].secured);
+            cJSON_AddItemToArray(items, network);
+        }
     }
     return send_json(request, root);
 }
@@ -1253,6 +1311,87 @@ void Dashboard::on_event(esp_event_base_t base, int32_t id, void *data)
 void Dashboard::network_task_thunk(void *argument)
 {
     static_cast<Dashboard *>(argument)->network_task();
+}
+
+void Dashboard::wifi_scan_task_thunk(void *argument)
+{
+    static_cast<Dashboard *>(argument)->wifi_scan_task();
+    vTaskDelete(nullptr);
+}
+
+void Dashboard::wifi_scan_task()
+{
+    wifi_scan_config_t config{};
+    config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    config.show_hidden = false;
+    // BLE runs continuously on this product, so ESP-IDF requires its default
+    // active dwell times. Scan one regulatory channel at a time and explicitly
+    // return to the SoftAP between channels; an all-channel scan can starve AP
+    // beacons long enough for Windows/Android clients to disconnect.
+    config.coex_background_scan = true;
+    std::array<wifi_ap_record_t, 24> records{};
+    std::array<WifiScanNetwork, 24> compact{};
+    uint8_t compact_count = 0U;
+    wifi_country_t country{};
+    esp_err_t result = esp_wifi_get_country(&country);
+    const uint16_t first_channel = country.schan;
+    const uint16_t end_channel = std::min<uint16_t>(
+        15U, static_cast<uint16_t>(country.schan) + static_cast<uint16_t>(country.nchan));
+    for (uint16_t channel = first_channel; result == ESP_OK && channel < end_channel; ++channel) {
+        config.channel = static_cast<uint8_t>(channel);
+        result = esp_wifi_scan_start(&config, true);
+        uint16_t count = 0U;
+        if (result == ESP_OK) result = esp_wifi_scan_get_ap_num(&count);
+        if (result == ESP_OK) {
+            count = std::min<uint16_t>(count, static_cast<uint16_t>(records.size()));
+            if (count > 0U) {
+                result = esp_wifi_scan_get_ap_records(&count, records.data());
+                if (result != ESP_OK) esp_wifi_clear_ap_list();
+            }
+            else esp_wifi_clear_ap_list();
+        } else {
+            esp_wifi_clear_ap_list();
+        }
+        for (uint16_t index = 0; index < count && compact_count < compact.size(); ++index) {
+            const char *ssid = reinterpret_cast<const char *>(records[index].ssid);
+            if (ssid[0] == '\0') continue;
+            WifiScanNetwork *duplicate = nullptr;
+            for (uint8_t seen = 0; seen < compact_count; ++seen) {
+                if (std::strncmp(compact[seen].ssid, ssid, sizeof compact[seen].ssid) == 0) {
+                    duplicate = &compact[seen];
+                    break;
+                }
+            }
+            if (duplicate != nullptr) {
+                if (records[index].rssi > duplicate->rssi) duplicate->rssi = records[index].rssi;
+                continue;
+            }
+            auto &network = compact[compact_count++];
+            std::strncpy(network.ssid, ssid, sizeof network.ssid - 1U);
+            network.rssi = records[index].rssi;
+            network.secured = records[index].authmode != WIFI_AUTH_OPEN;
+        }
+        if (result == ESP_OK) vTaskDelay(pdMS_TO_TICKS(40));
+    }
+    std::sort(compact.begin(), compact.begin() + compact_count,
+              [](const WifiScanNetwork &left, const WifiScanNetwork &right) {
+                  return left.rssi > right.rssi;
+              });
+    portENTER_CRITICAL(&wifi_scan_lock_);
+    if (result == ESP_OK) {
+        wifi_scan_networks_ = compact;
+        wifi_scan_network_count_ = compact_count;
+        wifi_scan_error_[0] = '\0';
+        wifi_scan_state_ = WifiScanState::READY;
+    } else {
+        wifi_scan_network_count_ = 0U;
+        wifi_scan_state_ = WifiScanState::ERROR;
+        std::snprintf(wifi_scan_error_, sizeof wifi_scan_error_, "Wi-Fi scan failed (%s)",
+                      esp_err_to_name(result));
+    }
+    portEXIT_CRITICAL(&wifi_scan_lock_);
+    ESP_LOGI(kTag, "Wi-Fi scan finished: state=%s networks=%u",
+             result == ESP_OK ? "ready" : "error", static_cast<unsigned>(compact_count));
 }
 
 void Dashboard::network_task()

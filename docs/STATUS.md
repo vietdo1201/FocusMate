@@ -1,6 +1,6 @@
 # Trạng thái dự án
 
-Ngày kiểm chứng tài liệu: 2026-08-26. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
+Ngày kiểm chứng tài liệu: 2026-08-27. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
 
 `main` hiện chứa các bản vá Web sau GitHub Release `v2.2.1`. Yawn Shape V5 đã
 được build/flash trên ESP32-S3 nhưng firmware descriptor vẫn là `2.2.1`; các
@@ -12,6 +12,7 @@ Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3
 |---|---|---|---|---|
 | Wear session/UI/fatigue input | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Một app variant, standalone |
 | Rule Engine `watch_rules_v2` | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Boundary, overlap, cooldown, missing-data tests |
+| End-session `session_advice_v1` | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Automated matrix pass; Watch/ESP smoke thật đã xác nhận schema, fallback report cuộn và BLE lifecycle, chưa kiểm các nhánh 30/45/60 phút hoặc HR/posture/ngáp thật; [report](../reports/2026-08-27-session-advice-v1-device-smoke.md) |
 | Motion collection/rule immobility | `IMPLEMENTED` | `EXPERIMENTAL` | `VERIFIED_LOCAL` | Thiếu HR permission không dừng motion; chưa device test |
 | `FaceObservationV1` protocol codec | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Canonical encode/strict decode, golden vectors, uint32 gate, monotonic freshness |
 | Canonical wire format + GATT profile | `IMPLEMENTED` | `TARGET` | `VERIFIED_LOCAL` | Kotlin↔C byte equality, CRC/framing MTU 23–517, Device Info 34 byte |

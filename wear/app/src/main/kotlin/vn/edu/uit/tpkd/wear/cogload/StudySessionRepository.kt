@@ -596,6 +596,32 @@ class StudySessionRepository(private val context: Context) {
         // exact timestamps above so the strict >45-minute boundary is kept.
         val durationMinutes = if (durationMs == 0L) 0 else maxOf(1, (durationMs / 60_000L).toInt())
         val decision = evaluateBreak(active, focusBlockDurationMs, safeEnd, cooldownUntilMs())
+        val endedDuringBreak = StudySessionClock.isOnBreak(active, safeEnd)
+        val localRecentYawns = active.recentYawnEventTimesMs.count {
+            safeEnd - it in 0L..ADVICE_YAWN_WINDOW_MS
+        }
+        val syncedRecentYawns = active.yawnSyncObservedAtMs
+            ?.takeIf { safeEnd - it in 0L..ADVICE_YAWN_WINDOW_MS }
+            ?.let { active.yawnSyncWindowCount }
+            ?: 0
+        val recentYawnCount = maxOf(localRecentYawns, syncedRecentYawns).coerceIn(0, 64)
+        val sessionAdvice = SessionAdviceEngine.evaluate(
+            SessionAdviceContext(
+                fatigueScore = active.fatigueScore,
+                focusScore = active.focusScore,
+                breakReasonCodes = decision.reasonCodes,
+                endedDuringBreak = endedDuringBreak,
+                continuousImmobileMs = active.continuousImmobileMs,
+                postureSummaries = active.postureSummaries,
+                postureInsightReasonCodes = active.postureInsightReasonCodes,
+                yawnAlertCount = active.yawnAlertCount,
+                yawnRecentWindowCount = recentYawnCount,
+                heartRateAverage = active.heartRateAverage,
+                heartRateBaseline = active.heartRateBaseline,
+                heartRateSampleCount = active.heartRateSampleCount,
+                heartRateBaselineSampleCount = active.heartRateBaselineSampleCount,
+            )
+        )
         val completed = StudySession(
             sessionId = active.sessionId,
             studentCode = active.studentCode,
@@ -608,6 +634,7 @@ class StudySessionRepository(private val context: Context) {
             fatigueScore = active.fatigueScore,
             breakReminderCount = active.breakReminderCount,
             shouldBreak = decision.shouldBreak,
+            breakReasonCodes = decision.reasonCodes,
             interruptRisk = FocusMateRules.interruptRisk(
                 active.focusScore,
                 active.fatigueScore,
@@ -640,7 +667,10 @@ class StudySessionRepository(private val context: Context) {
             postureInsightReasonCodes = active.postureInsightReasonCodes,
             yawnCount = active.yawnCount,
             yawnAlertCount = active.yawnAlertCount,
+            yawnRecentWindowCount = recentYawnCount,
             yawnTotalDurationMs = active.yawnTotalDurationMs,
+            adviceRuleVersion = SessionAdviceEngine.RULE_VERSION,
+            sessionAdvice = sessionAdvice,
             breakTargetMinutes = active.breakTargetMinutes,
             breakCount = active.breakCount,
             totalBreakDurationMs = StudySessionClock.totalBreakDurationMs(active, safeEnd),
@@ -767,6 +797,7 @@ class StudySessionRepository(private val context: Context) {
 
     companion object {
         private const val HEART_RATE_BASELINE_MS = 60_000L
+        private const val ADVICE_YAWN_WINDOW_MS = 10 * 60_000L
         private val STORE_LOCK = Any()
         private const val PREFERENCES_NAME = "focusmate_local_store_v1"
         private const val ACTIVE_PREFERENCES_NAME = "focusmate_active_state_v1"

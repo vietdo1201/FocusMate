@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     private var promptVisible = false
     private var breakChoiceVisible = false
     private var reviewVisible = false
+    private var reportVisible = false
     private var dndAccessRequested = false
     private val activityThresholdCalibrator = PersonalActivityThresholdCalibrator()
 
@@ -227,25 +228,17 @@ class MainActivity : Activity() {
         syncStudyDnd(false)
         stopSensorCollection()
         renderAll()
-        val message = if (completed.shouldBreak) {
-            "Đã lưu phiên ${completed.durationMinutes} phút. Rule v2 ghi nhận nên nghỉ."
-        } else {
-            "Đã lưu phiên ${completed.durationMinutes} phút."
+        reportVisible = true
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.session_report_title)
+            .setView(SessionReportViewFactory.create(this, completed))
+            .setPositiveButton(R.string.report_close, null)
+            .create()
+        dialog.setOnDismissListener {
+            reportVisible = false
+            uiHandler.post { maybeShowPendingReview() }
         }
-        val postureReport = PostureRecommendations.report(completed.postureSummaries)
-        val yawnReport = "Ngáp: ${completed.yawnCount} lần • cảnh báo buồn ngủ/mệt ${completed.yawnAlertCount} lần."
-        AlertDialog.Builder(this)
-            .setTitle("Báo cáo cuối phiên")
-            .setMessage(
-                if (postureReport.isBlank()) {
-                    "$message\nTư thế: chưa có dữ liệu.\n$yawnReport"
-                } else {
-                    "$message\n\n$postureReport\n\n$yawnReport"
-                },
-            )
-            .setPositiveButton("Đóng", null)
-            .show()
-        uiHandler.post { maybeShowPendingReview() }
+        dialog.show()
     }
 
     private fun confirmCancelSession() {
@@ -321,7 +314,7 @@ class MainActivity : Activity() {
     }
 
     private fun maybeShowPendingReview() {
-        if (!isResumed || promptVisible || reviewVisible) return
+        if (!isResumed || promptVisible || reviewVisible || reportVisible) return
         val session = repository.pendingReviewSession() ?: return
         reviewVisible = true
         val dialog = AlertDialog.Builder(this)

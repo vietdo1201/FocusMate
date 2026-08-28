@@ -2,6 +2,18 @@
 
 ## Chưa phát hành — sau v2.2.1 (2026-08-26)
 
+- Thêm `session_advice_v1` deterministic trên Watch: kết hợp reason code v1/v2,
+  bất động, posture, ngáp và nhịp tim tương đối để chọn một lời khuyên chính cùng
+  tối đa hai lời khuyên phụ mà không thay đổi nguồn reminder `watch_rules_v2`.
+- Đóng băng advice code/evidence, reason code và số ngáp cửa sổ 10 phút trong
+  bản ghi phiên; dữ liệu cũ đọc fail-safe và không bị tự tính lại bằng rule mới.
+- Báo cáo cuối phiên chuyển sang view cuộn có hành động, lý do, độ đầy đủ dữ liệu
+  và cảnh báo nhịp tim phi chẩn đoán; đánh giá thời điểm nhắc chỉ hiện sau khi
+  báo cáo được đóng.
+- Device smoke trên Galaxy Watch 5 Pro + ESP32-S3 xác nhận APK/firmware mới,
+  bonded GATT MTU 256 ở 5 Hz không notify failure, schema `session_advice_v1`,
+  fallback report cuộn và STOP/disconnect sạch; các nhánh advice dài/HR/posture/
+  ngáp vẫn chỉ có bằng chứng local.
 - Sửa Web yawn classifier khi Face Landmarker bản compact không có blendshape
   `jawOpen`: giữ `null` thay vì đổi thành `0` và dùng MAR làm tín hiệu chính.
 - Nâng classifier baseline lên `YAWN_SHAPE_V5`: yêu cầu MAR ≥0,32, peak ≥0,55,

@@ -45,6 +45,23 @@ V2 bổ sung:
 - Khi bắt đầu nghỉ, hiển thị tối đa một lời khuyên từ lỗi có tổng duration lớn nhất.
 - Cuối phiên hiển thị episode count, tổng duration và khuyến nghị theo state.
 
+## Lời khuyên cuối phiên
+
+`session_advice_v1` là engine local, deterministic và tách khỏi nguồn quyết định
+reminder. Khi lưu phiên, Watch đóng băng reason code v1/v2 rồi kết hợp bất động,
+posture/ngáp từ pipeline ESP/Watch và nhịp tim tương đối của Watch để chọn một
+hành động chính cùng tối đa hai hành động phụ. Mỗi hành động lưu code và evidence;
+câu tiếng Việt chỉ được render khi mở báo cáo.
+
+- Tín hiệu trùng nhau phải gộp thành một hành động, không lặp nhiều câu “hãy nghỉ”.
+- Posture chỉ góp lời khuyên sau insight 3 phút liên tục hoặc 4 episode/15 phút.
+- Ngáp chỉ là tín hiệu mạnh khi có alert hoặc ít nhất 3 lần/10 phút.
+- Nhịp tim cần đủ mẫu, tăng cả 15 BPM lẫn 15% so với baseline và có tín hiệu khác
+  xác nhận; không dùng BPM tuyệt đối và không chẩn đoán.
+- Thiếu dữ liệu phải ghi rõ độ đầy đủ, không được suy diễn phiên hoàn toàn tốt.
+- Nếu không có cảnh báo đủ tin cậy, báo cáo khen việc hoàn thành và đưa một gợi ý
+  duy trì đổi tư thế/nghỉ ngắn.
+
 Reason code ổn định:
 
 `RULE_V1_DURATION_FATIGUE`, `RULE_V1_HARD_60`, `RULE_V1_HIGH_FATIGUE_LOW_FOCUS`, `RULE_V2_IMMOBILITY`, `INSIGHT_V2_POSTURE_CONTINUOUS`, `INSIGHT_V2_POSTURE_REPEATED`, `SUPPRESSED_COOLDOWN`.
