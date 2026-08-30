@@ -1,6 +1,7 @@
 # FocusMate — trợ lý tập trung local-first
 
 [![Verify](https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml/badge.svg)](https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml)
+[![System Test: 24/24 PASS](https://img.shields.io/badge/System%20Test-24%2F24%20PASS-brightgreen.svg)](tests/FocusMate_Test/TEST_MATRIX.md)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![REUSE](https://img.shields.io/badge/REUSE-compliant-informational.svg)](REUSE.toml)
 
@@ -17,6 +18,47 @@ OV2640 → ESP32-S3: camera + face landmarks + Web dashboard
 Galaxy Watch: Motion/HR + Pose/Face Landmarker → posture/yawn advisory
                                                 → Rule Engine v2 → UI/report
 ```
+
+## ✅ Kiểm thử hệ thống
+
+> **Recorded System Test: 24 / 24 test cases PASS — 100%**
+>
+> Kiểm thử trên ESP32-S3 + OV2640 + Galaxy Watch 5 Pro + Web Dashboard,
+> thực hiện ngày 28–29/08/2026.
+
+| Kết quả | Số lượng |
+|---|---:|
+| ✅ Passed | **24** |
+| ❌ Failed | **0** |
+| ⏸ Not tested | **0** |
+| **Pass rate** | **100%** |
+
+**Phạm vi kiểm thử:** ESP32 → Wi-Fi → Camera → Web Dashboard → AI
+Posture/Yawn → Watch Alert → Session → Report → Reconnect → Long-session.
+
+```text
+ESP32-S3
+   ├─ Boot / Wi-Fi / OV2640 ................. PASS
+   ▼
+Web Dashboard
+   ├─ Camera stream / Posture AI / Yawn AI .. PASS
+   ▼
+Galaxy Watch
+   ├─ Connection / Alert / Session .......... PASS
+   ▼
+End-to-End
+   └─ Events / Report / Reconnect / Soak .... PASS
+
+TOTAL: 24 / 24 PASS
+```
+
+- 📋 [Ma trận 24 test cases và evidence trực tiếp](tests/FocusMate_Test/TEST_MATRIX.md)
+- 📸 [Toàn bộ ảnh/video bằng chứng](tests/FocusMate_Test/Evidence/)
+- 📑 [Bản Excel kiểm thử](tests/FocusMate_Test/Excel/FocusMate_24_Test_Cases_Severity.xlsx)
+
+Test suite xác minh các kịch bản chức năng đã được tài liệu hóa. Kết quả này
+không phải tuyên bố tổng quát về độ chính xác AI, y tế, nhiệt độ hoặc độ tin cậy
+dài hạn; các giới hạn đó tiếp tục được công bố trong [STATUS.md](docs/STATUS.md).
 
 ## Điểm nổi bật
 
