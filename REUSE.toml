@@ -4,7 +4,7 @@ SPDX-PackageSupplier = "Person: vietdo1201"
 SPDX-PackageDownloadLocation = "https://github.com/vietdo1201/FocusMate"
 
 [[annotations]]
-path = ["**/*.md", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.json", "**/*.csv", "**/*.lockfile", "**/.gitignore", ".gitignore", "help.txt"]
+path = ["**/*.md", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.mp4", "**/*.xlsx", "**/*.json", "**/*.csv", "**/*.lockfile", "**/.gitignore", ".gitignore", "help.txt"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 vietdo1201"
 SPDX-License-Identifier = "Apache-2.0"
