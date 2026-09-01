@@ -34,7 +34,7 @@ Galaxy Watch: Motion/HR + Pose/Face Landmarker → posture/yawn advisory
 | **Pass rate** | **100%** |
 
 **Phạm vi kiểm thử:** ESP32 → Wi-Fi → Camera → Web Dashboard → AI
-Posture/Yawn → Watch Alert → Session → Report → Reconnect → Long-session.
+Posture/Yawn → Watch Alert → Session → Report → Reconnect → phiên 61 phút đã ghi nhận.
 
 ```text
 ESP32-S3
@@ -47,7 +47,7 @@ Galaxy Watch
    ├─ Connection / Alert / Session .......... PASS
    ▼
 End-to-End
-   └─ Events / Report / Reconnect / Soak .... PASS
+   └─ Events / Report / Reconnect / phiên 61 phút ... PASS
 
 TOTAL: 24 / 24 PASS
 ```

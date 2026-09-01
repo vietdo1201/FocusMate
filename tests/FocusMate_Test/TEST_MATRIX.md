@@ -9,13 +9,17 @@ Kết quả dưới đây xác minh các kịch bản chức năng đã được
 phải tuyên bố tổng quát về độ chính xác AI, y tế, nhiệt độ hoặc độ tin cậy dài
 hạn.
 
+Phân loại: `RECORDED_FUNCTIONAL_TEST`. Bộ test này không tự động nâng posture,
+yawn, frame transport hoặc soak lên `VERIFIED_DEVICE`; các evidence gate còn
+thiếu được ghi trong [STATUS.md](../../docs/STATUS.md).
+
 ## Bằng chứng nổi bật
 
 | Luồng quan trọng | Kết quả | Evidence |
 |---|---|---|
 | Camera ESP32 → Web | ✅ PASS | [TC05](Evidence/TC05_camera_web.png) |
 | AI nhận diện posture | ✅ PASS | [TC08](Evidence/TC08_head_down.png) |
-| AI phát hiện ngáp | ✅ PASS | [TC12](Evidence/TC12_yawn..png) |
+| AI phát hiện ngáp | ✅ PASS | [TC12](Evidence/TC12_yawn.png) |
 | Watch nhận cảnh báo/rung | ✅ PASS | [Video](Evidence/Test_rungnhe_canhbao_ngap.mp4) |
 | Mất kết nối → reconnect | ✅ PASS | [Disconnect](Evidence/TC21_Dis.mp4) · [Reconnect](Evidence/TC22_Reconnect.mp4) |
 | Phiên dài → báo cáo | ✅ PASS | [Video](Evidence/TC24_KetThucPhienDongHo.mp4) |
@@ -35,7 +39,7 @@ hạn.
 | TC09 | Phát hiện nghiêng trái | ✅ PASS | AI / Web | [Ảnh](Evidence/TC09_tilt_left.png) |
 | TC10 | Phát hiện nghiêng phải | ✅ PASS | AI / Web | [Ảnh](Evidence/TC10_tilt_right.png) |
 | TC11 | Phát hiện ngồi quá gần | ✅ PASS | AI / Web | [Ảnh](Evidence/TC11_slouch.png) |
-| TC12 | Phát hiện ngáp | ✅ PASS | AI / Web | [Ảnh](Evidence/TC12_yawn..png) |
+| TC12 | Phát hiện ngáp | ✅ PASS | AI / Web | [Ảnh](Evidence/TC12_yawn.png) |
 | TC13 | Không cảnh báo sai khi bình thường | ✅ PASS | AI / Web | [Video 60 giây](Evidence/TC_13.mp4) |
 | TC14 | 100 inference liên tục, 0 lỗi | ✅ PASS | ESP32 / AI | [Ảnh log](Evidence/TC14_ai_repeated.png) |
 | TC15 | Kích hoạt cảnh báo trạng thái | ✅ PASS | Full system | [Video](Evidence/test_canhbao.mp4) |

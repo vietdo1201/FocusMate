@@ -1,11 +1,18 @@
 # Trạng thái dự án
 
-Ngày kiểm chứng tài liệu: 2026-08-28. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
+Ngày kiểm chứng tài liệu: 2026-09-01. Ý nghĩa trạng thái xem [GOVERNANCE.md](GOVERNANCE.md).
 
 Release `v2.2.2` đồng bộ Watch `versionCode 25`/`versionName 2.2.2`, firmware
 descriptor `2.2.2`, SBOM và tên artifact. Build/test tự động áp dụng cho đúng tag;
 không có Watch/ESP tại thời điểm phát hành nên artifact chính xác chưa được cài/
 flash lại. Bằng chứng thiết bị gần nhất và giới hạn xem trong các report lịch sử.
+
+Bộ kiểm thử hệ thống được ghi nhận ngày 28–29/08/2026 với kết quả `24/24
+PASS`. Đây là `RECORDED_FUNCTIONAL_TEST` cho các kịch bản đã ghi trong [ma
+trận test](../tests/FocusMate_Test/TEST_MATRIX.md), không tự động nâng posture,
+yawn, frame transport hoặc soak lên `VERIFIED_DEVICE`. Các giới hạn về accuracy
+người thật, false-positive, low-light, thermal 30 phút và soak 2 giờ vẫn giữ
+nguyên cho tới khi có report thiết bị đáp ứng đủ evidence gate.
 
 Thiết bị của hồ sơ: Galaxy Watch 5 Pro (Wear OS, API ≥ 33) + ESP32-S3 N16R8 + OV2640. Định nghĩa nằm trong [ROADMAP.md](../wear/ROADMAP.md). `VERIFIED_DEVICE` chỉ được cấp cho hạng mục đã chạy trên đúng cặp thiết bị này và có report trong `reports/`.
 
