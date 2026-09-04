@@ -22,7 +22,7 @@
   <a href="REUSE.toml"><img src="https://img.shields.io/badge/REUSE-compliant-informational.svg" alt="REUSE compliant"></a>
 </p>
 
-<table width="100%">
+<table align="center">
   <tr>
     <td align="center" width="33%"><strong>100% local</strong><br><sub>No camera or health<br>cloud upload</sub></td>
     <td align="center" width="34%"><strong>Wear OS + ESP32</strong><br><sub>Real cross-device<br>prototype</sub></td>
