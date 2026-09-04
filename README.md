@@ -1,14 +1,36 @@
-# FocusMate — trợ lý tập trung local-first
+<p align="center">
+  <img src="docs/assets/focusmate-logo.svg" width="112" alt="FocusMate logo chữ F">
+</p>
 
-[![Verify](https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml/badge.svg)](https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml)
-[![System Test: 24/24 PASS](https://img.shields.io/badge/System%20Test-24%2F24%20PASS-brightgreen.svg)](tests/FocusMate_Test/TEST_MATRIX.md)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![REUSE](https://img.shields.io/badge/REUSE-compliant-informational.svg)](REUSE.toml)
+<h1 align="center">FocusMate</h1>
 
-FocusMate là phần mềm nguồn mở kết hợp **Galaxy Watch 5 Pro** và
-**ESP32-S3 N16R8 + OV2640** để hỗ trợ phiên học. Toàn bộ camera, AI, cảm biến và
-quyết định nhắc nghỉ chạy cục bộ; dự án không tải ảnh hoặc dữ liệu sức khỏe lên
-cloud.
+<p align="center"><strong>A local-first focus coach for WearOS and ESP32-S3.</strong></p>
+<p align="center">Theo dõi tư thế, ngáp và nhắc nghỉ — xử lý hoàn toàn trên thiết bị nhỏ gọn</p>
+
+<p align="center">
+  <a href="docs/DEMO.md"><strong>Watch demo</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/vietdo1201/FocusMate/releases/latest"><strong>Download release</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#how-it-works"><strong>How it works</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml"><img src="https://github.com/vietdo1201/FocusMate/actions/workflows/verify.yml/badge.svg" alt="Verify"></a>
+  <a href="tests/FocusMate_Test/TEST_MATRIX.md"><img src="https://img.shields.io/badge/System%20Test-24%2F24%20PASS-brightgreen.svg" alt="System Test: 24/24 PASS"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="REUSE.toml"><img src="https://img.shields.io/badge/REUSE-compliant-informational.svg" alt="REUSE compliant"></a>
+</p>
+
+<table>
+  <tr>
+    <td align="center" width="33%"><strong>100% local</strong><br><sub>No camera or health<br>cloud upload</sub></td>
+    <td align="center" width="34%"><strong>Wear OS + ESP32</strong><br><sub>Real cross-device<br>prototype</sub></td>
+    <td align="center" width="33%"><strong>Reproducible</strong><br><sub>Pinned models, SBOM<br>and tests</sub></td>
+  </tr>
+</table>
+
+## How it works
 
 ```text
 OV2640 → ESP32-S3: camera + face landmarks + Web dashboard
