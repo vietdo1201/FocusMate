@@ -5,6 +5,7 @@
 **/.cxx/
 **/captures/
 **/__pycache__/
+node_modules/
 .claude/
 
 # Machine-local IDE and SDK configuration
