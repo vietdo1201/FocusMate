@@ -43,10 +43,11 @@ def main() -> None:
         ":app:assembleRelease",
     ], ROOT / "wear")
     if not args.no_firmware:
-        if shutil.which("idf.py") is None:
+        idf = shutil.which("idf.py")
+        if idf is None:
             raise RuntimeError("idf.py is not available; activate ESP-IDF or use the platform wrapper")
-        run(["idf.py", "-C", "firmware", "fullclean"])
-        run(["idf.py", "-C", "firmware", "build"])
+        run([idf, "-C", "firmware", "fullclean"])
+        run([idf, "-C", "firmware", "build"])
 
 
 if __name__ == "__main__":
