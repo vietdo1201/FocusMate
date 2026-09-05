@@ -19,7 +19,14 @@ Sau khi đặt các biến môi trường:
 ./release.ps1
 ```
 
-APK signed được tạo tại `wear/app/build/outputs/apk/release/app-release.apk`.
+Script chạy bootstrap hash-pinned trước Gradle. Bản thân Gradle cũng chạy
+`:app:verifyWearModels` trước đóng gói, nên model thiếu/sai hash không thể âm thầm
+tạo APK. APK signed được tạo tại
+`wear/app/build/outputs/apk/release/app-release.apk`.
+
+Build kiểm tra từ source không cần signing key của tác giả: chạy bootstrap rồi
+`:app:assembleDebug` hoặc `:app:assembleRelease`; bản release không có bốn biến
+trên là unsigned và chỉ dùng để xác minh build.
 
 ## Cài lên Galaxy Watch
 

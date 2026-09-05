@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val repositoryRoot = rootProject.projectDir.parentFile
+val modelAssetDir = layout.projectDirectory.dir("src/main/assets/generated").asFile
+val modelVerifier = repositoryRoot.resolve("tools/verify_model_assets.py")
+val pinnedAssetManifest = repositoryRoot.resolve("tools/pinned_assets.json")
+val pythonCommand = providers.gradleProperty("focusmatePython").orNull
+    ?: System.getenv("PYTHON")
+    ?: "python"
+
 val releaseStoreFile = providers.environmentVariable("FOCUSMATE_RELEASE_STORE_FILE").orNull
 val releaseStorePassword = providers.environmentVariable("FOCUSMATE_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("FOCUSMATE_RELEASE_KEY_ALIAS").orNull
@@ -95,4 +103,22 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.16.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+}
+
+val verifyWearModels by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Fails when hash-pinned MediaPipe model assets are missing or modified."
+    inputs.file(pinnedAssetManifest)
+    commandLine(
+        pythonCommand,
+        modelVerifier.absolutePath,
+        "--manifest",
+        pinnedAssetManifest.absolutePath,
+        "--asset-dir",
+        modelAssetDir.absolutePath,
+    )
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(verifyWearModels)
 }

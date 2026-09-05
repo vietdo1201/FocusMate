@@ -3,7 +3,7 @@
 ## Yêu cầu
 
 - Python 3.11 trở lên, Node.js 20 trở lên và Git.
-- JDK 17 + Android SDK cho Wear OS.
+- JDK 17 + Android SDK có platform API 35 (`compileSdk 35`) cho Wear OS.
 - ESP-IDF 5.5.5 cho ESP32-S3.
 
 ## Chuẩn bị artifact AI
@@ -14,7 +14,8 @@ python tools/bootstrap_assets.py
 
 Script tải MediaPipe Tasks Vision, Pose Landmarker Lite và Face Landmarker từ
 URL cố định, xác minh SHA-256 rồi tạo asset Android/firmware. Hash sai làm build
-dừng; app/firmware không tải model lúc runtime.
+dừng; app/firmware không tải model lúc runtime. Metadata URL/hash duy nhất nằm
+trong `tools/pinned_assets.json`.
 
 ## Android/Wear
 
@@ -24,7 +25,10 @@ cd wear
 ```
 
 Trên Windows dùng `gradlew.bat`. Release signing chỉ đọc biến môi trường, không
-đọc keystore hoặc mật khẩu từ repository.
+đọc keystore hoặc mật khẩu từ repository. Task `:app:verifyWearModels` được nối
+vào `preBuild`, nên Gradle dừng với hướng dẫn bootstrap nếu model thiếu hoặc sai
+hash, kể cả khi người dùng gọi Gradle trực tiếp. APK hiện chỉ đóng
+`armeabi-v7a`; target thiết bị đã ghi nhận là Galaxy Watch 5 Pro SM-R925F.
 
 ## ESP32-S3
 

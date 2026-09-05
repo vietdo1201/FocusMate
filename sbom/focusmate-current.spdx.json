@@ -1,0 +1,1831 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "FocusMate-current-runtime-audit",
+  "documentNamespace": "https://github.com/vietdo1201/FocusMate/tree/main#spdx-current-runtime-audit",
+  "creationInfo": {
+    "created": "2026-09-06T00:00:00Z",
+    "creators": [
+      "Tool: FocusMate-tools-generate-sbom-2.0",
+      "Person: vietdo1201"
+    ],
+    "licenseListVersion": "3.25",
+    "comment": "Includes Android releaseRuntimeClasspath plus direct pinned firmware components and AI assets. The transitive firmware-component license audit is incomplete; unknown licenses remain NOASSERTION."
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-FocusMate",
+      "name": "FocusMate",
+      "versionInfo": "2.2.2-current-audit",
+      "downloadLocation": "https://github.com/vietdo1201/FocusMate",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0 AND MIT",
+      "licenseDeclared": "Apache-2.0 AND MIT",
+      "copyrightText": "Copyright 2026 vietdo1201",
+      "supplier": "Person: vietdo1201",
+      "comment": "Current audit draft; not a replacement for the historical v2.2.2 release SBOM."
+    },
+    {
+      "SPDXID": "SPDXRef-Package--mediapipe-tasks-vision-1.0.1",
+      "name": "@mediapipe/tasks-vision",
+      "versionInfo": "1.0.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/%40mediapipe/tasks-vision@1.0.1"
+        }
+      ],
+      "comment": "License evidence for 1.0.1: https://registry.npmjs.org/@mediapipe/tasks-vision/-/tasks-vision-1.0.1.tgz (package/package.json license field in the hash-pinned tarball)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.activity-activity-1.1.0",
+      "name": "androidx.activity:activity",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.activity/activity@1.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.annotation-annotation-1.8.1",
+      "name": "androidx.annotation:annotation",
+      "versionInfo": "1.8.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.annotation/annotation@1.8.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.annotation-annotation-experimental-1.3.0",
+      "name": "androidx.annotation:annotation-experimental",
+      "versionInfo": "1.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.annotation/annotation-experimental@1.3.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.annotation-annotation-jvm-1.8.1",
+      "name": "androidx.annotation:annotation-jvm",
+      "versionInfo": "1.8.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.annotation/annotation-jvm@1.8.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.arch.core-core-common-2.1.0",
+      "name": "androidx.arch.core:core-common",
+      "versionInfo": "2.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.arch.core/core-common@2.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.arch.core-core-runtime-2.1.0",
+      "name": "androidx.arch.core:core-runtime",
+      "versionInfo": "2.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.arch.core/core-runtime@2.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.collection-collection-1.1.0",
+      "name": "androidx.collection:collection",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.collection/collection@1.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.concurrent-concurrent-futures-1.1.0",
+      "name": "androidx.concurrent:concurrent-futures",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.concurrent/concurrent-futures@1.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.concurrent-concurrent-futures-ktx-1.1.0",
+      "name": "androidx.concurrent:concurrent-futures-ktx",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.concurrent/concurrent-futures-ktx@1.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.core-core-1.12.0",
+      "name": "androidx.core:core",
+      "versionInfo": "1.12.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.core/core@1.12.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.core-core-ktx-1.12.0",
+      "name": "androidx.core:core-ktx",
+      "versionInfo": "1.12.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.core/core-ktx@1.12.0"
+        }
+      ],
+      "comment": "License evidence for 1.12.0: https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.12.0/core-ktx-1.12.0.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.customview-customview-1.0.0",
+      "name": "androidx.customview:customview",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.customview/customview@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.documentfile-documentfile-1.0.0",
+      "name": "androidx.documentfile:documentfile",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.documentfile/documentfile@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.dynamicanimation-dynamicanimation-1.0.0",
+      "name": "androidx.dynamicanimation:dynamicanimation",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.dynamicanimation/dynamicanimation@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.fragment-fragment-1.2.4",
+      "name": "androidx.fragment:fragment",
+      "versionInfo": "1.2.4",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.fragment/fragment@1.2.4"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.health-health-services-client-1.0.0",
+      "name": "androidx.health:health-services-client",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.health/health-services-client@1.0.0"
+        }
+      ],
+      "comment": "License evidence for 1.0.0: https://dl.google.com/dl/android/maven2/androidx/health/health-services-client/1.0.0/health-services-client-1.0.0.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.interpolator-interpolator-1.0.0",
+      "name": "androidx.interpolator:interpolator",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.interpolator/interpolator@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.legacy-legacy-support-core-utils-1.0.0",
+      "name": "androidx.legacy:legacy-support-core-utils",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.legacy/legacy-support-core-utils@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-common-2.5.1",
+      "name": "androidx.lifecycle:lifecycle-common",
+      "versionInfo": "2.5.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-common@2.5.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-livedata-2.5.1",
+      "name": "androidx.lifecycle:lifecycle-livedata",
+      "versionInfo": "2.5.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-livedata@2.5.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-livedata-core-2.5.1",
+      "name": "androidx.lifecycle:lifecycle-livedata-core",
+      "versionInfo": "2.5.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-livedata-core@2.5.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-runtime-2.5.1",
+      "name": "androidx.lifecycle:lifecycle-runtime",
+      "versionInfo": "2.5.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-runtime@2.5.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-service-2.5.1",
+      "name": "androidx.lifecycle:lifecycle-service",
+      "versionInfo": "2.5.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-service@2.5.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-viewmodel-2.2.0",
+      "name": "androidx.lifecycle:lifecycle-viewmodel",
+      "versionInfo": "2.2.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-viewmodel@2.2.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.lifecycle-lifecycle-viewmodel-savedstate-2.2.0",
+      "name": "androidx.lifecycle:lifecycle-viewmodel-savedstate",
+      "versionInfo": "2.2.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.lifecycle/lifecycle-viewmodel-savedstate@2.2.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.loader-loader-1.0.0",
+      "name": "androidx.loader:loader",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.loader/loader@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.localbroadcastmanager-localbroadcastmanager-1.0.0",
+      "name": "androidx.localbroadcastmanager:localbroadcastmanager",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.localbroadcastmanager/localbroadcastmanager@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.print-print-1.0.0",
+      "name": "androidx.print:print",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.print/print@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.recyclerview-recyclerview-1.1.0",
+      "name": "androidx.recyclerview:recyclerview",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.recyclerview/recyclerview@1.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.room-room-common-2.5.0",
+      "name": "androidx.room:room-common",
+      "versionInfo": "2.5.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.room/room-common@2.5.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.room-room-ktx-2.5.0",
+      "name": "androidx.room:room-ktx",
+      "versionInfo": "2.5.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.room/room-ktx@2.5.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.room-room-runtime-2.5.0",
+      "name": "androidx.room:room-runtime",
+      "versionInfo": "2.5.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.room/room-runtime@2.5.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.savedstate-savedstate-1.0.0",
+      "name": "androidx.savedstate:savedstate",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.savedstate/savedstate@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.sqlite-sqlite-2.3.0",
+      "name": "androidx.sqlite:sqlite",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.sqlite/sqlite@2.3.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.sqlite-sqlite-framework-2.3.0",
+      "name": "androidx.sqlite:sqlite-framework",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.sqlite/sqlite-framework@2.3.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.startup-startup-runtime-1.1.1",
+      "name": "androidx.startup:startup-runtime",
+      "versionInfo": "1.1.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.startup/startup-runtime@1.1.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.swiperefreshlayout-swiperefreshlayout-1.0.0",
+      "name": "androidx.swiperefreshlayout:swiperefreshlayout",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.swiperefreshlayout/swiperefreshlayout@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.tracing-tracing-1.0.0",
+      "name": "androidx.tracing:tracing",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.tracing/tracing@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.versionedparcelable-versionedparcelable-1.1.1",
+      "name": "androidx.versionedparcelable:versionedparcelable",
+      "versionInfo": "1.1.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.versionedparcelable/versionedparcelable@1.1.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.viewpager-viewpager-1.0.0",
+      "name": "androidx.viewpager:viewpager",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.viewpager/viewpager@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.wear-wear-1.3.0",
+      "name": "androidx.wear:wear",
+      "versionInfo": "1.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.wear/wear@1.3.0"
+        }
+      ],
+      "comment": "License evidence for 1.3.0: https://dl.google.com/dl/android/maven2/androidx/wear/wear/1.3.0/wear-1.3.0.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.wear-wear-ongoing-1.1.0",
+      "name": "androidx.wear:wear-ongoing",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.wear/wear-ongoing@1.1.0"
+        }
+      ],
+      "comment": "License evidence for 1.1.0: https://dl.google.com/dl/android/maven2/androidx/wear/wear-ongoing/1.1.0/wear-ongoing-1.1.0.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-androidx.work-work-runtime-2.9.1",
+      "name": "androidx.work:work-runtime",
+      "versionInfo": "2.9.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/androidx.work/work-runtime@2.9.1"
+        }
+      ],
+      "comment": "License evidence for 2.9.1: https://dl.google.com/dl/android/maven2/androidx/work/work-runtime/2.9.1/work-runtime-2.9.1.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.android.datatransport-transport-api-3.0.0",
+      "name": "com.google.android.datatransport:transport-api",
+      "versionInfo": "3.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.android.datatransport/transport-api@3.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.android.datatransport-transport-backend-cct-3.1.0",
+      "name": "com.google.android.datatransport:transport-backend-cct",
+      "versionInfo": "3.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.android.datatransport/transport-backend-cct@3.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.android.datatransport-transport-runtime-3.1.0",
+      "name": "com.google.android.datatransport:transport-runtime",
+      "versionInfo": "3.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.android.datatransport/transport-runtime@3.1.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.code.findbugs-jsr305-3.0.2",
+      "name": "com.google.code.findbugs:jsr305",
+      "versionInfo": "3.0.2",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.code.findbugs/jsr305@3.0.2"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.errorprone-error-prone-annotations-2.11.0",
+      "name": "com.google.errorprone:error_prone_annotations",
+      "versionInfo": "2.11.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.errorprone/error_prone_annotations@2.11.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.firebase-firebase-encoders-17.0.0",
+      "name": "com.google.firebase:firebase-encoders",
+      "versionInfo": "17.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.firebase/firebase-encoders@17.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.firebase-firebase-encoders-json-18.0.0",
+      "name": "com.google.firebase:firebase-encoders-json",
+      "versionInfo": "18.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.firebase/firebase-encoders-json@18.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.firebase-firebase-encoders-proto-16.0.0",
+      "name": "com.google.firebase:firebase-encoders-proto",
+      "versionInfo": "16.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.firebase/firebase-encoders-proto@16.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.flogger-flogger-0.6",
+      "name": "com.google.flogger:flogger",
+      "versionInfo": "0.6",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.flogger/flogger@0.6"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.flogger-flogger-system-backend-0.6",
+      "name": "com.google.flogger:flogger-system-backend",
+      "versionInfo": "0.6",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.flogger/flogger-system-backend@0.6"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.guava-failureaccess-1.0.1",
+      "name": "com.google.guava:failureaccess",
+      "versionInfo": "1.0.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.guava/failureaccess@1.0.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.guava-guava-31.1-android",
+      "name": "com.google.guava:guava",
+      "versionInfo": "31.1-android",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.guava/guava@31.1-android"
+        }
+      ],
+      "comment": "License evidence for 31.1-android: https://repo.maven.apache.org/maven2/com/google/guava/guava-parent/31.1-android/guava-parent-31.1-android.pom (version-matched parent POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.guava-listenablefuture-9999.0-empty-to-avoid-conflict-with-guava",
+      "name": "com.google.guava:listenablefuture",
+      "versionInfo": "9999.0-empty-to-avoid-conflict-with-guava",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.guava/listenablefuture@9999.0-empty-to-avoid-conflict-with-guava"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.j2objc-j2objc-annotations-1.3",
+      "name": "com.google.j2objc:j2objc-annotations",
+      "versionInfo": "1.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.j2objc/j2objc-annotations@1.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.mediapipe-tasks-core-1.0.0",
+      "name": "com.google.mediapipe:tasks-core",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.mediapipe/tasks-core@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.mediapipe-tasks-vision-1.0.0",
+      "name": "com.google.mediapipe:tasks-vision",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.mediapipe/tasks-vision@1.0.0"
+        }
+      ],
+      "comment": "License evidence for 1.0.0: https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-vision/1.0.0/tasks-vision-1.0.0.pom (POM licenses/license)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-com.google.protobuf-protobuf-javalite-4.26.1",
+      "name": "com.google.protobuf:protobuf-javalite",
+      "versionInfo": "4.26.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/com.google.protobuf/protobuf-javalite@4.26.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-espressif-esp-dl-3.3.9",
+      "name": "espressif/esp-dl",
+      "versionInfo": "3.3.9",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/espressif/esp-dl@3.3.9"
+        }
+      ],
+      "comment": "License evidence for 3.3.9: https://github.com/espressif/esp-dl/blob/12c0616de145b704e1149c474b9a1e852e631d67/LICENSE (component manifest version and repository commit plus upstream LICENSE)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-espressif-esp32-camera-2.1.7",
+      "name": "espressif/esp32-camera",
+      "versionInfo": "2.1.7",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/espressif/esp32-camera@2.1.7"
+        }
+      ],
+      "comment": "License evidence for 2.1.7: https://github.com/espressif/esp32-camera/blob/202df95d7b1dc72e9303ad78f47b8dc9f339e6a1/LICENSE (component manifest version and repository commit plus upstream LICENSE)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-espressif-human-face-detect-0.5.0",
+      "name": "espressif/human_face_detect",
+      "versionInfo": "0.5.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/espressif/human_face_detect@0.5.0"
+        }
+      ],
+      "comment": "License evidence for 0.5.0: https://github.com/espressif/esp-dl/blob/f43b41fd533da882382f9cd3ef305c829c138189/LICENSE (component manifest version and repository commit plus upstream LICENSE)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-espressif-mdns-1.9.1",
+      "name": "espressif/mdns",
+      "versionInfo": "1.9.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/espressif/mdns@1.9.1"
+        }
+      ],
+      "comment": "License evidence for 1.9.1: https://github.com/espressif/esp-protocols/blob/3bfa00389de6f0d6d40efda8bea808380899a43d/components/mdns/LICENSE (component manifest version and repository commit plus upstream LICENSE)"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-javax.inject-javax.inject-1",
+      "name": "javax.inject:javax.inject",
+      "versionInfo": "1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/javax.inject/javax.inject@1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mediapipe-face-landmarker-float16-1",
+      "name": "mediapipe/face-landmarker-float16",
+      "versionInfo": "1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/mediapipe/face-landmarker-float16@1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mediapipe-pose-landmarker-lite-float16-1",
+      "name": "mediapipe/pose-landmarker-lite-float16",
+      "versionInfo": "1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/mediapipe/pose-landmarker-lite-float16@1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.checkerframework-checker-compat-qual-2.5.3",
+      "name": "org.checkerframework:checker-compat-qual",
+      "versionInfo": "2.5.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.checkerframework/checker-compat-qual@2.5.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.checkerframework-checker-qual-3.12.0",
+      "name": "org.checkerframework:checker-qual",
+      "versionInfo": "3.12.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.checkerframework/checker-qual@3.12.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains-annotations-23.0.0",
+      "name": "org.jetbrains:annotations",
+      "versionInfo": "23.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains/annotations@23.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-2.2.20",
+      "name": "org.jetbrains.kotlin:kotlin-stdlib",
+      "versionInfo": "2.2.20",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlin/kotlin-stdlib@2.2.20"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-common-2.2.20",
+      "name": "org.jetbrains.kotlin:kotlin-stdlib-common",
+      "versionInfo": "2.2.20",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlin/kotlin-stdlib-common@2.2.20"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-jdk7-1.8.20",
+      "name": "org.jetbrains.kotlin:kotlin-stdlib-jdk7",
+      "versionInfo": "1.8.20",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlin/kotlin-stdlib-jdk7@1.8.20"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-jdk8-1.8.20",
+      "name": "org.jetbrains.kotlin:kotlin-stdlib-jdk8",
+      "versionInfo": "1.8.20",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlin/kotlin-stdlib-jdk8@1.8.20"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-android-1.7.1",
+      "name": "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+      "versionInfo": "1.7.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlinx/kotlinx-coroutines-android@1.7.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-bom-1.7.1",
+      "name": "org.jetbrains.kotlinx:kotlinx-coroutines-bom",
+      "versionInfo": "1.7.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlinx/kotlinx-coroutines-bom@1.7.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-core-1.7.1",
+      "name": "org.jetbrains.kotlinx:kotlinx-coroutines-core",
+      "versionInfo": "1.7.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlinx/kotlinx-coroutines-core@1.7.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-core-jvm-1.7.1",
+      "name": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm",
+      "versionInfo": "1.7.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm@1.7.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.json-json-20240303",
+      "name": "org.json:json",
+      "versionInfo": "20240303",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.json/json@20240303"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-org.jspecify-jspecify-1.0.0",
+      "name": "org.jspecify:jspecify",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.jspecify/jspecify@1.0.0"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-FocusMate"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package--mediapipe-tasks-vision-1.0.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.activity-activity-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.annotation-annotation-1.8.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.annotation-annotation-experimental-1.3.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.annotation-annotation-jvm-1.8.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.arch.core-core-common-2.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.arch.core-core-runtime-2.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.collection-collection-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.concurrent-concurrent-futures-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.concurrent-concurrent-futures-ktx-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.core-core-1.12.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.core-core-ktx-1.12.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.customview-customview-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.documentfile-documentfile-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.dynamicanimation-dynamicanimation-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.fragment-fragment-1.2.4"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.health-health-services-client-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.interpolator-interpolator-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.legacy-legacy-support-core-utils-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-common-2.5.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-livedata-2.5.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-livedata-core-2.5.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-runtime-2.5.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-service-2.5.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-viewmodel-2.2.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.lifecycle-lifecycle-viewmodel-savedstate-2.2.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.loader-loader-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.localbroadcastmanager-localbroadcastmanager-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.print-print-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.recyclerview-recyclerview-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.room-room-common-2.5.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.room-room-ktx-2.5.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.room-room-runtime-2.5.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.savedstate-savedstate-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.sqlite-sqlite-2.3.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.sqlite-sqlite-framework-2.3.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.startup-startup-runtime-1.1.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.swiperefreshlayout-swiperefreshlayout-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.tracing-tracing-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.versionedparcelable-versionedparcelable-1.1.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.viewpager-viewpager-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.wear-wear-1.3.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.wear-wear-ongoing-1.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-androidx.work-work-runtime-2.9.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.android.datatransport-transport-api-3.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.android.datatransport-transport-backend-cct-3.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.android.datatransport-transport-runtime-3.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.code.findbugs-jsr305-3.0.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.errorprone-error-prone-annotations-2.11.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.firebase-firebase-encoders-17.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.firebase-firebase-encoders-json-18.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.firebase-firebase-encoders-proto-16.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.flogger-flogger-0.6"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.flogger-flogger-system-backend-0.6"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.guava-failureaccess-1.0.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.guava-guava-31.1-android"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.guava-listenablefuture-9999.0-empty-to-avoid-conflict-with-guava"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.j2objc-j2objc-annotations-1.3"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.mediapipe-tasks-core-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.mediapipe-tasks-vision-1.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-com.google.protobuf-protobuf-javalite-4.26.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-espressif-esp-dl-3.3.9"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-espressif-esp32-camera-2.1.7"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-espressif-human-face-detect-0.5.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-espressif-mdns-1.9.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-javax.inject-javax.inject-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-mediapipe-face-landmarker-float16-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-mediapipe-pose-landmarker-lite-float16-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.checkerframework-checker-compat-qual-2.5.3"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.checkerframework-checker-qual-3.12.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains-annotations-23.0.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-2.2.20"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-common-2.2.20"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-jdk7-1.8.20"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlin-kotlin-stdlib-jdk8-1.8.20"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-android-1.7.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-bom-1.7.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-core-1.7.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jetbrains.kotlinx-kotlinx-coroutines-core-jvm-1.7.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.json-json-20240303"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FocusMate",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-org.jspecify-jspecify-1.0.0"
+    }
+  ]
+}

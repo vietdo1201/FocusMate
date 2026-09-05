@@ -8,7 +8,9 @@
 <p align="center">Theo dõi tư thế, ngáp và nhắc nghỉ — xử lý hoàn toàn trên thiết bị nhỏ gọn</p>
 
 <p align="center">
-  <a href="docs/DEMO.md"><strong>Watch demo</strong></a>
+  <a href="tests/FocusMate_Test/Evidence/TC24_KetThucPhienDongHo.mp4"><strong>Watch demo video</strong></a>
+  &nbsp;·&nbsp;
+  <a href="docs/DEMO.md"><strong>Demo script</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/vietdo1201/FocusMate/releases/latest"><strong>Download release</strong></a>
   &nbsp;·&nbsp;
@@ -78,6 +80,9 @@ TOTAL: 24 / 24 PASS
 - 📸 [Toàn bộ ảnh/video bằng chứng](tests/FocusMate_Test/Evidence/)
 - 📑 [Bản Excel kiểm thử](tests/FocusMate_Test/Excel/FocusMate_24_Test_Cases_Severity.xlsx)
 
+Video evidence được quản lý bằng Git LFS. Sau khi clone, chạy `git lfs pull`
+nếu trình xem chỉ nhận được tệp pointer thay vì video hoàn chỉnh.
+
 Test suite xác minh các kịch bản chức năng đã được tài liệu hóa. Kết quả này
 không phải tuyên bố tổng quát về độ chính xác AI, y tế, nhiệt độ hoặc độ tin cậy
 dài hạn; các giới hạn đó tiếp tục được công bố trong [STATUS.md](docs/STATUS.md).
@@ -99,7 +104,9 @@ dài hạn; các giới hạn đó tiếp tục được công bố trong [STATU
 
 ## Build từ mã nguồn
 
-Yêu cầu: Python 3.11+, Node.js 20+, JDK 17, Android SDK và ESP-IDF 5.5.5.
+Yêu cầu: Python 3.11+, Node.js 20+, JDK 17, Android SDK có API 35 và
+ESP-IDF 5.5.5. APK hiện chỉ đóng ABI `armeabi-v7a`, khớp ảnh kiểm thử
+Galaxy Watch 5 Pro SM-R925F; chưa tuyên bố đã kiểm thử ABI/model Watch khác.
 
 ```powershell
 python tools/bootstrap_assets.py
@@ -151,8 +158,10 @@ benchmark trước–sau.
 
 Mã dự án dùng Apache-2.0, ngoại trừ component `focusmate_dns` dùng MIT. Mỗi tệp
 nguồn có SPDX; toàn văn giấy phép nằm trong `LICENSES/`. Dependency và model
-được liệt kê trong [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) và
-[SPDX SBOM](sbom/focusmate-v2.2.2.spdx.json).
+được liệt kê trong [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Giữ nguyên
+[SBOM lịch sử v2.2.2](sbom/focusmate-v2.2.2.spdx.json); đường sinh hiện tại tạo
+[bản audit runtime](sbom/focusmate-current.spdx.json) riêng và giữ
+`NOASSERTION` khi chưa có nguồn license đúng phiên bản.
 
 ## English summary
 

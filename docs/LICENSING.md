@@ -6,7 +6,14 @@ Model hoặc detector trước khi phân phối phải ghi nguồn, immutable re
 
 Face detector ESP tương lai phải có provenance đầy đủ. Interface posture shadow không cho phép thêm runtime/model mà bỏ qua review license. Dữ liệu synthetic phải ghi cách tạo; không đưa ảnh khuôn mặt hoặc dữ liệu nhận dạng vào fixture/report.
 
-Khi phân phối binary, tạo inventory từ lockfile, kiểm tra NOTICE/attribution và cập nhật `NOTICE` nếu cần.
+Khi phân phối binary, tạo inventory từ classpath runtime, kiểm tra
+NOTICE/attribution và cập nhật `NOTICE` nếu cần. `tools/generate_sbom.py` sinh
+`sbom/focusmate-current.spdx.json`, tách khỏi SBOM lịch sử `v2.2.2`. License chỉ
+được điền khi `sbom/license-provenance.json` có nguồn đúng package và đúng phiên
+bản; tên namespace như `androidx.*` hoặc `com.google.*` không phải bằng chứng.
+Dependency chưa rà giữ `NOASSERTION`, không được hiểu là không có license hoặc
+không thể sử dụng. Danh sách này là audit kỹ thuật đang tiến hành, không phải ý
+kiến hay kiểm toán pháp lý đầy đủ.
 
 ## MediaPipe Pose local
 
@@ -17,4 +24,10 @@ Artifact được phép đưa vào build thử nghiệm chỉ khi hash khớp co
 - Model: Pose Landmarker Lite float16 revision 1, SHA-256 `59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a`.
 - Model: Face Landmarker float16 revision 1, 3,758,596 bytes, SHA-256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`.
 
-Hash chỉ chứng minh artifact byte-exact, không tự chứng minh quyền phân phối. Trước release phải lưu trang/model card hoặc license đi kèm của đúng revision, SPDX, attribution/NOTICE và điều khoản redistribution vào inventory report. Thiếu bất kỳ mục nào thì model path vẫn `EXPERIMENTAL`, không `RELEASE_ELIGIBLE`.
+Hash chỉ chứng minh artifact byte-exact, không tự chứng minh quyền phân phối.
+Nguồn license package Android/Web đã xác minh được ghi theo phiên bản trong
+`sbom/license-provenance.json`; license của đúng byte model vẫn để
+`NOASSERTION` trong audit hiện tại cho tới khi lưu được nguồn phù hợp. Trước
+release phải lưu trang/model card hoặc license đi kèm của đúng revision, SPDX,
+attribution/NOTICE và điều khoản redistribution vào inventory report. Thiếu bất
+kỳ mục nào thì model path vẫn `EXPERIMENTAL`, không `RELEASE_ELIGIBLE`.

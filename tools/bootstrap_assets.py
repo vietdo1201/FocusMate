@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import gzip
-import hashlib
 import json
 import shutil
 import subprocess
@@ -15,34 +14,22 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
+try:
+    from .verify_model_assets import load_manifest, sha256
+except ImportError:  # Direct execution: python tools/bootstrap_assets.py
+    from verify_model_assets import load_manifest, sha256
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "firmware" / ".asset-cache"
 WEAR_ASSETS = ROOT / "wear" / "app" / "src" / "main" / "assets" / "generated"
 WEB_ASSETS = ROOT / "firmware" / "generated_web_assets"
-PACKAGE_VERSION = "1.0.1"
+PINNED_MANIFEST = load_manifest()
+PACKAGE_VERSION = PINNED_MANIFEST["tasksVisionVersion"]
 FILES = {
-    "tasks-vision-1.0.1.tgz": (
-        "https://registry.npmjs.org/@mediapipe/tasks-vision/-/tasks-vision-1.0.1.tgz",
-        "ee318eaa3d42230aa10910d114faf2a488c577c4e4d33c7cb04126924aca505f",
-    ),
-    "pose_landmarker_lite.task": (
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-        "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
-    ),
-    "face_landmarker.task": (
-        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-        "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
-    ),
+    name: (metadata["url"], metadata["sha256"])
+    for name, metadata in PINNED_MANIFEST["assets"].items()
 }
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def download(name: str, force: bool) -> Path:

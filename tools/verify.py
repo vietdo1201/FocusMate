@@ -20,6 +20,16 @@ def run(command: list[str], cwd: Path = ROOT) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
+def idf_command(idf_path: str | None = None, python_executable: str | None = None) -> list[str]:
+    """Return a shell-free command prefix that works for ESP-IDF Python entry points."""
+    resolved = idf_path if idf_path is not None else shutil.which("idf.py")
+    if resolved is None:
+        raise RuntimeError("idf.py is not available; activate ESP-IDF or use the platform wrapper")
+    if Path(resolved).suffix.casefold() == ".py":
+        return [python_executable or sys.executable, resolved]
+    return [resolved]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-firmware", action="store_true", help="Skip ESP-IDF build")
@@ -43,11 +53,10 @@ def main() -> None:
         ":app:assembleRelease",
     ], ROOT / "wear")
     if not args.no_firmware:
-        idf = shutil.which("idf.py")
-        if idf is None:
-            raise RuntimeError("idf.py is not available; activate ESP-IDF or use the platform wrapper")
-        run([idf, "-C", "firmware", "fullclean"])
-        run([idf, "-C", "firmware", "build"])
+        idf = idf_command()
+        run([*idf, "--version"])
+        run([*idf, "-C", "firmware", "fullclean"])
+        run([*idf, "-C", "firmware", "build"])
 
 
 if __name__ == "__main__":

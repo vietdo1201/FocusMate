@@ -17,6 +17,10 @@ foreach ($name in $required) {
     }
 }
 
+$python = if ([string]::IsNullOrWhiteSpace($env:PYTHON)) { 'python' } else { $env:PYTHON }
+& $python (Join-Path $PSScriptRoot 'tools/bootstrap_assets.py')
+if ($LASTEXITCODE -ne 0) { throw "Pinned asset bootstrap failed with exit code $LASTEXITCODE" }
+
 $wearRoot = Join-Path $PSScriptRoot 'wear'
 $wrapper = Join-Path $wearRoot 'gradlew.bat'
 Push-Location $wearRoot
