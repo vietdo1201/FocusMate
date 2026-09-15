@@ -3,7 +3,7 @@
 package vn.edu.uit.tpkd.wear.cogload
 
 internal interface ReminderRecoveryPort {
-    fun activeSession(): ActiveStudySession?
+    fun reconcileActiveSession(): ActiveStudySession?
     fun cooldownUntilMs(): Long
     fun cancelAlarms()
     fun prepareNotificationChannels()
@@ -22,7 +22,7 @@ internal class ReminderRecoveryCoordinator(
 ) {
     fun recover(action: String?): ReminderRecoveryOutcome {
         if (action !in SUPPORTED_ACTIONS) return ReminderRecoveryOutcome.IGNORED
-        val active = port.activeSession()
+        val active = port.reconcileActiveSession()
         if (active == null) {
             port.cancelAlarms()
             return ReminderRecoveryOutcome.CANCELLED_WITHOUT_ACTIVE_SESSION

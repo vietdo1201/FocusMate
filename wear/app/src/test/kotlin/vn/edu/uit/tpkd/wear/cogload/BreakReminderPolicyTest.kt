@@ -10,7 +10,7 @@ import org.junit.Test
 
 class BreakReminderPolicyTest {
     @Test
-    fun retrySequenceAlertsAtZeroTwoAndFiveMinutesThenStops() {
+    fun retrySequenceAlertsInitiallyAndAtFiveMinutesThenStops() {
         val createdAt = 1_000_000L
         val initial = PendingReminder(
             eventId = "event-1",
@@ -21,14 +21,29 @@ class BreakReminderPolicyTest {
 
         val first = BreakReminderPolicy.nextAttempt(initial)
         val second = BreakReminderPolicy.nextAttempt(first)
-        val third = BreakReminderPolicy.nextAttempt(second)
-
         assertEquals(1, first.attempt)
-        assertEquals(createdAt + 2 * 60_000L, first.nextAlertAtMs)
+        assertEquals(createdAt + 5 * 60_000L, first.nextAlertAtMs)
         assertEquals(2, second.attempt)
-        assertEquals(createdAt + 5 * 60_000L, second.nextAlertAtMs)
-        assertEquals(3, third.attempt)
-        assertNull(third.nextAlertAtMs)
+        assertNull(second.nextAlertAtMs)
+    }
+
+    @Test
+    fun retryKeepsBootAwareMonotonicDeadlineAcrossJson() {
+        val initial = PendingReminder(
+            eventId = "elapsed-event",
+            kind = PendingReminderKind.BREAK_SUGGESTION,
+            createdAtMs = 10_000L,
+            createdAtElapsedMs = 4_000L,
+            createdBootId = "boot-7",
+            nextAlertElapsedMs = 4_000L,
+            message = "Nên nghỉ",
+        )
+
+        val first = BreakReminderPolicy.nextAttempt(initial)
+        val restored = requireNotNull(PendingReminder.fromJson(first.toJson()))
+
+        assertEquals(304_000L, restored.nextAlertElapsedMs)
+        assertEquals("boot-7", restored.createdBootId)
     }
 
     @Test
@@ -38,7 +53,7 @@ class BreakReminderPolicyTest {
                 eventId = "event-2",
                 kind = PendingReminderKind.BREAK_SUGGESTION,
                 createdAtMs = 5_000L,
-                attempt = 2,
+                attempt = 1,
                 nextAlertAtMs = 305_000L,
                 message = "Đã học 50 phút — nên nghỉ 5 phút",
             )

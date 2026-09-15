@@ -21,8 +21,15 @@ data class PendingReminder(
     val createdAtMs: Long,
     val attempt: Int = 0,
     val nextAlertAtMs: Long? = createdAtMs,
+    val createdAtElapsedMs: Long? = null,
+    val createdBootId: String? = null,
+    val nextAlertElapsedMs: Long? = createdAtElapsedMs,
     val title: String? = null,
     val message: String,
+    val deliveryState: ReminderDeliveryState = ReminderDeliveryState.OPEN,
+    val reasonCodes: Set<String> = emptySet(),
+    val evidenceReferences: Set<String> = emptySet(),
+    val policyVersion: String = WatchRuleEngine.RULE_VERSION,
 ) {
     fun toJson() = JSONObject().apply {
         put("event_id", eventId)
@@ -30,8 +37,15 @@ data class PendingReminder(
         put("created_at_ms", createdAtMs)
         put("attempt", attempt)
         put("next_alert_at_ms", nextAlertAtMs ?: JSONObject.NULL)
+        put("created_at_elapsed_ms", createdAtElapsedMs ?: JSONObject.NULL)
+        put("created_boot_id", createdBootId ?: JSONObject.NULL)
+        put("next_alert_elapsed_ms", nextAlertElapsedMs ?: JSONObject.NULL)
         put("title", title ?: JSONObject.NULL)
         put("message", message)
+        put("delivery_state", deliveryState.name)
+        put("reason_codes", JSONArray(reasonCodes.sorted()))
+        put("evidence_references", JSONArray(evidenceReferences.sorted()))
+        put("policy_version", policyVersion)
     }
 
     companion object {
@@ -44,22 +58,40 @@ data class PendingReminder(
                 createdAtMs = json.optLong("created_at_ms"),
                 attempt = json.optInt("attempt").coerceIn(0, BreakReminderPolicy.MAX_ATTEMPTS),
                 nextAlertAtMs = json.optionalLong("next_alert_at_ms"),
+                createdAtElapsedMs = json.optionalLong("created_at_elapsed_ms"),
+                createdBootId = json.optionalString("created_boot_id"),
+                nextAlertElapsedMs = json.optionalLong("next_alert_elapsed_ms"),
                 title = json.optionalString("title"),
                 message = json.optString("message"),
+                deliveryState = runCatching {
+                    ReminderDeliveryState.valueOf(json.optString("delivery_state", ReminderDeliveryState.OPEN.name))
+                }.getOrDefault(ReminderDeliveryState.OPEN),
+                reasonCodes = json.stringSet("reason_codes"),
+                evidenceReferences = json.stringSet("evidence_references"),
+                policyVersion = json.optString("policy_version", WatchRuleEngine.RULE_VERSION),
             )
         }
     }
 }
 
 object BreakReminderPolicy {
-    const val MAX_ATTEMPTS = 3
-    val RETRY_OFFSETS_MS = longArrayOf(0L, 2 * 60_000L, 5 * 60_000L)
+    /** One initial delivery and at most one retry five minutes later. */
+    const val MAX_ATTEMPTS = 2
+    const val RETRY_LATE_GRACE_MS = 5 * 60_000L
+    val RETRY_OFFSETS_MS = longArrayOf(0L, 5 * 60_000L)
 
     fun nextAttempt(reminder: PendingReminder): PendingReminder {
         val attempt = (reminder.attempt + 1).coerceAtMost(MAX_ATTEMPTS)
-        return reminder.copy(attempt = attempt, nextAlertAtMs = RETRY_OFFSETS_MS.getOrNull(attempt)?.let {
-            reminder.createdAtMs + it
-        })
+        val nextAt = RETRY_OFFSETS_MS.getOrNull(attempt)?.let { reminder.createdAtMs + it }
+        val nextElapsed = RETRY_OFFSETS_MS.getOrNull(attempt)?.let { offset ->
+            reminder.createdAtElapsedMs?.let { it + offset }
+        }
+        return reminder.copy(
+            attempt = attempt,
+            nextAlertAtMs = nextAt,
+            nextAlertElapsedMs = nextElapsed,
+            deliveryState = if (nextAt == null) ReminderDeliveryState.QUIET_OPEN else ReminderDeliveryState.OPEN,
+        )
     }
 }
 
@@ -124,6 +156,15 @@ data class StudySession(
     val breakTargetMinutes: Int = FocusMateRules.DEFAULT_BREAK_MINUTES,
     val breakCount: Int = 0,
     val totalBreakDurationMs: Long = 0L,
+    val totalPauseDurationMs: Long = 0L,
+    val unknownDurationMs: Long = 0L,
+    val hasUnquantifiedUnknownInterval: Boolean = false,
+    val reminderReasonHistory: Set<String> = emptySet(),
+    val deliveryAttemptCount: Int = 0,
+    val reminderResponseCount: Int = 0,
+    val reminderHistory: List<ReminderEpisodeHistory> = emptyList(),
+    /** after-fatigue minus before-fatigue for valid explicit pairs, one value per break. */
+    val breakFatigueChanges: List<Int> = emptyList(),
     val expiresOn: String = RetentionPolicy.expiresOnText(endTimeMs),
 ) {
     fun toJson() = JSONObject().apply {
@@ -162,6 +203,16 @@ data class StudySession(
         put("break_target_minutes", breakTargetMinutes)
         put("break_count", breakCount)
         put("total_break_duration_ms", totalBreakDurationMs)
+        put("total_pause_duration_ms", totalPauseDurationMs)
+        put("unknown_duration_ms", unknownDurationMs)
+        put("has_unquantified_unknown_interval", hasUnquantifiedUnknownInterval)
+        put("reminder_reason_history", JSONArray(reminderReasonHistory.sorted()))
+        put("delivery_attempt_count", deliveryAttemptCount)
+        put("reminder_response_count", reminderResponseCount)
+        put("reminder_history", JSONArray().apply {
+            reminderHistory.forEach { episode -> put(episode.toJson()) }
+        })
+        put("break_fatigue_changes", JSONArray(breakFatigueChanges))
         put("expires_on", expiresOn)
     }
 
@@ -215,12 +266,84 @@ data class StudySession(
                     .coerceIn(FocusMateRules.MIN_BREAK_MINUTES, FocusMateRules.MAX_BREAK_MINUTES),
                 breakCount = json.optInt("break_count", 0).coerceAtLeast(0),
                 totalBreakDurationMs = json.optLong("total_break_duration_ms", 0L).coerceAtLeast(0L),
+                totalPauseDurationMs = json.optLong("total_pause_duration_ms", 0L).coerceAtLeast(0L),
+                unknownDurationMs = json.optLong("unknown_duration_ms", 0L).coerceAtLeast(0L),
+                hasUnquantifiedUnknownInterval = json.optBoolean("has_unquantified_unknown_interval", false),
+                reminderReasonHistory = json.stringSet("reminder_reason_history"),
+                deliveryAttemptCount = json.optInt("delivery_attempt_count", 0).coerceAtLeast(0),
+                reminderResponseCount = json.optInt("reminder_response_count", 0).coerceAtLeast(0),
+                reminderHistory = json.optJSONArray("reminder_history")?.let { values ->
+                    buildList {
+                        for (index in 0 until values.length()) {
+                            runCatching { values.getJSONObject(index).toReminderEpisodeHistory() }
+                                .getOrNull()
+                                ?.let(::add)
+                        }
+                    }
+                }.orEmpty(),
+                breakFatigueChanges = json.optJSONArray("break_fatigue_changes")?.let { values ->
+                    buildList { for (index in 0 until values.length()) add(values.optInt(index)) }
+                }.orEmpty(),
                 expiresOn = json.optString("expires_on").takeIf(String::isNotBlank)
                     ?: RetentionPolicy.expiresOnText(end),
             )
         }
     }
 }
+
+private fun ReminderEpisodeHistory.toJson() = JSONObject().apply {
+    put("reminder_id", reminderId)
+    put("block_id", blockId)
+    put("policy_version", policyVersion)
+    put("reason_codes", JSONArray(reasonCodes.sorted()))
+    put("evidence_refs", JSONArray(evidenceReferences.sorted()))
+    put("state", state.name)
+    put("response", response ?: JSONObject.NULL)
+    put("timing_feedback", timingFeedback?.name ?: JSONObject.NULL)
+    put("annoyance", annoyance ?: JSONObject.NULL)
+    put("deliveries", JSONArray().apply {
+        deliveries.forEach { delivery ->
+            put(JSONObject().apply {
+                put("slot_index", delivery.slotIndex)
+                put("scheduled_wall_ms", delivery.scheduledWallMs)
+                put("receiver_wall_ms", delivery.receiverWallMs ?: JSONObject.NULL)
+                put("post_attempt_wall_ms", delivery.postAttemptWallMs ?: JSONObject.NULL)
+                put("result", delivery.result)
+            })
+        }
+    })
+}
+
+private fun JSONObject.toReminderEpisodeHistory() = ReminderEpisodeHistory(
+    reminderId = getString("reminder_id"),
+    blockId = getString("block_id"),
+    policyVersion = getString("policy_version"),
+    reasonCodes = stringSet("reason_codes"),
+    evidenceReferences = stringSet("evidence_refs"),
+    state = runCatching { ReminderDeliveryState.valueOf(getString("state")) }
+        .getOrDefault(ReminderDeliveryState.CLOSED),
+    response = optionalString("response"),
+    deliveries = optJSONArray("deliveries")?.let { values ->
+        buildList {
+            for (index in 0 until values.length()) {
+                val row = values.optJSONObject(index) ?: continue
+                add(
+                    ReminderDeliveryHistory(
+                        slotIndex = row.optInt("slot_index", 0),
+                        scheduledWallMs = row.optLong("scheduled_wall_ms", 0L),
+                        receiverWallMs = row.optionalLong("receiver_wall_ms"),
+                        postAttemptWallMs = row.optionalLong("post_attempt_wall_ms"),
+                        result = row.optString("result", "UNKNOWN"),
+                    )
+                )
+            }
+        }
+    }.orEmpty(),
+    timingFeedback = optionalString("timing_feedback")?.let {
+        runCatching { PromptTimingFeedback.valueOf(it) }.getOrNull()
+    },
+    annoyance = if (!has("annoyance") || isNull("annoyance")) null else optInt("annoyance").takeIf { it in 1..5 },
+)
 
 data class PendingYawnSyncEvent(
     val eventId: Long,
@@ -260,6 +383,7 @@ data class ActiveStudySession(
     val taskType: String,
     val focusScore: Int,
     val fatigueScore: Int,
+    val focusBlockId: String = "block-0",
     val breakReminderCount: Int = 0,
     val accepted: Boolean? = null,
     val deferReason: String? = null,
@@ -273,6 +397,13 @@ data class ActiveStudySession(
     val wristRotationCount: Int = 0,
     val immobileSeconds: Double = 0.0,
     val continuousImmobileMs: Long = 0L,
+    val motionBlockValidDurationMs: Long = 0L,
+    val lastMotionWindowStartElapsedMs: Long? = null,
+    val lastMotionWindowEndElapsedMs: Long? = null,
+    val lastMotionBootId: String? = null,
+    val lastMotionBlockId: String? = null,
+    val lastMotionSequence: Long? = null,
+    val lastMotionGeneration: Long? = null,
     val movementChangeFromBaseline: Double? = null,
     val motionActivityLabel: String? = null,
     val motionActivityConfidence: Double? = null,
@@ -303,6 +434,8 @@ data class ActiveStudySession(
     val breakTargetMinutes: Int = FocusMateRules.DEFAULT_BREAK_MINUTES,
     val breakCount: Int = 0,
     val accumulatedBreakMs: Long = 0L,
+    val accumulatedPauseMs: Long = 0L,
+    val pausedAtMs: Long? = null,
     val lastBreakStudyDurationMs: Long = 0L,
     val breakStartedAtMs: Long? = null,
     val breakEndsAtMs: Long? = null,
@@ -310,6 +443,7 @@ data class ActiveStudySession(
     val lastPromptAtMs: Long = 0L,
     val lastPromptEventId: String? = null,
     val pendingReminder: PendingReminder? = null,
+    val timeline: SessionTimelineSnapshot? = null,
 ) {
     fun toJson() = JSONObject().apply {
         put("session_id", sessionId)
@@ -317,6 +451,7 @@ data class ActiveStudySession(
         put("task_type", taskType)
         put("focus_score", focusScore)
         put("fatigue_score", fatigueScore)
+        put("focus_block_id", focusBlockId)
         put("break_reminder_count", breakReminderCount)
         put("accepted", accepted ?: JSONObject.NULL)
         put("defer_reason", deferReason ?: JSONObject.NULL)
@@ -350,6 +485,8 @@ data class ActiveStudySession(
         put("break_target_minutes", breakTargetMinutes)
         put("break_count", breakCount)
         put("accumulated_break_ms", accumulatedBreakMs)
+        put("accumulated_pause_ms", accumulatedPauseMs)
+        put("paused_at_ms", pausedAtMs ?: JSONObject.NULL)
         put("last_break_study_duration_ms", lastBreakStudyDurationMs)
         put("break_started_at_ms", breakStartedAtMs ?: JSONObject.NULL)
         put("break_ends_at_ms", breakEndsAtMs ?: JSONObject.NULL)
@@ -357,6 +494,14 @@ data class ActiveStudySession(
         put("last_prompt_at_ms", lastPromptAtMs)
         put("last_prompt_event_id", lastPromptEventId ?: JSONObject.NULL)
         put("pending_reminder", pendingReminder?.toJson() ?: JSONObject.NULL)
+        put("timeline", timeline?.toJson() ?: JSONObject.NULL)
+        put("motion_block_valid_duration_ms", motionBlockValidDurationMs)
+        put("last_motion_window_start_elapsed_ms", lastMotionWindowStartElapsedMs ?: JSONObject.NULL)
+        put("last_motion_window_end_elapsed_ms", lastMotionWindowEndElapsedMs ?: JSONObject.NULL)
+        put("last_motion_boot_id", lastMotionBootId ?: JSONObject.NULL)
+        put("last_motion_block_id", lastMotionBlockId ?: JSONObject.NULL)
+        put("last_motion_sequence", lastMotionSequence ?: JSONObject.NULL)
+        put("last_motion_generation", lastMotionGeneration ?: JSONObject.NULL)
     }
 
     companion object {
@@ -366,6 +511,7 @@ data class ActiveStudySession(
             taskType = json.optString("task_type", "Bài tập"),
             focusScore = json.optInt("focus_score", 3).coerceIn(1, 5),
             fatigueScore = json.fatigueScore(),
+            focusBlockId = json.optString("focus_block_id", "block-${json.optInt("break_count", 0)}"),
             breakReminderCount = json.optInt("break_reminder_count", 0).coerceAtLeast(0),
             accepted = json.optionalBoolean("accepted"),
             deferReason = json.optionalString("defer_reason"),
@@ -379,6 +525,13 @@ data class ActiveStudySession(
             wristRotationCount = json.optInt("wrist_rotation_count", 0),
             immobileSeconds = json.optDouble("immobile_seconds", 0.0),
             continuousImmobileMs = json.optLong("continuous_immobile_ms", 0L),
+            motionBlockValidDurationMs = json.optLong("motion_block_valid_duration_ms", 0L).coerceAtLeast(0L),
+            lastMotionWindowStartElapsedMs = json.optionalLong("last_motion_window_start_elapsed_ms"),
+            lastMotionWindowEndElapsedMs = json.optionalLong("last_motion_window_end_elapsed_ms"),
+            lastMotionBootId = json.optionalString("last_motion_boot_id"),
+            lastMotionBlockId = json.optionalString("last_motion_block_id"),
+            lastMotionSequence = json.optionalLong("last_motion_sequence"),
+            lastMotionGeneration = json.optionalLong("last_motion_generation"),
             movementChangeFromBaseline = json.optionalDouble("movement_change_from_baseline"),
             motionActivityLabel = json.optionalString("motion_activity_label"),
             motionActivityConfidence = json.optionalDouble("motion_activity_confidence"),
@@ -419,6 +572,8 @@ data class ActiveStudySession(
                 .coerceIn(FocusMateRules.MIN_BREAK_MINUTES, FocusMateRules.MAX_BREAK_MINUTES),
             breakCount = json.optInt("break_count", 0).coerceAtLeast(0),
             accumulatedBreakMs = json.optLong("accumulated_break_ms", 0L).coerceAtLeast(0L),
+            accumulatedPauseMs = json.optLong("accumulated_pause_ms", 0L).coerceAtLeast(0L),
+            pausedAtMs = json.optionalLong("paused_at_ms"),
             lastBreakStudyDurationMs = json.optLong("last_break_study_duration_ms", 0L).coerceAtLeast(0L),
             breakStartedAtMs = json.optionalLong("break_started_at_ms"),
             breakEndsAtMs = json.optionalLong("break_ends_at_ms"),
@@ -426,6 +581,7 @@ data class ActiveStudySession(
             lastPromptAtMs = json.optLong("last_prompt_at_ms", 0L),
             lastPromptEventId = json.optionalString("last_prompt_event_id"),
             pendingReminder = json.optJSONObject("pending_reminder")?.let(PendingReminder::fromJson),
+            timeline = json.optJSONObject("timeline")?.let(SessionTimelineSnapshot::fromJson),
         )
 }
 }
@@ -439,7 +595,9 @@ object StudySessionClock {
         return if (end <= start) 0 else (end - nowMs).coerceAtLeast(0)
     }
 
-    fun isOnBreak(active: ActiveStudySession, nowMs: Long) = active.breakStartedAtMs?.let { nowMs >= it } == true
+    fun isOnBreak(active: ActiveStudySession, nowMs: Long): Boolean = active.timeline?.state
+        ?.let { it == SessionState.BREAKING || it == SessionState.AWAITING_RESUME }
+        ?: (active.breakStartedAtMs?.let { nowMs >= it } == true)
     fun isAwaitingBreakDecision(active: ActiveStudySession) =
         active.breakStartedAtMs != null && active.breakAwaitingDecisionAtMs != null
 
@@ -447,27 +605,47 @@ object StudySessionClock {
         val start = active.breakStartedAtMs ?: return 0
         val end = active.breakEndsAtMs ?: return 0
         if (end <= start || nowMs <= start) return 0
-        return ((if (isAwaitingBreakDecision(active)) nowMs else minOf(nowMs, end)) - start).coerceAtLeast(0)
+        // BREAKING and the implicit AWAITING_RESUME period both stop study time.
+        // Alarm/receiver delivery may be late (especially in Doze), so capping at
+        // the planned end would incorrectly turn that delay into study time.
+        return (nowMs - start).coerceAtLeast(0)
     }
 
     fun totalBreakDurationMs(active: ActiveStudySession, nowMs: Long) =
         active.accumulatedBreakMs.coerceAtLeast(0) + currentBreakElapsedMs(active, nowMs)
 
+    fun currentPauseElapsedMs(active: ActiveStudySession, nowMs: Long): Long =
+        active.pausedAtMs?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+
+    fun totalPauseDurationMs(active: ActiveStudySession, nowMs: Long): Long =
+        active.accumulatedPauseMs.coerceAtLeast(0L) + currentPauseElapsedMs(active, nowMs)
+
+    fun isPaused(active: ActiveStudySession): Boolean = active.pausedAtMs != null
+
     fun studyDurationMs(active: ActiveStudySession, nowMs: Long) =
-        ((nowMs - active.startTimeMs).coerceAtLeast(0) - totalBreakDurationMs(active, nowMs)).coerceAtLeast(0)
+        ((nowMs - active.startTimeMs).coerceAtLeast(0) - totalBreakDurationMs(active, nowMs) -
+            totalPauseDurationMs(active, nowMs)).coerceAtLeast(0)
 
     fun focusBlockDurationMs(active: ActiveStudySession, nowMs: Long) =
         (studyDurationMs(active, nowMs) - active.lastBreakStudyDurationMs).coerceAtLeast(0)
 
     fun startBreak(active: ActiveStudySession, nowMs: Long, durationMs: Long = BREAK_DURATION_MS): ActiveStudySession {
         require(durationMs > 0)
-        if (active.breakStartedAtMs != null) return active
+        if (active.breakStartedAtMs != null || isPaused(active)) return active
         return active.copy(
             breakStartedAtMs = nowMs,
             breakEndsAtMs = nowMs + durationMs,
             breakAwaitingDecisionAtMs = null,
             lastBreakStudyDurationMs = studyDurationMs(active, nowMs),
             breakCount = active.breakCount + 1,
+            continuousImmobileMs = 0L,
+            motionBlockValidDurationMs = 0L,
+            lastMotionWindowStartElapsedMs = null,
+            lastMotionWindowEndElapsedMs = null,
+            lastMotionBootId = null,
+            lastMotionBlockId = null,
+            lastMotionSequence = null,
+            lastMotionGeneration = null,
             pendingReminder = null,
         )
     }
@@ -488,6 +666,15 @@ object StudySessionClock {
             breakStartedAtMs = null,
             breakEndsAtMs = null,
             breakAwaitingDecisionAtMs = null,
+            focusBlockId = "block-${active.breakCount}",
+            continuousImmobileMs = 0L,
+            motionBlockValidDurationMs = 0L,
+            lastMotionWindowStartElapsedMs = null,
+            lastMotionWindowEndElapsedMs = null,
+            lastMotionBootId = null,
+            lastMotionBlockId = null,
+            lastMotionSequence = null,
+            lastMotionGeneration = null,
             pendingReminder = null,
         )
     }
@@ -499,6 +686,19 @@ object StudySessionClock {
             breakEndsAtMs = nowMs + durationMs,
             breakAwaitingDecisionAtMs = null,
             pendingReminder = null,
+        )
+    }
+
+    fun pause(active: ActiveStudySession, nowMs: Long): ActiveStudySession? {
+        if (active.breakStartedAtMs != null || active.pausedAtMs != null) return null
+        return active.copy(pausedAtMs = nowMs)
+    }
+
+    fun resumeFromPause(active: ActiveStudySession, nowMs: Long): ActiveStudySession? {
+        val pausedAt = active.pausedAtMs ?: return null
+        return active.copy(
+            accumulatedPauseMs = active.accumulatedPauseMs + (nowMs - pausedAt).coerceAtLeast(0L),
+            pausedAtMs = null,
         )
     }
 }

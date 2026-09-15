@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import java.util.UUID
 
@@ -41,11 +42,17 @@ object BreakReminderScheduler {
 
     fun schedule(context: Context, active: ActiveStudySession, cooldownUntilMs: Long) {
         val alarmManager = alarmManager(context)
-        val now = System.currentTimeMillis()
+        val nowPoint = AndroidSessionClock(context).now()
+        val now = nowPoint.wallMs
         cancelAlarm(alarmManager, context, ACTION_CHECK, REQUEST_CHECK)
         cancelAlarm(alarmManager, context, ACTION_RETRY, REQUEST_RETRY)
         cancelAlarm(alarmManager, context, ACTION_BREAK_COMPLETE, REQUEST_BREAK_COMPLETE)
         rememberNextAlarm(context, null)
+
+        if (active.timeline?.state == SessionState.RECOVERY_REQUIRED) {
+            StudyOngoingActivity.show(context, active)
+            return
+        }
 
         val pending = active.pendingReminder
         if (pending != null) {
@@ -58,8 +65,15 @@ object BreakReminderScheduler {
                     REQUEST_RETRY,
                     active.sessionId,
                     pending.eventId,
+                    triggerElapsedMs = pending.nextAlertElapsedMs
+                        ?.takeIf { pending.createdBootId == nowPoint.bootId },
                 )
             }
+            StudyOngoingActivity.show(context, active)
+            return
+        }
+
+        if (StudySessionClock.isPaused(active)) {
             StudyOngoingActivity.show(context, active)
             return
         }
@@ -72,7 +86,7 @@ object BreakReminderScheduler {
             }
             scheduleAlarm(
                 context,
-                maxOf(active.breakEndsAtMs ?: now, now + 1_000L),
+                now + maxOf(StudySessionRepository(context).breakRemainingMs(active), 1_000L),
                 ACTION_BREAK_COMPLETE,
                 REQUEST_BREAK_COMPLETE,
                 active.sessionId,
@@ -81,7 +95,27 @@ object BreakReminderScheduler {
             return
         }
 
-        val currentFocusBlockMs = StudySessionClock.focusBlockDurationMs(active, now)
+        val currentFocusBlockMs = StudySessionRepository(context).focusBlockDurationMs(active, now)
+        val validMotionDurationMs = active.motionBlockValidDurationMs.takeIf { it > 0L }
+            ?: (active.motionWindowCount * 30_000L)
+        val motionCoverage = (validMotionDurationMs.toDouble() / currentFocusBlockMs.coerceAtLeast(1L)).coerceIn(0.0, 1.0)
+        val dueNow = WatchRuleEngine.evaluate(
+            ReminderContext(
+                studyDurationMs = currentFocusBlockMs,
+                fatigueScore = active.fatigueScore,
+                focusScore = active.focusScore,
+                nowMs = now,
+                cooldownUntilMs = cooldownUntilMs,
+                motion = active.motionActivityObservedAtMs?.let {
+                    MotionEvidence(active.continuousImmobileMs, motionCoverage, it)
+                },
+            )
+        ).shouldPrompt
+        if (dueNow) {
+            scheduleAlarm(context, now + 1_000L, ACTION_CHECK, REQUEST_CHECK, active.sessionId)
+            StudyOngoingActivity.show(context, active)
+            return
+        }
         val nextRuleBoundaryMs = when {
             currentFocusBlockMs < 30 * 60_000L -> 30 * 60_000L
             currentFocusBlockMs < 45 * 60_000L -> 45 * 60_000L
@@ -90,7 +124,14 @@ object BreakReminderScheduler {
         }
         val boundaryAt = now + (nextRuleBoundaryMs - currentFocusBlockMs).coerceAtLeast(1_000L)
         val duplicateGuardAt = active.lastPromptAtMs + WatchRuleEngine.DUPLICATE_PROMPT_GUARD_MS
-        val triggerAt = maxOf(boundaryAt, cooldownUntilMs, duplicateGuardAt, now + 1_000L)
+        // A future cooldown must not postpone an earlier rule boundary, but an
+        // already-eligible suppressed candidate must be revisited at expiry.
+        val candidateAt = if (cooldownUntilMs > now && currentFocusBlockMs >= 30 * 60_000L) {
+            minOf(boundaryAt, cooldownUntilMs)
+        } else {
+            boundaryAt
+        }
+        val triggerAt = maxOf(candidateAt, duplicateGuardAt, now + 1_000L)
         scheduleAlarm(context, triggerAt, ACTION_CHECK, REQUEST_CHECK, active.sessionId)
         StudyOngoingActivity.show(context, active)
     }
@@ -114,19 +155,30 @@ object BreakReminderScheduler {
         nowMs: Long,
         title: String? = null,
         message: String? = null,
+        reasonCodes: Set<String> = emptySet(),
+        evidenceReferences: Set<String> = emptySet(),
+        timePoint: TimePoint? = null,
     ): PendingReminder = PendingReminder(
         eventId = UUID.randomUUID().toString(),
         kind = PendingReminderKind.BREAK_SUGGESTION,
         createdAtMs = nowMs,
+        createdAtElapsedMs = timePoint?.elapsedMs,
+        createdBootId = timePoint?.bootId,
+        nextAlertElapsedMs = timePoint?.elapsedMs,
         title = title?.trim()?.takeIf(String::isNotBlank)?.take(96),
         message = message?.trim()?.takeIf(String::isNotBlank)?.take(360)
             ?: "Đã học $durationMinutes phút — nên nghỉ 5 phút",
+        reasonCodes = reasonCodes,
+        evidenceReferences = evidenceReferences,
     )
 
-    fun newBreakEnded(nowMs: Long): PendingReminder = PendingReminder(
+    fun newBreakEnded(nowMs: Long, timePoint: TimePoint? = null): PendingReminder = PendingReminder(
         eventId = UUID.randomUUID().toString(),
         kind = PendingReminderKind.BREAK_ENDED,
         createdAtMs = nowMs,
+        createdAtElapsedMs = timePoint?.elapsedMs,
+        createdBootId = timePoint?.bootId,
+        nextAlertElapsedMs = timePoint?.elapsedMs,
         message = "Đã hết giờ nghỉ — tiếp tục học hay nghỉ thêm?",
     )
 
@@ -293,16 +345,21 @@ object BreakReminderScheduler {
         requestCode: Int,
         sessionId: String? = null,
         eventId: String? = null,
+        triggerElapsedMs: Long? = null,
     ) {
         val alarmManager = alarmManager(context)
         val operation = pendingBroadcast(context, action, requestCode, sessionId, eventId)
+        val elapsedTrigger = triggerElapsedMs ?: run {
+            val delay = (triggerAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+            SystemClock.elapsedRealtime() + delay
+        }
         if (exactAlarmsReady(context)) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, operation)
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedTrigger, operation)
         } else {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, operation)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsedTrigger, operation)
         }
         rememberNextAlarm(context, triggerAtMs)
-        Log.i(TAG, "planned_at=$triggerAtMs action=$action exact=${exactAlarmsReady(context)}")
+        Log.i(TAG, "planned_wall=$triggerAtMs planned_elapsed=$elapsedTrigger action=$action exact=${exactAlarmsReady(context)}")
     }
 
     private fun cancelAlarm(
@@ -340,7 +397,7 @@ object BreakReminderScheduler {
     }
 
     private fun notificationId(eventId: String, attempt: Int): Int =
-        10_000 + ((31 * eventId.hashCode() + attempt) and 0x3fffffff) % 900_000
+        10_000 + (eventId.hashCode() and 0x3fffffff) % 900_000
 
     private fun eventRequestCode(base: Int, eventId: String): Int =
         base + (eventId.hashCode() and 0x3fffffff)

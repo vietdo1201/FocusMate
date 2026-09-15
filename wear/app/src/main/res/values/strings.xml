@@ -24,8 +24,8 @@
     <string name="plus">+</string>
     <string name="fatigue_value">Mức mệt\n%1$d/10</string>
     <string name="cooldown_default">Không làm phiền: 20:00</string>
-    <string name="session_confidence_idle">ĐỘ TIN TƯỞNG PHIÊN\n--</string>
-    <string name="session_confidence_value">ĐỘ TIN TƯỞNG PHIÊN\n%1$d%%</string>
+    <string name="session_confidence_idle">ĐỘ ĐẦY ĐỦ DỮ LIỆU\n--</string>
+    <string name="session_confidence_value">ĐỘ ĐẦY ĐỦ DỮ LIỆU\n%1$d%% • không phải đánh giá sức khỏe</string>
     <string name="rule_status_idle">RULE ENGINE v2\n--</string>
     <string name="rule_status_value">RULE ENGINE v2 • %1$s\n%2$s</string>
     <string name="posture_status_idle">TƯ THẾ\nChưa có phiên học</string>
@@ -97,7 +97,7 @@
     <string name="report_metrics">DỮ LIỆU PHIÊN\nTư thế: %1$s\nNgáp: %2$d lần • %3$d lần trong cửa sổ gần nhất</string>
     <string name="report_posture_summary">%1$s • %2$d lần • %3$s phút</string>
     <string name="report_posture_no_insight">chưa có lỗi đạt ngưỡng insight</string>
-    <string name="report_data_quality">ĐỘ ĐẦY ĐỦ\nChuyển động: %1$s • Nhịp tim: %2$s • Posture/ngáp: chỉ kết luận khi đạt ngưỡng</string>
+    <string name="report_data_quality">ĐỘ ĐẦY ĐỦ DỮ LIỆU\nChuyển động: %1$s • Nhịp tim: %2$s • Tư thế/ngáp: chỉ là ghi nhận hỗ trợ</string>
     <string name="report_data_enough">đủ cho rule</string>
     <string name="report_data_partial">chưa đủ</string>
     <string name="report_heart_rate_safety">Nhịp tim từ thiết bị đeo chỉ là tín hiệu hỗ trợ, không phải chẩn đoán. Nếu nhịp tim bất thường kèm đau ngực, khó thở, chóng mặt hoặc ngất, hãy tìm hỗ trợ y tế khẩn cấp.</string>

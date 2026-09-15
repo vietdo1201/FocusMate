@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
@@ -26,6 +27,8 @@ import kotlin.math.ceil
 /** Wear session manager with one deterministic break-decision authority. */
 class MainActivity : Activity() {
     private lateinit var repository: StudySessionRepository
+    private lateinit var sessionController: SessionController
+    private lateinit var sessionClock: SessionClock
 
     private lateinit var tvSessionState: TextView
     private lateinit var tvTimer: TextView
@@ -53,15 +56,28 @@ class MainActivity : Activity() {
     private lateinit var tvReminderReadiness: TextView
     private lateinit var btnReminderSettings: Button
     private lateinit var btnTestReminder: Button
+    private lateinit var btnCheckIn: Button
+    private lateinit var btnTaskBoundary: Button
+    private lateinit var btnStartBreakNow: Button
+    private lateinit var btnPauseResume: Button
+    private lateinit var reminderCard: View
+    private lateinit var tvReminderCardTitle: TextView
+    private lateinit var tvReminderCardMessage: TextView
+    private lateinit var btnReminderCardBreak: Button
+    private lateinit var btnReminderCardCheckIn: Button
+    private lateinit var btnReminderCardDefer: Button
+    private lateinit var btnReminderCardExtend10: Button
+    private lateinit var btnReminderCardFinish: Button
 
     private var accCollector: AccCollector? = null
     private var isCollecting = false
     private var isResumed = false
     private var promptVisible = false
-    private var breakChoiceVisible = false
     private var reviewVisible = false
     private var reportVisible = false
+    private var recoveryVisible = false
     private var dndAccessRequested = false
+    private var suggestedCheckInSource: CheckInSource? = null
     private val activityThresholdCalibrator = PersonalActivityThresholdCalibrator()
 
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -75,6 +91,13 @@ class MainActivity : Activity() {
             maybeShowBreakEndChoice()
             renderLiveState()
             val active = repository.activeSession()
+            if (active?.timeline?.let {
+                    it.state != SessionState.RECOVERY_REQUIRED &&
+                        SystemClock.elapsedRealtime() - it.checkpointAt.elapsedMs >= 30_000L
+                } == true
+            ) {
+                repository.checkpointActiveSession()
+            }
             renderSessionConfidence(active)
             renderRuleStatus(active)
             renderPostureStatus(active)
@@ -90,12 +113,16 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         WatchRetentionWorker.schedule(this)
         setContentView(R.layout.activity_main)
-        repository = StudySessionRepository(this)
+        sessionClock = AndroidSessionClock(this)
+        repository = StudySessionRepository(this, sessionClock)
+        sessionController = DefaultSessionController(repository)
+        repository.reconcileActiveSession()
         bindViews()
         bindActions()
         prepareMotionFallbackCollector()
         renderAll()
         syncStudyDnd(isCurrentlyStudying(repository.activeSession()))
+        uiHandler.post { maybeShowRecoveryChoice() }
     }
 
     override fun onResume() {
@@ -105,6 +132,13 @@ class MainActivity : Activity() {
         BreakAlertChannels.ensurePriorityIfAllowed(this)
         renderAll()
         val active = repository.activeSession()
+        if (active?.timeline?.let {
+                it.state != SessionState.RECOVERY_REQUIRED &&
+                    SystemClock.elapsedRealtime() - it.checkpointAt.elapsedMs >= 30_000L
+            } == true
+        ) {
+            repository.checkpointActiveSession()
+        }
         syncStudyDnd(isCurrentlyStudying(active))
         if (active != null) {
             BreakReminderScheduler.schedule(this, active, repository.cooldownUntilMs())
@@ -113,6 +147,7 @@ class MainActivity : Activity() {
         uiHandler.removeCallbacks(ticker)
         uiHandler.post(ticker)
         uiHandler.postDelayed({ maybeShowPendingReview() }, 300L)
+        uiHandler.post { maybeShowRecoveryChoice() }
     }
 
     override fun onPause() {
@@ -153,6 +188,18 @@ class MainActivity : Activity() {
         tvReminderReadiness = findViewById(R.id.tv_reminder_readiness)
         btnReminderSettings = findViewById(R.id.btn_reminder_settings)
         btnTestReminder = findViewById(R.id.btn_test_reminder)
+        btnCheckIn = findViewById(R.id.btn_check_in)
+        btnTaskBoundary = findViewById(R.id.btn_task_boundary)
+        btnStartBreakNow = findViewById(R.id.btn_start_break_now)
+        btnPauseResume = findViewById(R.id.btn_pause_resume)
+        reminderCard = findViewById(R.id.reminder_card)
+        tvReminderCardTitle = findViewById(R.id.tv_reminder_card_title)
+        tvReminderCardMessage = findViewById(R.id.tv_reminder_card_message)
+        btnReminderCardBreak = findViewById(R.id.btn_reminder_card_break)
+        btnReminderCardCheckIn = findViewById(R.id.btn_reminder_card_check_in)
+        btnReminderCardDefer = findViewById(R.id.btn_reminder_card_defer)
+        btnReminderCardExtend10 = findViewById(R.id.btn_reminder_card_extend_10)
+        btnReminderCardFinish = findViewById(R.id.btn_reminder_card_finish)
     }
 
     private fun bindActions() {
@@ -193,18 +240,54 @@ class MainActivity : Activity() {
             ).show()
             renderReminderReadiness()
         }
+        btnCheckIn.setOnClickListener {
+            showVoluntaryCheckIn(suggestedCheckInSource ?: CheckInSource.USER_REQUEST)
+        }
+        btnTaskBoundary.setOnClickListener { showVoluntaryCheckIn(CheckInSource.TASK_BOUNDARY) }
+        btnStartBreakNow.setOnClickListener { startVoluntaryBreak() }
+        btnPauseResume.setOnClickListener { togglePause() }
+        btnReminderCardBreak.setOnClickListener { sendCurrentReminderPrimaryAction() }
+        btnReminderCardCheckIn.setOnClickListener { showVoluntaryCheckIn(CheckInSource.BEFORE_BREAK) }
+        btnReminderCardDefer.setOnClickListener { sendCurrentReminderSecondaryAction() }
+        btnReminderCardExtend10.setOnClickListener {
+            sendCurrentBreakEndAction(BreakReminderScheduler.ACTION_EXTEND_BREAK_10)
+        }
+        btnReminderCardFinish.setOnClickListener { finishSession() }
     }
 
     private fun startSession() {
+        val at = sessionClock.now()
+        val sessionId = UUID.randomUUID().toString()
         val active = ActiveStudySession(
-            startTimeMs = System.currentTimeMillis(),
+            sessionId = sessionId,
+            startTimeMs = at.wallMs,
             subject = HIDDEN_SUBJECT,
             taskType = taskTypes[taskIndex],
             focusScore = focusScore,
             fatigueScore = fatigueScore,
             breakTargetMinutes = repository.recommendedBreakTargetMinutes(),
+            timeline = SessionTimelineSnapshot(
+                sessionId = sessionId,
+                revision = 0L,
+                state = SessionState.STUDYING,
+                blockId = "block-0",
+                enteredAt = at,
+            ),
         )
-        repository.saveActiveSession(active)
+        val started = sessionController.dispatch(SessionCommand.Start("start:$sessionId", at, active))
+        if (!started.applied) {
+            Toast.makeText(this, "Không thể bắt đầu vì đang có phiên khác.", Toast.LENGTH_LONG).show()
+            return
+        }
+        suggestedCheckInSource = null
+        repository.recordCheckIn(
+            active.sessionId,
+            CheckInSource.SESSION_START,
+            focus = active.focusScore,
+            fatigue = active.fatigueScore,
+            at = at,
+            checkInId = "${active.sessionId}:start",
+        )
         syncStudyDnd(true)
         BreakReminderScheduler.schedule(this, active, repository.cooldownUntilMs())
         requestSessionPermissionsIfNeeded()
@@ -218,12 +301,20 @@ class MainActivity : Activity() {
             .setTitle("Kết thúc phiên học?")
             .setMessage("Lưu thời lượng, mức tập trung, mức mệt và dữ liệu cảm biến?")
             .setPositiveButton("Lưu phiên") { _, _ -> finishSession() }
+            .setNeutralButton("Check-in trước") { _, _ -> showVoluntaryCheckIn(CheckInSource.SESSION_END) }
             .setNegativeButton("Tiếp tục", null)
             .show()
     }
 
     private fun finishSession() {
-        val completed = repository.finishActiveSession() ?: return
+        val active = repository.activeSession() ?: return
+        val at = sessionClock.now()
+        val result = sessionController.dispatch(
+            SessionCommand.Finish("finish:${active.sessionId}:${at.elapsedMs}", at, active.sessionId, active.focusBlockId)
+        )
+        if (!result.applied) return
+        suggestedCheckInSource = null
+        val completed = repository.sessions().firstOrNull { it.sessionId == active.sessionId } ?: return
         BreakReminderScheduler.cancel(this)
         syncStudyDnd(false)
         stopSensorCollection()
@@ -246,7 +337,12 @@ class MainActivity : Activity() {
             .setTitle("Hủy phiên đang học?")
             .setMessage("Phiên này sẽ không được ghi vào lịch sử.")
             .setPositiveButton("Hủy phiên") { _, _ ->
-                repository.cancelActiveSession()
+                val active = repository.activeSession() ?: return@setPositiveButton
+                val at = sessionClock.now()
+                sessionController.dispatch(
+                    SessionCommand.Cancel("cancel:${active.sessionId}:${at.elapsedMs}", at, active.sessionId, active.focusBlockId)
+                )
+                suggestedCheckInSource = null
                 BreakReminderScheduler.cancel(this)
                 syncStudyDnd(false)
                 stopSensorCollection()
@@ -268,37 +364,92 @@ class MainActivity : Activity() {
         renderInputs()
     }
 
-    private fun maybeShowForegroundBreakPrompt() {
-        if (!isResumed || promptVisible) return
+    private fun startVoluntaryBreak() {
         val active = repository.activeSession() ?: return
+        if (StudySessionClock.isOnBreak(active, System.currentTimeMillis())) return
+        val at = sessionClock.now()
+        val result = sessionController.dispatch(
+            SessionCommand.StartBreak(
+                commandId = "voluntary-break:${UUID.randomUUID()}",
+                at = at,
+                sessionId = active.sessionId,
+                blockId = active.focusBlockId,
+                activity = BreakActivityType.FULL_BREAK,
+            )
+        )
+        if (!result.applied) return
+        val resting = repository.activeSession() ?: return
+        BreakReminderScheduler.cancel(this)
+        syncStudyDnd(false)
+        stopSensorCollection()
+        BreakReminderScheduler.schedule(this, resting, repository.cooldownUntilMs())
+        renderAll()
+    }
+
+    private fun togglePause() {
+        val active = repository.activeSession() ?: return
+        val at = sessionClock.now()
+        val result = if (StudySessionClock.isPaused(active)) {
+            sessionController.dispatch(
+                SessionCommand.ResumePaused("resume-pause:${active.sessionId}:${at.elapsedMs}", at, active.sessionId, active.focusBlockId)
+            )
+        } else {
+            sessionController.dispatch(
+                SessionCommand.Pause("pause:${active.sessionId}:${at.elapsedMs}", at, active.sessionId, active.focusBlockId)
+            )
+        }
+        if (!result.applied) return
+        val updated = repository.activeSession() ?: return
+        if (StudySessionClock.isPaused(updated)) {
+            BreakReminderScheduler.cancel(this)
+            syncStudyDnd(false)
+            stopSensorCollection()
+        } else {
+            syncStudyDnd(true)
+            BreakReminderScheduler.schedule(this, updated, repository.cooldownUntilMs())
+            updateSensorCollection()
+        }
+        renderAll()
+    }
+
+    private fun showVoluntaryCheckIn(source: CheckInSource) {
+        val active = repository.activeSession() ?: return
+        val fatigueChoices = arrayOf("Bỏ qua mức mệt") + (1..10).map { "Mệt $it/10" }
+        AlertDialog.Builder(this)
+            .setTitle("Bạn thấy mệt mức nào?")
+            .setItems(fatigueChoices) { _, fatigueIndex ->
+                val fatigue = fatigueIndex.takeIf { it > 0 }
+                showFocusCheckIn(active.sessionId, fatigue, source)
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun showFocusCheckIn(sessionId: String, fatigue: Int?, source: CheckInSource) {
+        val focusChoices = arrayOf("Bỏ qua mức tập trung") + (1..5).map { "Tập trung $it/5" }
+        AlertDialog.Builder(this)
+            .setTitle("Mức tập trung hiện tại?")
+            .setItems(focusChoices) { _, focusIndex ->
+                val focus = focusIndex.takeIf { it > 0 }
+                if (focus == null && fatigue == null) return@setItems
+                if (repository.recordCheckIn(sessionId, source, focus, fatigue)) {
+                    if (suggestedCheckInSource == source) suggestedCheckInSource = null
+                    Toast.makeText(this, "Đã lưu tự đánh giá; luật mới chỉ chạy shadow.", Toast.LENGTH_LONG).show()
+                }
+                renderAll()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun maybeShowForegroundBreakPrompt() {
+        if (!isResumed) return
+        val active = repository.activeSession() ?: return
+        if (active.timeline?.state == SessionState.RECOVERY_REQUIRED) return
         val now = System.currentTimeMillis()
         if (StudySessionClock.isOnBreak(active, now)) return
         val pending = active.pendingReminder
         if (pending?.kind == PendingReminderKind.BREAK_SUGGESTION) {
-            promptVisible = true
-            val dialog = AlertDialog.Builder(this)
-                .setTitle("Đã đến lúc nghỉ")
-                .setMessage(pending.message)
-                .setCancelable(false)
-                .setPositiveButton("Nghỉ 5 phút") { _, _ ->
-                    promptVisible = false
-                    sendReminderAction(
-                        BreakReminderScheduler.ACTION_ACCEPT,
-                        active.sessionId,
-                        pending.eventId,
-                    )
-                }
-                .setNegativeButton("Để sau 20 phút") { _, _ ->
-                    promptVisible = false
-                    sendReminderAction(
-                        BreakReminderScheduler.ACTION_DEFER,
-                        active.sessionId,
-                        pending.eventId,
-                    )
-                }
-                .create()
-            dialog.setOnDismissListener { promptVisible = false }
-            dialog.show()
             return
         }
         val durationMs = repository.focusBlockDurationMs(active, now)
@@ -313,24 +464,50 @@ class MainActivity : Activity() {
         BreakReminderScheduler.requestImmediateCheck(this)
     }
 
+    private fun maybeShowRecoveryChoice() {
+        if (!isResumed || recoveryVisible) return
+        val active = repository.activeSession() ?: return
+        if (active.timeline?.state != SessionState.RECOVERY_REQUIRED) return
+        recoveryVisible = true
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Cần xác nhận phiên học")
+            .setMessage("Đồng hồ đã khởi động lại hoặc thiếu mốc thời gian. Khoảng chưa xác nhận không được tính là học hay nghỉ.")
+            .setPositiveButton("Học tiếp từ bây giờ") { _, _ ->
+                val at = sessionClock.now()
+                val result = sessionController.dispatch(
+                    SessionCommand.Recover("recover:${active.sessionId}:${at.elapsedMs}", at, active.sessionId, active.focusBlockId)
+                )
+                repository.activeSession()?.takeIf { result.applied }?.let {
+                    BreakReminderScheduler.schedule(this, it, repository.cooldownUntilMs())
+                    updateSensorCollection()
+                }
+                renderAll()
+            }
+            .setNegativeButton("Kết thúc tại mốc đã lưu") { _, _ -> finishSession() }
+            .setCancelable(false)
+            .create()
+        dialog.setOnDismissListener { recoveryVisible = false }
+        dialog.show()
+    }
+
     private fun maybeShowPendingReview() {
         if (!isResumed || promptVisible || reviewVisible || reportVisible) return
         val session = repository.pendingReviewSession() ?: return
         reviewVisible = true
+        val timingChoices = arrayOf("Quá sớm", "Vừa lúc", "Quá muộn", "Bỏ qua")
         val dialog = AlertDialog.Builder(this)
             .setTitle("Đánh giá thời điểm nhắc")
-            .setMessage("Theo bạn, trong phiên vừa rồi có nên được nhắc nghỉ không?")
-            .setPositiveButton("Nên nhắc") { _, _ ->
-                repository.updateSessionReview(session.sessionId, true)
+            .setItems(timingChoices) { _, index ->
+                when (index) {
+                    0 -> if (!repository.recordPromptTimingFeedback(session.sessionId, PromptTimingFeedback.TOO_EARLY)) repository.clearPendingReview()
+                    1 -> if (!repository.recordPromptTimingFeedback(session.sessionId, PromptTimingFeedback.ABOUT_RIGHT)) repository.clearPendingReview()
+                    2 -> if (!repository.recordPromptTimingFeedback(session.sessionId, PromptTimingFeedback.TOO_LATE)) repository.clearPendingReview()
+                    else -> repository.clearPendingReview()
+                }
                 renderHistory()
             }
-            .setNegativeButton("Không cần") { _, _ ->
-                repository.updateSessionReview(session.sessionId, false)
-                renderHistory()
-            }
-            .setNeutralButton("Bỏ qua") { _, _ -> repository.clearPendingReview() }
-            .setCancelable(false)
             .create()
+        dialog.setOnCancelListener { repository.clearPendingReview() }
         dialog.setOnDismissListener { reviewVisible = false }
         dialog.show()
     }
@@ -349,21 +526,20 @@ class MainActivity : Activity() {
                 if (active != null && active.sessionId == sessionId) {
                     val now = System.currentTimeMillis()
                     val cooldownUntil = now + FocusMateRules.COOLDOWN_MS
-                    val updated = runCatching {
-                        repository.recordPromptResponse(
+                    val at = sessionClock.now().copy(wallMs = now)
+                    val result = sessionController.dispatch(
+                        SessionCommand.DeferReminder(
+                            commandId = "defer:$eventId",
+                            at = at,
                             sessionId = sessionId,
-                            eventId = eventId,
-                            accepted = false,
+                            blockId = active.focusBlockId,
+                            reminderId = eventId,
+                            cooldownUntilWallMs = cooldownUntil,
                             declineReasonCode = reasons[index].first,
                             sessionDeferReason = reasons[index].second,
-                            respondedAtMs = now,
-                            quietUntilMs = cooldownUntil,
-                            requireCurrentEvent = false,
                         )
-                    }.getOrNull() ?: active.copy(accepted = false, deferReason = reasons[index].second).also {
-                        repository.saveActiveSession(it)
-                        repository.setCooldownUntilMs(cooldownUntil)
-                    }
+                    )
+                    val updated = repository.activeSession()?.takeIf { result.applied || result.duplicate } ?: return@setItems
                     BreakReminderScheduler.schedule(this, updated, cooldownUntil)
                     renderAll()
                     Toast.makeText(this, "Sẽ không làm phiền trong 20 phút.", Toast.LENGTH_LONG).show()
@@ -403,6 +579,7 @@ class MainActivity : Activity() {
         renderPostureRuntimeStatus(active)
         renderSyncCompatibility(active)
         renderReminderReadiness()
+        renderReminderCard(active)
     }
 
     private fun isReminderReady(): Boolean {
@@ -470,6 +647,18 @@ class MainActivity : Activity() {
         btnFocusPlus.isEnabled = repository.activeSession() == null && focusScore < 5
         btnFatigueMinus.isEnabled = repository.activeSession() == null && fatigueScore > 1
         btnFatiguePlus.isEnabled = repository.activeSession() == null && fatigueScore < 10
+        val active = repository.activeSession()
+        val studying = active != null && !StudySessionClock.isOnBreak(active, System.currentTimeMillis())
+        btnCheckIn.visibility = if (active != null) View.VISIBLE else View.GONE
+        btnCheckIn.text = if (suggestedCheckInSource == CheckInSource.AFTER_BREAK) {
+            "Check-in sau nghỉ (tùy chọn)"
+        } else {
+            "Check-in tự nguyện"
+        }
+        btnTaskBoundary.visibility = if (studying && active?.let(StudySessionClock::isPaused) == false) View.VISIBLE else View.GONE
+        btnStartBreakNow.visibility = if (studying && active?.let(StudySessionClock::isPaused) == false) View.VISIBLE else View.GONE
+        btnPauseResume.visibility = if (studying) View.VISIBLE else View.GONE
+        btnPauseResume.text = if (active?.let(StudySessionClock::isPaused) == true) "Tiếp tục học" else "Tạm dừng"
     }
 
     private fun renderLiveState() {
@@ -481,7 +670,7 @@ class MainActivity : Activity() {
         } else {
             val durationMs = repository.studyDurationMs(active, now)
             tvTimer.text = formatDuration(durationMs)
-            val breakRemainingMs = StudySessionClock.breakRemainingMs(active, now)
+            val breakRemainingMs = repository.breakRemainingMs(active)
             val awaitingDecision = StudySessionClock.isAwaitingBreakDecision(active)
             tvBreakTimer.visibility = if (breakRemainingMs > 0L || awaitingDecision) View.VISIBLE else View.GONE
             tvBreakTimer.text = when {
@@ -493,6 +682,44 @@ class MainActivity : Activity() {
         val cooldown = (repository.cooldownUntilMs() - now).coerceAtLeast(0L)
         tvCooldown.visibility = if (cooldown > 0L) View.VISIBLE else View.GONE
         tvCooldown.text = if (cooldown > 0L) "Không làm phiền: ${formatShortDuration(cooldown)}" else ""
+        renderReminderCard(active)
+    }
+
+    private fun renderReminderCard(active: ActiveStudySession?) {
+        val reminder = active?.pendingReminder
+        reminderCard.visibility = if (reminder == null) View.GONE else View.VISIBLE
+        tvReminderCardMessage.text = reminder?.message.orEmpty()
+        val breakEnded = reminder?.kind == PendingReminderKind.BREAK_ENDED
+        tvReminderCardTitle.text = if (breakEnded) "HẾT GIỜ NGHỈ" else "ĐỀ NGHỊ NGHỈ"
+        btnReminderCardBreak.text = if (breakEnded) "Tiếp tục học" else "Nghỉ 5 phút"
+        btnReminderCardDefer.text = if (breakEnded) "Nghỉ thêm 5 phút" else "Để sau 20 phút"
+        btnReminderCardCheckIn.visibility = if (breakEnded) View.GONE else View.VISIBLE
+        btnReminderCardExtend10.visibility = if (breakEnded) View.VISIBLE else View.GONE
+        btnReminderCardFinish.visibility = if (breakEnded) View.VISIBLE else View.GONE
+    }
+
+    private fun sendCurrentReminderPrimaryAction() {
+        val active = repository.activeSession() ?: return
+        val reminder = active.pendingReminder ?: return
+        val action = if (reminder.kind == PendingReminderKind.BREAK_ENDED) {
+            BreakReminderScheduler.ACTION_RESUME_STUDY
+        } else BreakReminderScheduler.ACTION_ACCEPT
+        sendReminderAction(action, active.sessionId, reminder.eventId)
+    }
+
+    private fun sendCurrentReminderSecondaryAction() {
+        val active = repository.activeSession() ?: return
+        val reminder = active.pendingReminder ?: return
+        val action = if (reminder.kind == PendingReminderKind.BREAK_ENDED) {
+            BreakReminderScheduler.ACTION_EXTEND_BREAK_5
+        } else BreakReminderScheduler.ACTION_DEFER
+        sendReminderAction(action, active.sessionId, reminder.eventId)
+    }
+
+    private fun sendCurrentBreakEndAction(action: String) {
+        val active = repository.activeSession() ?: return
+        val reminder = active.pendingReminder?.takeIf { it.kind == PendingReminderKind.BREAK_ENDED } ?: return
+        sendReminderAction(action, active.sessionId, reminder.eventId)
     }
 
     private fun renderSessionConfidence(active: ActiveStudySession?) {
@@ -515,7 +742,9 @@ class MainActivity : Activity() {
         val durationMs = repository.focusBlockDurationMs(active, now)
         val decision = repository.evaluateBreak(active, durationMs, now)
         val state = when {
+            active.timeline?.state == SessionState.RECOVERY_REQUIRED -> "CẦN PHỤC HỒI"
             StudySessionClock.isOnBreak(active, now) -> "ĐANG NGHỈ"
+            StudySessionClock.isPaused(active) -> "TẠM DỪNG"
             durationMs < 30 * 60_000L -> "ĐANG THEO DÕI"
             decision.promptSuppressionReason == BreakPromptEvent.SUPPRESSION_COOLDOWN -> "ĐÃ TẠM HOÃN"
             decision.shouldPrompt -> "ĐỀ XUẤT NGHỈ"
@@ -665,6 +894,7 @@ class MainActivity : Activity() {
                             activityThresholdCalibrator.classify(sessionId, metrics),
                             metrics.observedAtMs,
                         )
+                        BreakReminderScheduler.requestImmediateCheck(this)
                     }
                     renderSessionConfidence(repository.activeSession())
                 },
@@ -684,7 +914,12 @@ class MainActivity : Activity() {
         if (studyingActive != null && servicePermissionGranted) {
             SessionSensorService.start(this)
         } else if (studyingActive != null && isResumed) {
-            isCollecting = accCollector?.start(studyingActive.startTimeMs) == true
+            isCollecting = accCollector?.start(
+                studyingActive.startTimeMs,
+                studyingActive.focusBlockId,
+                AndroidSessionClock(this).now().bootId,
+                studyingActive.sessionId,
+            ) == true
         } else {
             SessionSensorService.stop(this)
         }
@@ -745,69 +980,50 @@ class MainActivity : Activity() {
     }
 
     private fun maybeShowBreakEndChoice() {
-        if (!isResumed || breakChoiceVisible) return
-        val now = System.currentTimeMillis()
+        if (!isResumed) return
         val active = repository.activeSession() ?: return
         val pending = active.pendingReminder
-        if (pending?.kind != PendingReminderKind.BREAK_ENDED) {
-            if (active.breakStartedAtMs == null || StudySessionClock.breakRemainingMs(active, now) > 0L) return
-            sendReminderAction(
-                BreakReminderScheduler.ACTION_BREAK_COMPLETE,
-                active.sessionId,
-                null,
-            )
-            return
-        }
-
-        syncStudyDnd(false)
-        stopSensorCollection()
-        breakChoiceVisible = true
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Đã hết thời gian nghỉ")
-            .setMessage("Bạn muốn tiếp tục học hay nghỉ thêm?")
-            .setPositiveButton("Tiếp tục học") { _, _ ->
-                sendReminderAction(
-                    BreakReminderScheduler.ACTION_RESUME_STUDY,
-                    active.sessionId,
-                    pending.eventId,
-                )
-            }
-            .setNegativeButton("Nghỉ thêm 5 phút") { _, _ ->
-                sendReminderAction(
-                    BreakReminderScheduler.ACTION_EXTEND_BREAK_5,
-                    active.sessionId,
-                    pending.eventId,
-                )
-            }
-            .setNeutralButton("Nghỉ thêm 10 phút") { _, _ ->
-                sendReminderAction(
-                    BreakReminderScheduler.ACTION_EXTEND_BREAK_10,
-                    active.sessionId,
-                    pending.eventId,
-                )
-            }
-            .setCancelable(false)
-            .create()
-        dialog.setOnDismissListener { breakChoiceVisible = false }
-        dialog.show()
-        renderLiveState()
+        if (pending?.kind == PendingReminderKind.BREAK_ENDED) return
+        if (active.breakStartedAtMs == null || repository.breakRemainingMs(active) > 0L) return
+        sendReminderAction(BreakReminderScheduler.ACTION_BREAK_COMPLETE, active.sessionId, null)
     }
 
     private fun resumeAfterBreakChoice(sessionId: String) {
-        val resumed = repository.resumeStudyAfterBreak(sessionId, System.currentTimeMillis()) ?: return
+        val active = repository.activeSession()?.takeIf { it.sessionId == sessionId } ?: return
+        val at = sessionClock.now()
+        val result = sessionController.dispatch(
+            SessionCommand.ResumeAfterBreak(
+                "resume-break:${active.pendingReminder?.eventId ?: at.elapsedMs}",
+                at,
+                sessionId,
+                active.focusBlockId,
+            )
+        )
+        if (!result.applied) return
+        val resumed = repository.activeSession() ?: return
         syncStudyDnd(true)
         BreakReminderScheduler.schedule(this, resumed, repository.cooldownUntilMs())
         updateSensorCollection()
         renderAll()
         Toast.makeText(this, "Đã tiếp tục phiên học.", Toast.LENGTH_SHORT).show()
+        suggestedCheckInSource = CheckInSource.AFTER_BREAK
+        renderInputs()
     }
 
     private fun extendBreakChoice(sessionId: String, minutes: Int) {
-        val extended = repository.extendBreak(
-            sessionId = sessionId,
-            nowMs = System.currentTimeMillis(),
-            durationMs = minutes * 60_000L,
-        ) ?: return
+        val active = repository.activeSession()?.takeIf { it.sessionId == sessionId } ?: return
+        val at = sessionClock.now()
+        val result = sessionController.dispatch(
+            SessionCommand.ExtendBreak(
+                "extend-break:${active.pendingReminder?.eventId ?: at.elapsedMs}:$minutes",
+                at,
+                sessionId,
+                active.focusBlockId,
+                minutes * 60_000L,
+            )
+        )
+        if (!result.applied) return
+        val extended = repository.activeSession() ?: return
         syncStudyDnd(false)
         stopSensorCollection()
         BreakReminderScheduler.schedule(this, extended, repository.cooldownUntilMs())
@@ -829,13 +1045,18 @@ class MainActivity : Activity() {
                 renderAll()
                 syncStudyDnd(isCurrentlyStudying(repository.activeSession()))
                 updateSensorCollection()
+                if (action == BreakReminderScheduler.ACTION_RESUME_STUDY) {
+                    suggestedCheckInSource = CheckInSource.AFTER_BREAK
+                    renderInputs()
+                }
             },
             250L,
         )
     }
 
     private fun isCurrentlyStudying(active: ActiveStudySession?): Boolean =
-        active != null && !StudySessionClock.isOnBreak(active, System.currentTimeMillis())
+        active != null && !StudySessionClock.isOnBreak(active, System.currentTimeMillis()) &&
+            !StudySessionClock.isPaused(active)
 
     private fun hasBluetoothPermissions(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
         (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&

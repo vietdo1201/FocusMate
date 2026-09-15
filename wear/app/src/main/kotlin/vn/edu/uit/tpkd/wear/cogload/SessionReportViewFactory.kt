@@ -6,6 +6,8 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.TextView
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -165,12 +167,51 @@ object SessionReportViewFactory {
                 oneDecimalMinutes(it.totalDurationMs),
             )
         } ?: context.getString(R.string.report_posture_no_insight)
-        return context.getString(
+        val sensorSummary = context.getString(
             R.string.report_metrics,
             posture,
             session.yawnCount,
             session.yawnRecentWindowCount,
         )
+        val unknown = if (session.hasUnquantifiedUnknownInterval) {
+            "có khoảng chưa xác định (không thể định lượng)"
+        } else {
+            "chưa xác định ${oneDecimalMinutes(session.unknownDurationMs)} phút"
+        }
+        val timeline = "Học ${oneDecimalMinutes(session.durationMinutes * 60_000L)} phút • " +
+            "nghỉ ${oneDecimalMinutes(session.totalBreakDurationMs)} phút • " +
+            "tạm dừng ${oneDecimalMinutes(session.totalPauseDurationMs)} phút • " +
+            unknown
+        val reminders = "Đề nghị ${session.breakReminderCount} • thử giao ${session.deliveryAttemptCount} • " +
+            "phản hồi ${session.reminderResponseCount}" +
+            session.reminderReasonHistory.takeIf { it.isNotEmpty() }?.let { "\nLý do: ${it.sorted().joinToString(", ")}" }.orEmpty()
+        val reminderHistory = session.reminderHistory.mapIndexed { index, episode ->
+            val response = episode.response ?: "chưa phản hồi"
+            val feedback = when (episode.timingFeedback) {
+                PromptTimingFeedback.TOO_EARLY -> "sớm"
+                PromptTimingFeedback.ABOUT_RIGHT -> "vừa lúc"
+                PromptTimingFeedback.TOO_LATE -> "muộn"
+                null -> "chưa đánh giá"
+            }
+            val deliveries = episode.deliveries.joinToString("; ") { delivery ->
+                "lượt ${delivery.slotIndex + 1}: lịch ${timeLabel(delivery.scheduledWallMs)}, " +
+                    "nhận ${timeLabel(delivery.receiverWallMs)}, thử ${timeLabel(delivery.postAttemptWallMs)}, " +
+                    "kết quả ${delivery.result}"
+            }.ifBlank { "không có lượt giao" }
+            "${index + 1}. ${episode.reasonCodes.sorted().joinToString(", ").ifBlank { "không có reason" }} • " +
+                "$response • $feedback\n   $deliveries"
+        }.joinToString("\n")
+        val fatigue = if (session.breakFatigueChanges.isEmpty()) {
+            "Sau nghỉ: chưa có đánh giá tự báo cáo hợp lệ"
+        } else {
+            "Thay đổi mức mệt tự báo cáo (sau − trước): " +
+                session.breakFatigueChanges.joinToString(", ") { change -> "%+d".format(change) }
+        }
+        return buildString {
+            append(timeline).append('\n').append(reminders)
+            if (reminderHistory.isNotBlank()) append("\nLịch sử đề nghị:\n").append(reminderHistory)
+            append('\n').append(fatigue).append('\n').append(sensorSummary)
+        }
     }
 
     private fun dataQualityText(context: Context, session: StudySession): String {
@@ -211,6 +252,10 @@ object SessionReportViewFactory {
 
     private fun oneDecimalMinutes(durationMs: Long): String =
         String.format(Locale.getDefault(), "%.1f", durationMs / 60_000.0)
+
+    private fun timeLabel(wallMs: Long?): String = wallMs?.takeIf { it > 0L }?.let {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
+    } ?: "—"
 
     private fun SessionAdvicePresentation.formatted(context: Context): String =
         context.getString(R.string.report_action_reason, action, reason)

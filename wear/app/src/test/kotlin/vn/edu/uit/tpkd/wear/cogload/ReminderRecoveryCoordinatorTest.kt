@@ -17,6 +17,7 @@ class ReminderRecoveryCoordinatorTest {
         assertEquals(ReminderRecoveryOutcome.RESTORED, outcome)
         assertTrue(fake.channelsPrepared)
         assertEquals("session-1" to 42_000L, fake.scheduled)
+        assertTrue(fake.reconciled)
         assertFalse(fake.cancelled)
     }
 
@@ -57,7 +58,12 @@ class ReminderRecoveryCoordinatorTest {
         var channelsPrepared = false
         var scheduled: Pair<String, Long>? = null
 
-        override fun activeSession(): ActiveStudySession? = active
+        var reconciled = false
+
+        override fun reconcileActiveSession(): ActiveStudySession? {
+            reconciled = true
+            return active
+        }
         override fun cooldownUntilMs(): Long = cooldown
         override fun cancelAlarms() { cancelled = true }
         override fun prepareNotificationChannels() { channelsPrepared = true }

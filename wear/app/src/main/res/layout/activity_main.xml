@@ -160,6 +160,111 @@
                     android:visibility="gone" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/reminder_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:background="@drawable/confidence_background"
+                android:orientation="vertical"
+                android:padding="10dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tv_reminder_card_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="ĐỀ NGHỊ NGHỈ"
+                    android:textColor="#78CCFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_reminder_card_message"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_reminder_card_break"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/primary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Nghỉ 5 phút"
+                    android:textAllCaps="false"
+                    android:textColor="#06111D"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_reminder_card_check_in"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Tự đánh giá trước khi nghỉ"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_reminder_card_defer"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Để sau 20 phút"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_reminder_card_extend_10"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Nghỉ thêm 10 phút"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_reminder_card_finish"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/danger_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Kết thúc phiên"
+                    android:textAllCaps="false"
+                    android:textColor="#FFB9C0"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -319,6 +424,70 @@
                     android:text="@string/cancel_session"
                     android:textAllCaps="false"
                     android:textColor="#FFB9C0"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_check_in"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Check-in tự nguyện"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_task_boundary"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Xong một phần / chuyển nhiệm vụ"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_start_break_now"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/primary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Nghỉ chủ động 5 phút"
+                    android:textAllCaps="false"
+                    android:textColor="#06111D"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_pause_resume"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/secondary_button"
+                    android:backgroundTint="@null"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:text="Tạm dừng"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F7FC"
                     android:textSize="11sp"
                     android:visibility="gone" />
             </LinearLayout>

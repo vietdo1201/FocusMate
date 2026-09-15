@@ -9,11 +9,16 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
+import java.util.UUID
 
 data class DailyStudyTotal(val date: LocalDate, val label: String, val minutes: Int)
 
-/** SharedPreferences is sufficient for the bounded, local-first Wear MVP. */
-class StudySessionRepository(private val context: Context) {
+/** Compatibility adapter over the authoritative SQLite session store. */
+class StudySessionRepository(
+    private val context: Context,
+    private val sessionClock: SessionClock = AndroidSessionClock(context),
+) : SessionStore {
+    private val database = FocusMateSessionDatabaseProvider.get(context)
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     // Hot per-second fields (active session, cooldown) live in their own small
     // file: every apply() rewrites the whole XML, and the bulk store can reach
@@ -21,15 +26,74 @@ class StudySessionRepository(private val context: Context) {
     private val activePreferences = context.getSharedPreferences(ACTIVE_PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     init {
-        var retentionChanged = false
         synchronized(STORE_LOCK) {
-            moveActiveStateToOwnFile()
-            if (!preferences.getBoolean(KEY_LEGACY_MIGRATION_DONE, false)) {
-                migrateLegacyLocalData()
-                preferences.edit().putBoolean(KEY_LEGACY_MIGRATION_DONE, true).apply()
-            }
-            retentionChanged = pruneExpiredStoredDataLocked(LocalDate.now())
+            migratePreferencesToDatabase()
+            pruneExpiredStoredDataLocked(LocalDate.now())
         }
+    }
+
+    /** Idempotent copy-verify-switch migration; preferences are never dual-written afterwards. */
+    private fun migratePreferencesToDatabase() {
+        if (database.metadata(FocusMateSessionDatabase.META_PREFS_MIGRATION) == "complete") return
+        moveActiveStateToOwnFile()
+        val recoveryPayloads = mutableListOf<Pair<String, String>>()
+
+        val rawSessions = preferences.getString(KEY_SESSIONS, "[]") ?: "[]"
+        val (sessions, sessionRows) = parseSessions(rawSessions)
+        if (sessions.size != sessionRows) recoveryPayloads += "legacy_sessions" to rawSessions
+
+        val rawEvents = preferences.getString(KEY_PROMPT_EVENTS, "[]") ?: "[]"
+        val eventArray = runCatching { JSONArray(rawEvents) }.getOrNull()
+        val events = eventArray?.let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    runCatching { BreakPromptEvent.fromJson(array.getJSONObject(index)) }.getOrNull()?.let(::add)
+                }
+            }
+        }.orEmpty()
+        if (eventArray == null || events.size != eventArray.length()) {
+            recoveryPayloads += "legacy_prompt_events" to rawEvents
+        }
+
+        val activeRaw = activePreferences.getString(KEY_ACTIVE_SESSION, null)
+        val migratedActive = activeRaw?.let { raw ->
+            runCatching { ActiveStudySession.fromJson(org.json.JSONObject(raw)) }
+                .map { legacy ->
+                    val at = sessionClock.now()
+                    legacy.copy(
+                        timeline = SessionTimelineSnapshot(
+                            sessionId = legacy.sessionId,
+                            revision = 0L,
+                            state = SessionState.RECOVERY_REQUIRED,
+                            blockId = legacy.focusBlockId,
+                            enteredAt = at,
+                        )
+                    )
+                }
+                .getOrElse {
+                    recoveryPayloads += "legacy_active_session" to raw
+                    null
+                }
+        }
+        val cooldown = activePreferences.getLong(KEY_COOLDOWN_UNTIL, 0L)
+            .takeIf { activePreferences.contains(KEY_COOLDOWN_UNTIL) }
+        val pendingReview = preferences.getString(KEY_PENDING_REVIEW_ID, null)
+
+        database.importLegacyState(
+            sessions = sessions,
+            events = events,
+            active = migratedActive,
+            cooldownUntilMs = cooldown,
+            pendingReviewId = pendingReview,
+            recoveryPayloads = recoveryPayloads,
+        )
+
+        val importedIds = database.sessionPayloads().mapNotNull {
+            runCatching { StudySession.fromJson(org.json.JSONObject(it)).sessionId }.getOrNull()
+        }.toSet()
+        check(importedIds == sessions.map(StudySession::sessionId).toSet()) { "Session migration verification failed" }
+        preferences.edit().clear().putBoolean(KEY_LEGACY_MIGRATION_DONE, true).commit()
+        activePreferences.edit().clear().commit()
     }
 
     /** One-time move of the hot active-session/cooldown keys out of the bulk store. */
@@ -46,34 +110,24 @@ class StudySessionRepository(private val context: Context) {
         preferences.edit().remove(KEY_ACTIVE_SESSION).remove(KEY_COOLDOWN_UNTIL).apply()
     }
 
-    /** Rewrites legacy rows once so participant/subject fields and demos disappear on disk. */
-    private fun migrateLegacyLocalData() {
-        val raw = preferences.getString(KEY_SESSIONS, "[]") ?: "[]"
-        val (parsedSessions, rawRowCount) = parseSessions(raw)
-        // Never rewrite the store while rows are unreadable: the rewrite would
-        // permanently delete every row the parser had to drop.
-        if (parsedSessions.size < rawRowCount) return
-        val realSessions = parsedSessions
-            .filterNot { it.synthetic || it.labelSource == LEGACY_SEED_LABEL }
-            .map { session ->
-                if (session.accepted == true && session.breakCount == 0) session.copy(breakCount = 1) else session
-            }
-        val validIds = realSessions.map { it.sessionId }.toSet() + listOfNotNull(activeSession()?.sessionId)
-        val realEvents = promptEvents().filter { !it.synthetic && it.sessionId in validIds }
-        val sessionJson = JSONArray().apply { realSessions.forEach { put(it.toJson()) } }.toString()
-        preferences.edit()
-            .putString(KEY_SESSIONS, sessionJson)
-            .putString(KEY_PROMPT_EVENTS, promptEventsJson(realEvents))
-            .remove(LEGACY_PARTICIPANT_KEY)
-            .apply()
-    }
-
     /** Missing/corrupt individual rows never make the whole session store unreadable. */
     fun sessions(): List<StudySession> = synchronized(STORE_LOCK) {
-        val raw = preferences.getString(KEY_SESSIONS, "[]") ?: "[]"
-        parseSessions(raw).first
+        storedSessionRows().first
             .filterNot { RetentionPolicy.isExpired(it.expiresOn, it.endTimeMs) }
             .sortedByDescending { it.startTimeMs }
+    }
+
+    /** Raw database rows are needed by retention; [sessions] intentionally hides expired rows. */
+    private fun storedSessionRows(): Pair<List<StudySession>, Int> {
+        val payloads = database.sessionPayloads()
+        val parsed = payloads.mapNotNull { raw ->
+            runCatching { StudySession.fromJson(org.json.JSONObject(raw)) }
+                .getOrElse {
+                    database.preserveRecoveryPayload("sqlite_completed_sessions", raw)
+                    null
+                }
+        }
+        return parsed to payloads.size
     }
 
     /** Parsed rows plus the raw row count, so callers can detect dropped rows. */
@@ -91,23 +145,14 @@ class StudySessionRepository(private val context: Context) {
 
     /** Missing/corrupt individual event rows never make the session store unreadable. */
     fun promptEvents(): List<BreakPromptEvent> = synchronized(STORE_LOCK) {
-        val raw = preferences.getString(KEY_PROMPT_EVENTS, "[]") ?: "[]"
-        runCatching {
-            val json = JSONArray(raw)
-            buildList {
-                for (index in 0 until json.length()) {
-                    runCatching { BreakPromptEvent.fromJson(json.getJSONObject(index)) }
-                        .getOrNull()
-                        ?.let(::add)
-                }
-            }.filterNot { RetentionPolicy.isExpired(it.expiresOn, it.candidateAtMs) }
-                .sortedByDescending { it.candidateAtMs }
-        }.getOrElse { emptyList() }
+        database.promptEventPayloads().mapNotNull { raw ->
+            runCatching { BreakPromptEvent.fromJson(org.json.JSONObject(raw)) }.getOrNull()
+        }.filterNot { RetentionPolicy.isExpired(it.expiresOn, it.candidateAtMs) }
+            .sortedByDescending { it.candidateAtMs }
     }
 
     fun addSession(session: StudySession): Unit = synchronized(STORE_LOCK) {
-        if (pruneExpiredStoredDataLocked(LocalDate.now())) {
-        }
+        pruneExpiredStoredDataLocked(LocalDate.now())
         if (RetentionPolicy.isExpired(session.expiresOn, session.endTimeMs)) return@synchronized
         val updated = (sessions() + session)
             .distinctBy { it.sessionId }
@@ -115,7 +160,9 @@ class StudySessionRepository(private val context: Context) {
             .take(MAX_STORED_SESSIONS)
         saveSessions(updated)
         val activeId = activeSession()?.sessionId
-        prunePromptEvents(updated.map { it.sessionId }.toSet() + listOfNotNull(activeId))
+        val validIds = updated.map { it.sessionId }.toSet() + listOfNotNull(activeId)
+        prunePromptEvents(validIds)
+        database.deleteSessionChildren(validIds)
     }
 
     fun updateSessionResponse(sessionId: String, accepted: Boolean, deferReason: String?): Unit = synchronized(STORE_LOCK) {
@@ -131,6 +178,7 @@ class StudySessionRepository(private val context: Context) {
                 session.copy(
                     reviewedShouldBreak = shouldBreakReviewed,
                     labelSource = "human_review_v1",
+                    reminderHistory = database.reminderHistory(sessionId),
                 )
             } else {
                 session
@@ -139,11 +187,30 @@ class StudySessionRepository(private val context: Context) {
         saveSessions(updated)
         updated.firstOrNull { it.sessionId == sessionId }?.let {
         }
-        if (preferences.getString(KEY_PENDING_REVIEW_ID, null) == sessionId) clearPendingReview()
+        if (database.metadata(FocusMateSessionDatabase.META_PENDING_REVIEW) == sessionId) clearPendingReview()
     }
 
+    fun recordPromptTimingFeedback(sessionId: String, timing: PromptTimingFeedback): Boolean =
+        synchronized(STORE_LOCK) {
+            val reminderId = promptEvents()
+                .filter { it.sessionId == sessionId && it.prompted }
+                .maxByOrNull(BreakPromptEvent::candidateAtMs)
+                ?.eventId ?: return@synchronized false
+            val recorded = database.recordPromptFeedback(
+                reminderId = reminderId,
+                sessionId = sessionId,
+                timing = timing,
+                annoyance = null,
+                wallMs = System.currentTimeMillis(),
+            )
+            if (recorded) {
+                updateSessionReview(sessionId, timing != PromptTimingFeedback.TOO_EARLY)
+            }
+            recorded
+        }
+
     fun pendingReviewSession(): StudySession? {
-        val sessionId = preferences.getString(KEY_PENDING_REVIEW_ID, null) ?: return null
+        val sessionId = database.metadata(FocusMateSessionDatabase.META_PENDING_REVIEW) ?: return null
         return sessions().firstOrNull { it.sessionId == sessionId && it.reviewedShouldBreak == null }
             ?: run {
                 clearPendingReview()
@@ -152,38 +219,108 @@ class StudySessionRepository(private val context: Context) {
     }
 
     fun clearPendingReview() {
-        preferences.edit().remove(KEY_PENDING_REVIEW_ID).apply()
+        database.putMetadata(FocusMateSessionDatabase.META_PENDING_REVIEW, "")
     }
 
     fun activeSession(): ActiveStudySession? {
-        val raw = activePreferences.getString(KEY_ACTIVE_SESSION, null) ?: return null
+        val raw = database.activePayload() ?: return null
         return runCatching { ActiveStudySession.fromJson(org.json.JSONObject(raw)) }.getOrNull()
+    }
+
+    fun reconcileActiveSession(): ActiveStudySession? = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized null
+        val timeline = active.timeline ?: return@synchronized active
+        val now = sessionClock.now()
+        val reconciled = SessionTimelineReducer.reconcile(timeline, now)
+        if (reconciled == timeline) return@synchronized active
+        val updated = active.copy(timeline = reconciled, pendingReminder = null)
+        val commandId = "${active.sessionId}:recovery:${timeline.revision}:${now.bootId}"
+        val applied = database.requireRecovery(
+            commandId, timeline, updated, now, "boot_or_elapsed_discontinuity",
+            active.pendingReminder?.eventId,
+        )
+        if (applied) updated else activeSession()
+    }
+
+    fun resumeRecoveredSession(
+        sessionId: String,
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = sessionClock.now(),
+    ): ActiveStudySession? = synchronized(STORE_LOCK) {
+        if (database.hasCommand(commandId)) return@synchronized activeSession()
+        val active = activeSession() ?: return@synchronized null
+        val timeline = active.timeline ?: return@synchronized null
+        if (active.sessionId != sessionId || timeline.state != SessionState.RECOVERY_REQUIRED) return@synchronized null
+        val resumedTimeline = SessionTimelineReducer.resumeFromRecovery(timeline, at)
+        val updated = active.copy(
+            timeline = resumedTimeline,
+            focusBlockId = resumedTimeline.blockId,
+            breakStartedAtMs = null,
+            breakEndsAtMs = null,
+            breakAwaitingDecisionAtMs = null,
+            pausedAtMs = null,
+            pendingReminder = null,
+        )
+        val applied = database.applyCommand(
+            commandId, "$commandId:event", sessionId, updated.focusBlockId,
+            "RESUME_RECOVERED_SESSION", at, org.json.JSONObject(), updated,
+            closeReminderId = active.pendingReminder?.eventId,
+        )
+        if (applied) updated else activeSession()
+    }
+
+    fun checkpointActiveSession(): ActiveStudySession? = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized null
+        val timeline = active.timeline ?: return@synchronized active
+        val at = sessionClock.now()
+        if (at.bootId == timeline.checkpointAt.bootId &&
+            at.elapsedMs - timeline.checkpointAt.elapsedMs < CHECKPOINT_INTERVAL_MS
+        ) return@synchronized active
+        val checkpoint = SessionTimelineReducer.checkpoint(timeline, at)
+        val updated = active.copy(timeline = checkpoint)
+        val commandId = "${active.sessionId}:checkpoint:${at.elapsedMs / CHECKPOINT_INTERVAL_MS}"
+        val applied = database.applyCommand(
+            commandId, "$commandId:event", active.sessionId, active.focusBlockId,
+            "CHECKPOINT", at, org.json.JSONObject(), updated,
+        )
+        if (applied) updated else activeSession()
     }
 
     fun saveActiveSession(session: ActiveStudySession) {
         synchronized(STORE_LOCK) {
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, session.toJson().toString()).apply()
+            persistActive(session)
         }
     }
+
+    private fun persistActive(session: ActiveStudySession) =
+        database.putActive(
+            session.toJson().toString(),
+            session.sessionId,
+            session.inferredState(),
+            session.timeline?.revision ?: 0L,
+        )
 
     fun setPendingReminder(sessionId: String, reminder: PendingReminder): ActiveStudySession? =
         synchronized(STORE_LOCK) {
             val active = activeSession() ?: return@synchronized null
             if (active.sessionId != sessionId) return@synchronized null
             if (active.pendingReminder?.eventId == reminder.eventId) return@synchronized active
-            val updated = if (reminder.kind == PendingReminderKind.BREAK_SUGGESTION) {
+            val coordinated = DefaultInteractionCoordinator.openOrMerge(active.pendingReminder, reminder)
+            val effective = coordinated.reminder
+            val updated = if (effective.kind == PendingReminderKind.BREAK_SUGGESTION && coordinated.openedNewEpisode) {
                 active.copy(
-                    pendingReminder = reminder,
+                    pendingReminder = effective,
                     breakReminderCount = active.breakReminderCount + 1,
                     accepted = null,
                     deferReason = null,
-                    lastPromptAtMs = reminder.createdAtMs,
-                    lastPromptEventId = reminder.eventId,
+                    lastPromptAtMs = effective.createdAtMs,
+                    lastPromptEventId = effective.eventId,
                 )
             } else {
-                active.copy(pendingReminder = reminder)
+                active.copy(pendingReminder = effective)
             }
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
+            database.upsertReminderEpisode(updated, effective)
             updated
         }
 
@@ -193,9 +330,50 @@ class StudySessionRepository(private val context: Context) {
             val pending = active.pendingReminder ?: return@synchronized null
             if (active.sessionId != sessionId || pending.eventId != eventId) return@synchronized null
             val updated = active.copy(pendingReminder = BreakReminderPolicy.nextAttempt(pending))
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
+            updated.pendingReminder?.let { database.upsertReminderEpisode(updated, it) }
             updated
         }
+
+    fun markPendingDeliveryState(
+        sessionId: String,
+        eventId: String,
+        state: ReminderDeliveryState,
+    ): ActiveStudySession? = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized null
+        val pending = active.pendingReminder ?: return@synchronized null
+        if (active.sessionId != sessionId || pending.eventId != eventId) return@synchronized null
+        val updated = active.copy(pendingReminder = pending.copy(deliveryState = state))
+        persistActive(updated)
+        updated.pendingReminder?.let { database.upsertReminderEpisode(updated, it) }
+        updated
+    }
+
+    fun reservePendingDeliverySlot(sessionId: String, reminderId: String): Int? = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized null
+        val reminder = active.pendingReminder ?: return@synchronized null
+        if (active.sessionId != sessionId || reminder.eventId != reminderId || reminder.attempt !in 1..2) {
+            return@synchronized null
+        }
+        val slotIndex = reminder.attempt - 1
+        val receiverAt = sessionClock.now()
+        val scheduledWall = reminder.createdAtMs + BreakReminderPolicy.RETRY_OFFSETS_MS[slotIndex]
+        val scheduledElapsed = reminder.createdAtElapsedMs
+            ?.takeIf { reminder.createdBootId == receiverAt.bootId }
+            ?.plus(BreakReminderPolicy.RETRY_OFFSETS_MS[slotIndex])
+            ?: (receiverAt.elapsedMs - (receiverAt.wallMs - scheduledWall)).coerceAtLeast(0L)
+        val reserved = database.reserveDeliverySlot(
+            reminderId,
+            slotIndex,
+            TimePoint(scheduledWall, scheduledElapsed, receiverAt.bootId),
+            receiverAt,
+        )
+        slotIndex.takeIf { reserved }
+    }
+
+    fun completePendingDeliverySlot(reminderId: String, slotIndex: Int, result: String) {
+        database.completeDeliverySlot(reminderId, slotIndex, sessionClock.now(), result)
+    }
 
     fun clearPendingReminder(sessionId: String, eventId: String): ActiveStudySession? =
         synchronized(STORE_LOCK) {
@@ -203,7 +381,7 @@ class StudySessionRepository(private val context: Context) {
             val pending = active.pendingReminder ?: return@synchronized active
             if (active.sessionId != sessionId || pending.eventId != eventId) return@synchronized null
             val updated = active.copy(pendingReminder = null)
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
             updated
         }
 
@@ -211,43 +389,227 @@ class StudySessionRepository(private val context: Context) {
         sessionId: String,
         startedAtMs: Long = System.currentTimeMillis(),
         durationMs: Long = StudySessionClock.BREAK_DURATION_MS,
+        commandId: String = UUID.randomUUID().toString(),
+        activity: BreakActivityType = BreakActivityType.FULL_BREAK,
+        at: TimePoint = timePointAt(startedAtMs),
     ): ActiveStudySession? = synchronized(STORE_LOCK) {
         val active = activeSession() ?: return@synchronized null
         if (active.sessionId != sessionId) return@synchronized null
         val updated = StudySessionClock.startBreak(active, startedAtMs, durationMs)
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
-        updated
+        if (updated == active) return@synchronized active
+        val transitioned = active.timeline?.let {
+            SessionTimelineReducer.transition(it, SessionState.BREAKING, at, durationMs)
+        }
+        val timelineUpdated = if (transitioned != null) updated.copy(
+            timeline = transitioned,
+            lastBreakStudyDurationMs = SessionTimelineReducer.durations(transitioned, at).studyMs,
+        ) else updated
+        val breakId = "$sessionId:break:${updated.breakCount}"
+        val applied = database.applyBreakTransition(
+            commandId = commandId,
+            eventId = "$commandId:event",
+            active = timelineUpdated,
+            episode = BreakEpisodeRecord(
+                breakId = breakId,
+                sessionId = sessionId,
+                blockId = active.focusBlockId,
+                startedAt = at,
+                plannedDurationMs = durationMs,
+                activity = activity,
+            ),
+            at = at,
+        )
+        if (applied) timelineUpdated else activeSession()
+    }
+
+    /** Accepts a current suggestion and starts its break in one SQLite transaction. */
+    fun acceptReminderAndStartBreak(
+        sessionId: String,
+        reminderId: String,
+        at: TimePoint = sessionClock.now(),
+        durationMs: Long = StudySessionClock.BREAK_DURATION_MS,
+        commandId: String = "accept:$reminderId",
+    ): ActiveStudySession? = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized null
+        val pending = active.pendingReminder ?: return@synchronized null
+        if (active.sessionId != sessionId || active.focusBlockId != active.timeline?.blockId ||
+            pending.eventId != reminderId || pending.kind != PendingReminderKind.BREAK_SUGGESTION
+        ) return@synchronized null
+        if (active.accepted != null || active.timeline?.state != SessionState.STUDYING) return@synchronized null
+
+        val legacyUpdated = StudySessionClock.startBreak(active, at.wallMs, durationMs)
+        val transitioned = SessionTimelineReducer.transition(
+            requireNotNull(active.timeline), SessionState.BREAKING, at, durationMs,
+        )
+        val updated = legacyUpdated.copy(
+            accepted = true,
+            deferReason = null,
+            pendingReminder = null,
+            timeline = transitioned,
+            lastBreakStudyDurationMs = SessionTimelineReducer.durations(transitioned, at).studyMs,
+        )
+        val responseEvents = promptEvents().map { event ->
+            if (event.eventId == reminderId && event.sessionId == sessionId && event.response == null && event.prompted) {
+                FocusMatePromptEventPolicy.withObservedResponse(
+                    event = event,
+                    response = BreakPromptEvent.RESPONSE_ACCEPTED,
+                    respondedAtMs = at.wallMs,
+                    declineReasonCode = null,
+                    quietUntilMs = null,
+                )
+            } else event
+        }
+        val episode = BreakEpisodeRecord(
+            breakId = "$sessionId:break:${updated.breakCount}",
+            sessionId = sessionId,
+            blockId = active.focusBlockId,
+            startedAt = at,
+            plannedDurationMs = durationMs,
+            activity = BreakActivityType.FULL_BREAK,
+        )
+        val applied = database.acceptReminderAndStartBreak(
+            commandId = commandId,
+            eventId = "$commandId:event",
+            reminderId = reminderId,
+            active = updated,
+            episode = episode,
+            at = at,
+            promptEvents = responseEvents,
+        )
+        if (applied) updated else activeSession()
     }
 
     fun markBreakAwaitingDecisionIfDue(nowMs: Long = System.currentTimeMillis()): ActiveStudySession? =
         synchronized(STORE_LOCK) {
             val active = activeSession() ?: return@synchronized null
-            val updated = StudySessionClock.markAwaitingDecisionIfDue(active, nowMs) ?: return@synchronized null
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
-            updated
+            if (active.timeline?.state == SessionState.BREAKING && breakRemainingMs(active) > 0L) {
+                return@synchronized null
+            }
+            var updated = if (active.timeline != null) {
+                if (active.timeline.state == SessionState.AWAITING_RESUME) active
+                else active.copy(breakAwaitingDecisionAtMs = nowMs)
+            } else {
+                StudySessionClock.markAwaitingDecisionIfDue(active, nowMs) ?: return@synchronized null
+            }
+            val at = timePointAt(nowMs)
+            active.timeline?.takeIf { it.state == SessionState.BREAKING }?.let {
+                updated = updated.copy(
+                    timeline = SessionTimelineReducer.transition(it, SessionState.AWAITING_RESUME, at)
+                )
+            }
+            val commandId = "${active.sessionId}:break-awaiting:${active.timeline?.breakDeadlineElapsedMs ?: nowMs}"
+            val applied = database.applyCommand(
+                commandId, "$commandId:event", active.sessionId, active.focusBlockId,
+                "BREAK_AWAITING_RESUME", at, org.json.JSONObject(), updated,
+            )
+            if (applied) updated else activeSession()
         }
 
     fun resumeStudyAfterBreak(
         sessionId: String,
         nowMs: Long = System.currentTimeMillis(),
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = timePointAt(nowMs),
     ): ActiveStudySession? = synchronized(STORE_LOCK) {
+        if (database.hasCommand(commandId)) return@synchronized activeSession()
         val active = activeSession() ?: return@synchronized null
         if (active.sessionId != sessionId) return@synchronized null
-        val updated = StudySessionClock.resumeFromBreak(active, nowMs) ?: return@synchronized null
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
-        updated
+        var updated = StudySessionClock.resumeFromBreak(active, nowMs) ?: return@synchronized null
+        active.timeline?.let {
+            val timeline = SessionTimelineReducer.transition(it, SessionState.STUDYING, at)
+            updated = updated.copy(timeline = timeline, focusBlockId = timeline.blockId)
+        }
+        val episode = database.breakEpisodes(sessionId).lastOrNull { it.endedAt == null }
+            ?: return@synchronized null
+        val actual = if (episode.startedAt.bootId == at.bootId && at.elapsedMs >= episode.startedAt.elapsedMs) {
+            at.elapsedMs - episode.startedAt.elapsedMs
+        } else return@synchronized null
+        val applied = database.resumeBreak(
+            commandId,
+            "$commandId:event",
+            updated,
+            episode.breakId,
+            at,
+            actual,
+            closeReminderId = active.pendingReminder?.eventId,
+        )
+        if (applied) updated else activeSession()
     }
+
+    fun pauseSession(
+        sessionId: String,
+        nowMs: Long = System.currentTimeMillis(),
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = timePointAt(nowMs),
+    ): ActiveStudySession? =
+        synchronized(STORE_LOCK) {
+            if (database.hasCommand(commandId)) return@synchronized activeSession()
+            val active = activeSession() ?: return@synchronized null
+            if (active.sessionId != sessionId) return@synchronized null
+            var updated = StudySessionClock.pause(active, nowMs)?.copy(
+                pendingReminder = null,
+                continuousImmobileMs = 0L,
+                lastMotionWindowStartElapsedMs = null,
+                lastMotionWindowEndElapsedMs = null,
+                lastMotionBootId = null,
+                lastMotionBlockId = null,
+                lastMotionSequence = null,
+                lastMotionGeneration = null,
+            ) ?: return@synchronized null
+            active.timeline?.let {
+                updated = updated.copy(timeline = SessionTimelineReducer.transition(it, SessionState.PAUSED, at))
+            }
+            val applied = database.applyCommand(
+                commandId, "$commandId:event", sessionId, updated.focusBlockId,
+                "PAUSE_SESSION", at, org.json.JSONObject(), updated,
+                closeReminderId = active.pendingReminder?.eventId,
+            )
+            if (applied) updated else activeSession()
+        }
+
+    fun resumePausedSession(
+        sessionId: String,
+        nowMs: Long = System.currentTimeMillis(),
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = timePointAt(nowMs),
+    ): ActiveStudySession? =
+        synchronized(STORE_LOCK) {
+            if (database.hasCommand(commandId)) return@synchronized activeSession()
+            val active = activeSession() ?: return@synchronized null
+            if (active.sessionId != sessionId) return@synchronized null
+            var updated = StudySessionClock.resumeFromPause(active, nowMs) ?: return@synchronized null
+            active.timeline?.let {
+                updated = updated.copy(timeline = SessionTimelineReducer.transition(it, SessionState.STUDYING, at))
+            }
+            val applied = database.applyCommand(
+                commandId, "$commandId:event", sessionId, updated.focusBlockId,
+                "RESUME_PAUSED_SESSION", at, org.json.JSONObject(), updated,
+            )
+            if (applied) updated else activeSession()
+        }
 
     fun extendBreak(
         sessionId: String,
         nowMs: Long,
         durationMs: Long,
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = timePointAt(nowMs),
     ): ActiveStudySession? = synchronized(STORE_LOCK) {
+        if (database.hasCommand(commandId)) return@synchronized activeSession()
         val active = activeSession() ?: return@synchronized null
         if (active.sessionId != sessionId) return@synchronized null
-        val updated = StudySessionClock.extendBreak(active, nowMs, durationMs) ?: return@synchronized null
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
-        updated
+        var updated = StudySessionClock.extendBreak(active, nowMs, durationMs) ?: return@synchronized null
+        active.timeline?.let {
+            updated = updated.copy(
+                timeline = SessionTimelineReducer.transition(it, SessionState.BREAKING, at, durationMs)
+            )
+        }
+        val applied = database.applyCommand(
+            commandId, "$commandId:event", sessionId, updated.focusBlockId,
+            "EXTEND_BREAK", at, org.json.JSONObject().put("duration_ms", durationMs), updated,
+            closeReminderId = active.pendingReminder?.eventId,
+        )
+        if (applied) updated else activeSession()
     }
 
     /** Merge a non-overlapping 30-second motion window into the current session. */
@@ -255,6 +617,30 @@ class StudySessionRepository(private val context: Context) {
         synchronized(STORE_LOCK) {
             val latest = activeSession() ?: return@synchronized
             if (latest.sessionId != sessionId) return@synchronized
+            val hasWindowIdentity = metrics.windowEndElapsedMs > metrics.windowStartElapsedMs &&
+                metrics.bootId != "legacy"
+            if (metrics.sessionId != "legacy" && metrics.sessionId != latest.sessionId) return@synchronized
+            if (hasWindowIdentity && metrics.blockId != latest.focusBlockId) return@synchronized
+            val sameChain = hasWindowIdentity &&
+                latest.lastMotionBootId == metrics.bootId &&
+                latest.lastMotionBlockId == metrics.blockId &&
+                latest.lastMotionGeneration == metrics.collectorGeneration
+            if (sameChain && latest.lastMotionSequence?.let { metrics.sequence <= it } == true) return@synchronized
+            if (sameChain && latest.lastMotionWindowEndElapsedMs?.let { metrics.windowStartElapsedMs < it } == true) {
+                return@synchronized
+            }
+            val gapMs = if (sameChain) {
+                metrics.windowStartElapsedMs - (latest.lastMotionWindowEndElapsedMs ?: metrics.windowStartElapsedMs)
+            } else {
+                Long.MAX_VALUE
+            }
+            val validDurationMs = if (hasWindowIdentity) {
+                metrics.validSampleDurationMs.coerceIn(0L, metrics.windowEndElapsedMs - metrics.windowStartElapsedMs)
+            } else {
+                30_000L
+            }
+            val immobileWindow = metrics.immobileSeconds * 1_000.0 >= validDurationMs * 0.96
+            val continued = sameChain && gapMs in 0L..MOTION_GAP_TOLERANCE_MS
             val measured = latest.copy(
                 movementRms = metrics.movementRms,
                 rotationRms = metrics.rotationRms,
@@ -262,18 +648,111 @@ class StudySessionRepository(private val context: Context) {
                 suddenMovementCount = latest.suddenMovementCount + metrics.suddenMovementCount,
                 wristRotationCount = latest.wristRotationCount + metrics.wristRotationCount,
                 immobileSeconds = latest.immobileSeconds + metrics.immobileSeconds,
-                continuousImmobileMs = if (metrics.immobileSeconds >= 29.0) {
-                    latest.continuousImmobileMs + 30_000L
+                continuousImmobileMs = if (immobileWindow) {
+                    (if (continued) latest.continuousImmobileMs else 0L) + validDurationMs
                 } else {
                     0L
                 },
+                motionBlockValidDurationMs = latest.motionBlockValidDurationMs + validDurationMs,
+                lastMotionWindowStartElapsedMs = if (hasWindowIdentity) metrics.windowStartElapsedMs else latest.lastMotionWindowStartElapsedMs,
+                lastMotionWindowEndElapsedMs = if (hasWindowIdentity) metrics.windowEndElapsedMs else latest.lastMotionWindowEndElapsedMs,
+                lastMotionBootId = if (hasWindowIdentity) metrics.bootId else latest.lastMotionBootId,
+                lastMotionBlockId = if (hasWindowIdentity) metrics.blockId else latest.lastMotionBlockId,
+                lastMotionSequence = if (hasWindowIdentity) metrics.sequence else latest.lastMotionSequence,
+                lastMotionGeneration = if (hasWindowIdentity) metrics.collectorGeneration else latest.lastMotionGeneration,
                 movementChangeFromBaseline = metrics.movementChangeFromBaseline,
                 watchRaiseCount = latest.watchRaiseCount + metrics.watchRaiseCount,
             )
             val updated = measured.copy(sessionConfidence = SessionConfidence.calculate(measured, metrics.observedAtMs))
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
+            recordPolicyComparisonFor(
+                updated,
+                "motion:${metrics.bootId}:${metrics.blockId}:${metrics.sequence}",
+                timePointAt(metrics.observedAtMs),
+            )
         }
     }
+
+    fun recordCheckIn(
+        sessionId: String,
+        source: CheckInSource,
+        focus: Int? = null,
+        fatigue: Int? = null,
+        at: TimePoint = sessionClock.now(),
+        checkInId: String = UUID.randomUUID().toString(),
+        breakId: String? = null,
+    ): Boolean = synchronized(STORE_LOCK) {
+        val active = activeSession() ?: return@synchronized false
+        if (active.sessionId != sessionId) return@synchronized false
+        val linkedBreakId = breakId ?: when (source) {
+            CheckInSource.BEFORE_BREAK -> database.breakEpisodes(sessionId).lastOrNull { it.endedAt == null }?.breakId
+                ?: "$sessionId:break:${active.breakCount + 1}"
+            CheckInSource.AFTER_BREAK -> database.breakEpisodes(sessionId).lastOrNull { it.endedAt != null }?.breakId
+            else -> null
+        }
+        val record = CheckInRecord(
+            checkInId = checkInId,
+            sessionId = sessionId,
+            blockId = active.focusBlockId,
+            source = source,
+            time = at,
+            breakId = linkedBreakId,
+            focus = focus,
+            fatigue = fatigue,
+        )
+        val inserted = database.recordCheckIn(record)
+        if (inserted) recordPolicyComparisonFor(active, "checkin:$checkInId", at)
+        inserted
+    }
+
+    fun checkIns(sessionId: String, blockId: String? = null): List<CheckInRecord> =
+        database.checkIns(sessionId, blockId)
+
+    internal fun reminderHistory(sessionId: String): List<ReminderEpisodeHistory> =
+        database.reminderHistory(sessionId)
+
+    fun evaluatePolicyPair(
+        active: ActiveStudySession,
+        durationMs: Long,
+        at: TimePoint = sessionClock.now(),
+    ): Pair<PolicyDecision, PolicyDecision> {
+        val validMotionDurationMs = active.motionBlockValidDurationMs.takeIf { it > 0L }
+            ?: (active.motionWindowCount * 30_000L)
+        val coverage = (validMotionDurationMs.toDouble() / durationMs.coerceAtLeast(1L)).coerceIn(0.0, 1.0)
+        val context = PolicyContext(
+            sessionId = active.sessionId,
+            blockId = active.focusBlockId,
+            studyDurationMs = durationMs,
+            initialFocus = active.focusScore,
+            initialFatigue = active.fatigueScore,
+            now = at,
+            cooldownUntilWallMs = cooldownUntilMs(),
+            motion = active.motionActivityObservedAtMs?.let {
+                MotionEvidence(active.continuousImmobileMs, coverage, it)
+            },
+            checkIns = checkIns(active.sessionId, active.focusBlockId),
+        )
+        return WatchRulesV2Policy.evaluate(context) to CheckInShadowV1Policy.evaluate(context)
+    }
+
+    private fun recordPolicyComparisonFor(active: ActiveStudySession, inputRef: String, at: TimePoint) {
+        val duration = focusBlockDurationMs(active, at.wallMs)
+        val (baseline, shadow) = evaluatePolicyPair(active, duration, at)
+        database.recordPolicyComparison(
+            comparisonId = "${active.sessionId}:${active.focusBlockId}:$inputRef",
+            sessionId = active.sessionId,
+            blockId = active.focusBlockId,
+            inputRef = inputRef,
+            baseline = baseline,
+            shadow = shadow,
+            wallMs = at.wallMs,
+        )
+    }
+
+    internal fun policyComparisonCount(sessionId: String): Int = database.policyComparisonCount(sessionId)
+    fun breakEpisodes(sessionId: String): List<BreakEpisodeRecord> = database.breakEpisodes(sessionId)
+
+    private fun timePointAt(wallMs: Long): TimePoint = sessionClock.now().copy(wallMs = wallMs)
 
     /** Store an explainable activity result without any trained motion model. */
     fun updateActiveRuleActivity(
@@ -290,7 +769,7 @@ class StudySessionRepository(private val context: Context) {
             motionActivityFallbackReason = if (result.calibrated) null else
                 "calibrating_personal_thresholds_${result.calibrationWindows}",
         )
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+        persistActive(updated)
         updated
     }
 
@@ -306,7 +785,7 @@ class StudySessionRepository(private val context: Context) {
             postureSummaries = summaries,
             postureInsightReasonCodes = active.postureInsightReasonCodes + insights.map(PostureInsight::reasonCode),
         )
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+        persistActive(updated)
         updated
     }
 
@@ -336,7 +815,7 @@ class StudySessionRepository(private val context: Context) {
                 } else active.nextYawnSyncEventId,
                 pendingYawnSyncEvents = pending,
             )
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
             updated
         }
 
@@ -358,7 +837,7 @@ class StudySessionRepository(private val context: Context) {
                 active.pendingYawnSyncEvents.filterNot { it.eventId == acknowledgedEventId }
             },
         )
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+        persistActive(updated)
         updated
     }
 
@@ -375,7 +854,7 @@ class StudySessionRepository(private val context: Context) {
             // total is re-seeded by the resume command instead.
             pendingYawnSyncEvents = emptyList(),
         )
-        activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+        persistActive(updated)
         updated
     }
 
@@ -408,7 +887,7 @@ class StudySessionRepository(private val context: Context) {
             )
             val confidenceAtMs = maxOf(observedAtMs, latest.heartRateObservedAtMs ?: observedAtMs)
             val updated = measured.copy(sessionConfidence = SessionConfidence.calculate(measured, confidenceAtMs))
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updated.toJson().toString()).apply()
+            persistActive(updated)
         }
     }
 
@@ -444,8 +923,7 @@ class StudySessionRepository(private val context: Context) {
             val updatedEvents = (existingEvents + sequenced)
                 .distinctBy { it.eventId }
                 .sortedByDescending { it.candidateAtMs }
-            activePreferences.edit().putString(KEY_ACTIVE_SESSION, updatedActive.toJson().toString()).apply()
-            preferences.edit().putString(KEY_PROMPT_EVENTS, promptEventsJson(updatedEvents)).apply()
+            database.replaceActiveAndPromptEvents(updatedActive, updatedEvents)
             updatedActive
         }
     }
@@ -464,8 +942,11 @@ class StudySessionRepository(private val context: Context) {
         respondedAtMs: Long,
         quietUntilMs: Long? = null,
         requireCurrentEvent: Boolean = true,
+        commandId: String = "response:$eventId:$accepted",
+        at: TimePoint = timePointAt(respondedAtMs),
     ): ActiveStudySession? {
         return synchronized(STORE_LOCK) {
+            if (database.hasCommand(commandId)) return@synchronized activeSession()
             val active = activeSession() ?: return@synchronized null
             if (active.sessionId != sessionId) return@synchronized null
             if (requireCurrentEvent && active.lastPromptEventId != eventId) return@synchronized null
@@ -499,34 +980,68 @@ class StudySessionRepository(private val context: Context) {
                 deferReason = if (accepted) null else sessionDeferReason,
                 pendingReminder = null,
             )
-            val activeEditor = activePreferences.edit()
-                .putString(KEY_ACTIVE_SESSION, updatedActive.toJson().toString())
-            if (!accepted && quietUntilMs != null) activeEditor.putLong(KEY_COOLDOWN_UNTIL, quietUntilMs)
-            activeEditor.apply()
-            preferences.edit().putString(KEY_PROMPT_EVENTS, promptEventsJson(updatedEvents)).apply()
-            updatedActive
+            if (!accepted) {
+                val applied = database.deferReminder(
+                    commandId = commandId,
+                    eventId = "$commandId:event",
+                    reminderId = eventId,
+                    active = updatedActive,
+                    promptEvents = updatedEvents,
+                    cooldownUntilWallMs = requireNotNull(quietUntilMs),
+                    cooldownUntilElapsedMs = at.elapsedMs + (quietUntilMs - at.wallMs).coerceAtLeast(0L),
+                    cooldownBootId = at.bootId,
+                    at = at,
+                )
+                if (applied) updatedActive else activeSession()
+            } else {
+                // Accepting a break suggestion must use acceptReminderAndStartBreak();
+                // this compatibility path remains for non-break historical responses.
+                database.replaceActiveAndPromptEvents(active = updatedActive, events = updatedEvents)
+                database.updateReminderResponse(
+                    eventId,
+                    ReminderDeliveryState.ACCEPTED,
+                    BreakPromptEvent.RESPONSE_ACCEPTED,
+                )
+                updatedActive
+            }
         }
     }
 
     fun cancelActiveSession() {
         synchronized(STORE_LOCK) {
             val sessionId = activeSession()?.sessionId
-            activePreferences.edit().remove(KEY_ACTIVE_SESSION).apply()
+            database.clearActive()
             if (sessionId != null) {
                 val retained = promptEvents().filterNot { it.sessionId == sessionId }
-                preferences.edit().putString(KEY_PROMPT_EVENTS, promptEventsJson(retained)).apply()
+                database.replacePromptEvents(retained)
             }
         }
     }
 
     fun clearActiveSession() {
-        synchronized(STORE_LOCK) { activePreferences.edit().remove(KEY_ACTIVE_SESSION).apply() }
+        synchronized(STORE_LOCK) { database.clearActive() }
     }
 
-    fun cooldownUntilMs(): Long = activePreferences.getLong(KEY_COOLDOWN_UNTIL, 0L)
+    fun cooldownUntilMs(): Long {
+        val now = sessionClock.now()
+        val elapsedDeadline = database.metadata(FocusMateSessionDatabase.META_COOLDOWN_UNTIL_ELAPSED)?.toLongOrNull()
+        val bootId = database.metadata(FocusMateSessionDatabase.META_COOLDOWN_BOOT_ID)
+        if (elapsedDeadline != null && bootId == now.bootId && now.bootId != "boot-unknown") {
+            return now.wallMs + (elapsedDeadline - now.elapsedMs).coerceAtLeast(0L)
+        }
+        return database.metadata(FocusMateSessionDatabase.META_COOLDOWN_UNTIL)?.toLongOrNull() ?: 0L
+    }
 
     fun setCooldownUntilMs(value: Long) {
-        synchronized(STORE_LOCK) { activePreferences.edit().putLong(KEY_COOLDOWN_UNTIL, value).apply() }
+        synchronized(STORE_LOCK) {
+            val now = sessionClock.now()
+            database.putMetadata(FocusMateSessionDatabase.META_COOLDOWN_UNTIL, value.toString())
+            database.putMetadata(
+                FocusMateSessionDatabase.META_COOLDOWN_UNTIL_ELAPSED,
+                (now.elapsedMs + (value - now.wallMs).coerceAtLeast(0L)).toString(),
+            )
+            database.putMetadata(FocusMateSessionDatabase.META_COOLDOWN_BOOT_ID, now.bootId)
+        }
     }
 
     fun evaluateBreak(
@@ -535,8 +1050,10 @@ class StudySessionRepository(private val context: Context) {
         nowMs: Long,
         cooldownUntilMs: Long = cooldownUntilMs(),
     ): BreakDecision {
-        val elapsedMs = StudySessionClock.studyDurationMs(active, nowMs).coerceAtLeast(1L)
-        val motionCoverage = (active.motionWindowCount * 30_000.0 / elapsedMs).coerceIn(0.0, 1.0)
+        val elapsedMs = durationMs.coerceAtLeast(1L)
+        val validMotionDurationMs = active.motionBlockValidDurationMs.takeIf { it > 0L }
+            ?: (active.motionWindowCount * 30_000L)
+        val motionCoverage = (validMotionDurationMs.toDouble() / elapsedMs).coerceIn(0.0, 1.0)
         val deterministic = WatchRuleEngine.evaluate(
             ReminderContext(
                 studyDurationMs = durationMs,
@@ -564,15 +1081,150 @@ class StudySessionRepository(private val context: Context) {
         if (StudySessionClock.isOnBreak(active, nowMs)) {
             return decision.copy(shouldBreak = false, shouldPrompt = false)
         }
+        if (StudySessionClock.isPaused(active)) {
+            return decision.copy(shouldBreak = false, shouldPrompt = false)
+        }
 
         return decision
     }
 
     fun studyDurationMs(active: ActiveStudySession, nowMs: Long = System.currentTimeMillis()): Long =
-        StudySessionClock.studyDurationMs(active, nowMs)
+        active.timeline?.let { SessionTimelineReducer.durations(it, timePointAt(nowMs)).studyMs }
+            ?: StudySessionClock.studyDurationMs(active, nowMs)
+
+    fun breakRemainingMs(active: ActiveStudySession): Long {
+        val timeline = active.timeline ?: return StudySessionClock.breakRemainingMs(active, System.currentTimeMillis())
+        if (timeline.state != SessionState.BREAKING) return 0L
+        val now = sessionClock.now()
+        if (now.bootId != timeline.enteredAt.bootId || now.bootId == "boot-unknown") return 0L
+        val deadline = timeline.breakDeadlineElapsedMs
+            ?: timeline.plannedBreakDurationMs?.let { timeline.enteredAt.elapsedMs + it }
+            ?: return 0L
+        return (deadline - now.elapsedMs).coerceAtLeast(0L)
+    }
+
+    override fun apply(command: SessionCommand): TransitionResult {
+        if (database.hasCommand(command.commandId)) {
+            val current = activeSession()
+            return TransitionResult(
+                applied = false,
+                duplicate = true,
+                state = current?.inferredState(),
+                revision = current?.timeline?.revision,
+                reason = "duplicate_command",
+            )
+        }
+        command.expectedIdentity()?.let { (sessionId, blockId) ->
+            val current = activeSession()
+            if (current == null || current.sessionId != sessionId || current.focusBlockId != blockId) {
+                return TransitionResult(
+                    applied = false,
+                    state = current?.inferredState(),
+                    revision = current?.timeline?.revision,
+                    reason = "stale_session_or_block",
+                )
+            }
+        }
+        return when (command) {
+        is SessionCommand.Start -> {
+            val existing = activeSession()
+            if (existing != null) TransitionResult(false, state = existing.inferredState(), reason = "active_session_exists")
+            else {
+                val timeline = command.session.timeline ?: SessionTimelineSnapshot(
+                    sessionId = command.session.sessionId,
+                    revision = 0L,
+                    state = SessionState.STUDYING,
+                    blockId = command.session.focusBlockId,
+                    enteredAt = command.at,
+                )
+                val started = command.session.copy(timeline = timeline)
+                val applied = database.applyCommand(
+                    command.commandId, "${command.commandId}:event", started.sessionId,
+                    started.focusBlockId, "START_SESSION", command.at, org.json.JSONObject(), started,
+                )
+                TransitionResult(applied, duplicate = !applied, state = activeSession()?.inferredState(), revision = activeSession()?.timeline?.revision)
+            }
+        }
+        is SessionCommand.AcceptReminder -> resultFor(
+            acceptReminderAndStartBreak(
+                command.sessionId, command.reminderId, command.at,
+                command.plannedDurationMs, command.commandId,
+            ),
+            command.commandId,
+        )
+        is SessionCommand.DeferReminder -> resultFor(
+            recordPromptResponse(
+                command.sessionId, command.reminderId, false,
+                command.declineReasonCode, command.sessionDeferReason, command.at.wallMs,
+                command.cooldownUntilWallMs, true, command.commandId, command.at,
+            ),
+            command.commandId,
+        )
+        is SessionCommand.StartBreak -> resultFor(
+            startBreak(
+                command.sessionId, command.at.wallMs, command.plannedDurationMs,
+                command.commandId, command.activity, command.at,
+            ),
+            command.commandId,
+        )
+        is SessionCommand.Pause -> resultFor(
+            pauseSession(command.sessionId, command.at.wallMs, command.commandId, command.at), command.commandId,
+        )
+        is SessionCommand.ResumePaused -> resultFor(
+            resumePausedSession(command.sessionId, command.at.wallMs, command.commandId, command.at), command.commandId,
+        )
+        is SessionCommand.ResumeAfterBreak -> resultFor(
+            resumeStudyAfterBreak(command.sessionId, command.at.wallMs, command.commandId, command.at),
+            command.commandId,
+        )
+        is SessionCommand.ExtendBreak -> resultFor(
+            extendBreak(command.sessionId, command.at.wallMs, command.durationMs, command.commandId, command.at), command.commandId,
+        )
+        is SessionCommand.Recover -> resultFor(
+            resumeRecoveredSession(command.sessionId, command.commandId, command.at), command.commandId,
+        )
+        is SessionCommand.Finish -> {
+            val completed = finishActiveSession(command.at.wallMs, command.commandId, command.at)
+            TransitionResult(
+                completed != null,
+                duplicate = false,
+                state = if (completed != null) SessionState.COMPLETED else activeSession()?.inferredState(),
+            )
+        }
+        is SessionCommand.Cancel -> {
+            val active = activeSession()
+            val applied = active?.takeIf { it.sessionId == command.sessionId }?.let {
+                database.cancelSession(command.commandId, "${command.commandId}:event", it, command.at)
+            } == true
+            TransitionResult(applied, state = if (applied) SessionState.CANCELLED else active?.inferredState())
+        }
+    }
+    }
+
+    private fun SessionCommand.expectedIdentity(): Pair<String, String>? = when (this) {
+        is SessionCommand.Start -> null
+        is SessionCommand.AcceptReminder -> sessionId to blockId
+        is SessionCommand.DeferReminder -> sessionId to blockId
+        is SessionCommand.StartBreak -> sessionId to blockId
+        is SessionCommand.Pause -> sessionId to blockId
+        is SessionCommand.ResumePaused -> sessionId to blockId
+        is SessionCommand.ResumeAfterBreak -> sessionId to blockId
+        is SessionCommand.ExtendBreak -> sessionId to blockId
+        is SessionCommand.Recover -> sessionId to blockId
+        is SessionCommand.Finish -> sessionId to blockId
+        is SessionCommand.Cancel -> sessionId to blockId
+    }
+
+    private fun resultFor(active: ActiveStudySession?, commandId: String): TransitionResult =
+        TransitionResult(
+            applied = active != null && database.hasCommand(commandId),
+            duplicate = false,
+            state = active?.inferredState(),
+            revision = active?.timeline?.revision,
+        )
 
     fun focusBlockDurationMs(active: ActiveStudySession, nowMs: Long = System.currentTimeMillis()): Long =
-        StudySessionClock.focusBlockDurationMs(active, nowMs)
+        (studyDurationMs(active, nowMs) - active.lastBreakStudyDurationMs).coerceAtLeast(0L)
 
     fun realSessions(): List<StudySession> = FocusMateSessionPolicy.realSessions(sessions())
 
@@ -587,11 +1239,17 @@ class StudySessionRepository(private val context: Context) {
         return FocusMatePromptEventPolicy.realEvents(promptEvents(), parentIds)
     }
 
-    fun finishActiveSession(endTimeMs: Long = System.currentTimeMillis()): StudySession? = synchronized(STORE_LOCK) {
+    fun finishActiveSession(
+        endTimeMs: Long = System.currentTimeMillis(),
+        commandId: String = UUID.randomUUID().toString(),
+        at: TimePoint = sessionClock.now().copy(wallMs = endTimeMs),
+    ): StudySession? = synchronized(STORE_LOCK) {
         val active = activeSession() ?: return@synchronized null
-        val safeEnd = endTimeMs.coerceAtLeast(active.startTimeMs)
-        val durationMs = StudySessionClock.studyDurationMs(active, safeEnd)
-        val focusBlockDurationMs = StudySessionClock.focusBlockDurationMs(active, safeEnd)
+        val finishPoint = at.copy(wallMs = endTimeMs)
+        val recoveryTimeline = active.timeline?.takeIf { it.state == SessionState.RECOVERY_REQUIRED }
+        val safeEnd = (recoveryTimeline?.checkpointAt?.wallMs ?: endTimeMs).coerceAtLeast(active.startTimeMs)
+        val durationMs = recoveryTimeline?.accumulatedStudyMs ?: studyDurationMs(active, safeEnd)
+        val focusBlockDurationMs = focusBlockDurationMs(active, safeEnd)
         // Display/log completed whole minutes, while the rule itself uses the
         // exact timestamps above so the strict >45-minute boundary is kept.
         val durationMinutes = if (durationMs == 0L) 0 else maxOf(1, (durationMs / 60_000L).toInt())
@@ -605,6 +1263,8 @@ class StudySessionRepository(private val context: Context) {
             ?.let { active.yawnSyncWindowCount }
             ?: 0
         val recentYawnCount = maxOf(localRecentYawns, syncedRecentYawns).coerceIn(0, 64)
+        val timelineDurations = active.timeline?.let { SessionTimelineReducer.durations(it, finishPoint) }
+        val reminderReport = database.reminderReport(active.sessionId)
         val sessionAdvice = SessionAdviceEngine.evaluate(
             SessionAdviceContext(
                 fatigueScore = active.fatigueScore,
@@ -673,25 +1333,47 @@ class StudySessionRepository(private val context: Context) {
             sessionAdvice = sessionAdvice,
             breakTargetMinutes = active.breakTargetMinutes,
             breakCount = active.breakCount,
-            totalBreakDurationMs = StudySessionClock.totalBreakDurationMs(active, safeEnd),
+            totalBreakDurationMs = recoveryTimeline?.accumulatedBreakMs ?: active.timeline?.let {
+                SessionTimelineReducer.durations(it, timePointAt(safeEnd)).breakMs
+            } ?: StudySessionClock.totalBreakDurationMs(active, safeEnd),
+            totalPauseDurationMs = timelineDurations?.pauseMs
+                ?: StudySessionClock.totalPauseDurationMs(active, safeEnd),
+            unknownDurationMs = timelineDurations?.unknownMs ?: 0L,
+            hasUnquantifiedUnknownInterval = database.unknownIntervalCount(active.sessionId) > 0,
+            reminderReasonHistory = reminderReport.reasonCodes,
+            deliveryAttemptCount = reminderReport.deliveryAttempts,
+            reminderResponseCount = reminderReport.responses,
+            reminderHistory = database.reminderHistory(active.sessionId),
+            breakFatigueChanges = database.breakFatigueChanges(active.sessionId),
         )
-        addSession(completed)
-        if (!completed.synthetic) {
-            preferences.edit().putString(KEY_PENDING_REVIEW_ID, completed.sessionId).apply()
+        val openBreak = database.breakEpisodes(active.sessionId).lastOrNull { it.endedAt == null }
+        val actualBreakDuration = openBreak?.let {
+            if (it.startedAt.bootId == finishPoint.bootId && finishPoint.elapsedMs >= it.startedAt.elapsedMs) {
+                finishPoint.elapsedMs - it.startedAt.elapsedMs
+            } else null
         }
-        clearActiveSession()
-        completed
+        val applied = database.finishSession(
+            commandId = commandId,
+            eventId = "$commandId:event",
+            active = active,
+            completed = completed,
+            at = finishPoint,
+            openBreak = openBreak,
+            actualBreakDurationMs = actualBreakDuration,
+            pendingReview = !completed.synthetic,
+        )
+        if (applied) {
+            pruneExpiredStoredDataLocked(LocalDate.now())
+            completed
+        } else null
     }
 
     /** User-requested local erasure. Refused while a session is active. */
     fun deleteAllStudyData(): Boolean = synchronized(STORE_LOCK) {
         if (activeSession() != null) return@synchronized false
-        val bulkCleared = preferences.edit()
-            .clear()
-            .putBoolean(KEY_LEGACY_MIGRATION_DONE, true)
-            .commit()
-        val activeCleared = activePreferences.edit().clear().commit()
-        if (!bulkCleared || !activeCleared) return@synchronized false
+        database.clearAll()
+        preferences.edit().clear().putBoolean(KEY_LEGACY_MIGRATION_DONE, true).commit()
+        activePreferences.edit().clear().commit()
         ReminderDiagnostics.clear(context)
         true
     }
@@ -733,9 +1415,7 @@ class StudySessionRepository(private val context: Context) {
     }
 
     private fun saveSessions(sessions: List<StudySession>) {
-        val json = JSONArray()
-        sessions.forEach { json.put(it.toJson()) }
-        preferences.edit().putString(KEY_SESSIONS, json.toString()).apply()
+        database.replaceSessions(sessions)
     }
 
     private fun promptEventsJson(events: List<BreakPromptEvent>): String {
@@ -748,50 +1428,43 @@ class StudySessionRepository(private val context: Context) {
         val existing = promptEvents()
         val retained = existing.filter { it.sessionId in validSessionIds }
         if (retained.size != existing.size) {
-            preferences.edit().putString(KEY_PROMPT_EVENTS, promptEventsJson(retained)).apply()
+            database.replacePromptEvents(retained)
         }
     }
 
     private fun pruneExpiredStoredDataLocked(today: LocalDate): Boolean {
         var changed = false
-        val rawSessions = preferences.getString(KEY_SESSIONS, "[]") ?: "[]"
-        val (parsedSessions, rawCount) = parseSessions(rawSessions)
-        val retainedSessions = parsedSessions.filterNot {
-            RetentionPolicy.isExpired(it.expiresOn, it.endTimeMs, today)
-        }
-        if (rawCount == parsedSessions.size && retainedSessions.size != parsedSessions.size) {
+        val (parsedSessions, rawCount) = storedSessionRows()
+        val retainedSessions = parsedSessions
+            .filterNot { RetentionPolicy.isExpired(it.expiresOn, it.endTimeMs, today) }
+            .sortedByDescending { it.startTimeMs }
+            .take(MAX_STORED_SESSIONS)
+        if (retainedSessions.size != rawCount) {
             saveSessions(retainedSessions)
             changed = true
         }
 
         val activeId = activeSession()?.sessionId
         val validIds = retainedSessions.map { it.sessionId }.toSet() + listOfNotNull(activeId)
-        val rawEvents = preferences.getString(KEY_PROMPT_EVENTS, "[]") ?: "[]"
-        val eventArray = runCatching { JSONArray(rawEvents) }.getOrNull()
-        if (eventArray != null) {
-            val parsedEvents = buildList {
-                for (index in 0 until eventArray.length()) {
-                    runCatching { BreakPromptEvent.fromJson(eventArray.getJSONObject(index)) }
-                        .getOrNull()?.let(::add)
-                }
-            }
-            if (parsedEvents.size == eventArray.length()) {
-                val retainedEvents = parsedEvents.filter {
-                    it.sessionId in validIds &&
-                        !RetentionPolicy.isExpired(it.expiresOn, it.candidateAtMs, today)
-                }
-                if (retainedEvents.size != parsedEvents.size) {
-                    preferences.edit().putString(KEY_PROMPT_EVENTS, promptEventsJson(retainedEvents)).apply()
-                    changed = true
-                }
-            }
+        val parsedEvents = promptEvents()
+        val retainedEvents = parsedEvents.filter {
+            it.sessionId in validIds &&
+                !RetentionPolicy.isExpired(it.expiresOn, it.candidateAtMs, today)
         }
-
-        val pendingId = preferences.getString(KEY_PENDING_REVIEW_ID, null)
-        if (pendingId != null && retainedSessions.none { it.sessionId == pendingId }) {
-            preferences.edit().remove(KEY_PENDING_REVIEW_ID).apply()
+        if (retainedEvents.size != parsedEvents.size) {
+            database.replacePromptEvents(retainedEvents)
             changed = true
         }
+
+        val pendingId = database.metadata(FocusMateSessionDatabase.META_PENDING_REVIEW)
+        if (pendingId != null && retainedSessions.none { it.sessionId == pendingId }) {
+            database.putMetadata(FocusMateSessionDatabase.META_PENDING_REVIEW, "")
+            changed = true
+        }
+        database.deleteSessionChildren(validIds)
+        database.pruneRecoveryPayloads(
+            System.currentTimeMillis() - RetentionPolicy.RETENTION_DAYS * 24L * 60L * 60L * 1_000L
+        )
         return changed
     }
 
@@ -810,6 +1483,8 @@ class StudySessionRepository(private val context: Context) {
         private const val MAX_STORED_SESSIONS = 500
         private const val MAX_PENDING_YAWN_SYNC_EVENTS = 16
         private const val UINT32_MAX = 4_294_967_295L
+        private const val MOTION_GAP_TOLERANCE_MS = 2_000L
+        private const val CHECKPOINT_INTERVAL_MS = 30_000L
         private const val LEGACY_SEED_LABEL = "watch_seed_v1"
         private const val LEGACY_PARTICIPANT_KEY = "participant_code"
     }

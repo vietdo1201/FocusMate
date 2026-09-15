@@ -19,9 +19,6 @@ import android.os.Looper
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 
 /** Keeps deterministic motion collection alive; heart rate is independently optional. */
@@ -31,6 +28,9 @@ class SessionSensorService : Service() {
     private lateinit var heartRateCollector: HeartRateCollector
     private val handler = Handler(Looper.getMainLooper())
     private var collectingSessionId: String? = null
+    private var collectingBlockId: String? = null
+    private var collectionGeneration = 0L
+    private var collectionIdentity: CollectionIdentity? = null
     private val thresholdCalibrator = PersonalActivityThresholdCalibrator()
     private lateinit var postureSourceCoordinator: PostureSourceCoordinator
     private lateinit var postureIngestor: FaceObservationIngestor
@@ -60,31 +60,48 @@ class SessionSensorService : Service() {
         }
     }
 
+    /** Persists the session clock independently from MainActivity and sensor permission state. */
+    private val checkpointTicker = object : Runnable {
+        override fun run() {
+            val active = repository.activeSession() ?: run { stopSelf(); return }
+            active.timeline?.takeIf { timeline ->
+                timeline.state != SessionState.RECOVERY_REQUIRED &&
+                    SystemClock.elapsedRealtime() - timeline.checkpointAt.elapsedMs >= CHECKPOINT_INTERVAL_MS
+            }?.let { repository.checkpointActiveSession() }
+            handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         repository = StudySessionRepository(this)
         motionCollector = AccCollector(this) { metrics ->
-            repository.activeSession()?.sessionId?.let { sessionId ->
-                repository.updateActiveMotion(sessionId, metrics)
+            currentCollectionActive()?.takeIf {
+                metrics.sessionId == it.sessionId && metrics.blockId == it.focusBlockId
+            }?.let { active ->
+                repository.updateActiveMotion(active.sessionId, metrics)
                 repository.updateActiveRuleActivity(
-                    sessionId,
-                    thresholdCalibrator.classify(sessionId, metrics),
+                    active.sessionId,
+                    thresholdCalibrator.classify(active.sessionId, metrics),
                     metrics.observedAtMs,
                 )
+                // Motion is part of watch_rules_v2. Re-evaluate when a complete,
+                // valid window arrives even if MainActivity is not visible.
+                BreakReminderScheduler.requestImmediateCheck(this)
             }
         }
         heartRateCollector = HeartRateCollector(
             context = this,
             onHeartRate = { bpm, observedAtMs ->
-                repository.activeSession()?.sessionId?.let {
-                    repository.updateActiveHeartRate(it, bpm, observedAtMs)
+                currentCollectionActive()?.let {
+                    repository.updateActiveHeartRate(it.sessionId, bpm, observedAtMs)
                 }
             },
         )
         postureSourceCoordinator = PostureSourceCoordinator(
             onUpdate = { update ->
-                repository.activeSession()?.sessionId?.let { sessionId ->
-                    repository.updateActivePosture(sessionId, update.summaries, update.insights)
+                currentCollectionActive()?.let { active ->
+                    repository.updateActivePosture(active.sessionId, update.summaries, update.insights)
                 }
             },
             onSource = PostureRuntimeStore::updateSelectedSource,
@@ -111,7 +128,7 @@ class SessionSensorService : Service() {
             } ?: YawnClassifier(),
             onRuntime = PostureRuntimeStore::updateLocalPose,
             onYawn = { detection ->
-                val active = repository.activeSession()
+                val active = currentCollectionActive()
                 if (active != null && detection.persistenceChanged) {
                     repository.updateActiveYawn(active.sessionId, detection)?.let { updated ->
                         if (::yawnSyncClient.isInitialized) {
@@ -121,10 +138,11 @@ class SessionSensorService : Service() {
                         if (::postureBleClient.isInitialized) postureBleClient.updateYawnSession(updated)
                     }
                 }
-                if (detection.alertJustTriggered) notifyYawnAlert(detection.eventsInWindow)
+                // Yawn remains a silent advisory. It is persisted for the session
+                // screen/report but never starts its own vibration or notification.
             },
             onCanonicalYawnSync = { state ->
-                repository.activeSession()?.let { active ->
+                currentCollectionActive()?.let { active ->
                     repository.applyCanonicalYawnSync(active.sessionId, state)?.let { updated ->
                         if (::yawnSyncClient.isInitialized) yawnSyncClient.updateSession(updated)
                         if (::postureBleClient.isInitialized) postureBleClient.updateYawnSession(updated)
@@ -142,7 +160,7 @@ class SessionSensorService : Service() {
         yawnSyncClient = YawnSyncClient(
             context = this,
             onCanonicalState = { state, acknowledgedEventId ->
-                repository.activeSession()?.let { active ->
+                currentCollectionActive()?.let { active ->
                     repository.applyCanonicalYawnSync(active.sessionId, state, acknowledgedEventId)?.let { updated ->
                         yawnSyncClient.updateSession(updated)
                         if (::postureBleClient.isInitialized) postureBleClient.updateYawnSession(updated)
@@ -162,7 +180,7 @@ class SessionSensorService : Service() {
                 yawnSyncClient.updateEndpoint(endpoint)
             },
             onYawnBleState = { state, acknowledgedEventId ->
-                repository.activeSession()?.let { active ->
+                currentCollectionActive()?.let { active ->
                     repository.applyCanonicalYawnSync(active.sessionId, state, acknowledgedEventId)?.let { updated ->
                         yawnSyncClient.updateSession(updated)
                         postureBleClient.updateYawnSession(updated)
@@ -177,7 +195,7 @@ class SessionSensorService : Service() {
                 )
             },
             onEspBootChanged = {
-                repository.activeSession()?.let { active ->
+                currentCollectionActive()?.let { active ->
                     repository.resetActiveYawnSyncEpoch(active.sessionId)?.let { updated ->
                         yawnSyncClient.updateSession(updated)
                         postureBleClient.updateYawnSession(updated)
@@ -205,7 +223,7 @@ class SessionSensorService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (StudySessionClock.isOnBreak(active, System.currentTimeMillis())) {
+        if (StudySessionClock.isOnBreak(active, System.currentTimeMillis()) || StudySessionClock.isPaused(active)) {
             StudyDndController.disable(this)
             stopSelf()
             return START_NOT_STICKY
@@ -219,13 +237,23 @@ class SessionSensorService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (collectingSessionId != active.sessionId) {
+        if (collectingSessionId != active.sessionId || collectingBlockId != active.focusBlockId) {
             motionCollector.stop()
-            motionCollector.start(active.startTimeMs)
+            collectionGeneration++
+            collectionIdentity = CollectionIdentity(active.sessionId, active.focusBlockId, collectionGeneration)
+            motionCollector.start(
+                active.startTimeMs,
+                active.focusBlockId,
+                AndroidSessionClock(this).now().bootId,
+                active.sessionId,
+            )
             collectingSessionId = active.sessionId
+            collectingBlockId = active.focusBlockId
         }
         handler.removeCallbacks(heartRateTicker)
         handler.post(heartRateTicker)
+        handler.removeCallbacks(checkpointTicker)
+        handler.post(checkpointTicker)
         localPosePipeline.start()
         yawnSyncClient.updateSession(active)
         yawnSyncClient.start()
@@ -237,6 +265,7 @@ class SessionSensorService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(heartRateTicker)
+        handler.removeCallbacks(checkpointTicker)
         motionCollector.stop()
         heartRateCollector.stop()
         yawnSyncClient.stop(closeSession = repository.activeSession() == null)
@@ -250,6 +279,8 @@ class SessionSensorService : Service() {
             screenReceiverRegistered = false
         }
         collectingSessionId = null
+        collectingBlockId = null
+        collectionIdentity = null
         if (::repository.isInitialized && shouldReleaseStudyDnd(repository.activeSession(), System.currentTimeMillis())) {
             StudyDndController.disable(this)
         }
@@ -257,6 +288,15 @@ class SessionSensorService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun currentCollectionActive(): ActiveStudySession? {
+        val identity = collectionIdentity ?: return null
+        val active = repository.activeSession() ?: return null
+        return active.takeIf {
+            it.sessionId == identity.sessionId && it.focusBlockId == identity.blockId &&
+                identity.generation == collectionGeneration
+        }
+    }
 
     private fun hasHeartRatePermission(): Boolean {
         val permission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
@@ -286,23 +326,6 @@ class SessionSensorService : Service() {
             .build()
     }
 
-    private fun notifyYawnAlert(eventsInWindow: Int) {
-        val vibrator = getSystemService(Vibrator::class.java)
-        if (vibrator?.hasVibrator() == true) {
-            vibrator.vibrate(VibrationEffect.createOneShot(YAWN_VIBRATION_MS, VibrationEffect.DEFAULT_AMPLITUDE))
-        }
-        val powerManager = getSystemService(PowerManager::class.java)
-        if (powerManager?.isInteractive == true) {
-            handler.post {
-                Toast.makeText(
-                    this,
-                    "Bạn hơi buồn ngủ rồi hả? Đã ngáp $eventsInWindow lần trong 10 phút.",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
-
     private fun applyPowerPolicy() {
         if (!::postureBleClient.isInitialized || !::localPosePipeline.isInitialized) return
         val interactive = getSystemService(PowerManager::class.java)?.isInteractive == true
@@ -315,6 +338,7 @@ class SessionSensorService : Service() {
     }
 
     companion object {
+        private const val CHECKPOINT_INTERVAL_MS = 30_000L
         private const val ANDROID_16_API = 36
         private const val HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
         private const val CHANNEL_ID = "focusmate_session_measurement"
@@ -322,7 +346,6 @@ class SessionSensorService : Service() {
         private const val HEART_RATE_INTERVAL_MS = 5 * 60_000L
         private const val HEART_RATE_DURATION_MS = 60_000L
         private const val HEART_RATE_TICK_MS = 5_000L
-        private const val YAWN_VIBRATION_MS = 180L
 
         fun start(context: Context) {
             runCatching { context.startForegroundService(Intent(context, SessionSensorService::class.java)) }
@@ -333,6 +356,8 @@ class SessionSensorService : Service() {
             context.stopService(Intent(context, SessionSensorService::class.java))
         }
     }
+
+    private data class CollectionIdentity(val sessionId: String, val blockId: String, val generation: Long)
 }
 
 internal fun shouldReleaseStudyDnd(active: ActiveStudySession?, nowMs: Long): Boolean =

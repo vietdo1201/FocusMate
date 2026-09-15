@@ -29,6 +29,14 @@ data class MotionWindowMetrics(
     val orientationChangeDegrees: Double = 0.0,
     val stepDetectorAvailable: Boolean = false,
     val orientationSensorAvailable: Boolean = false,
+    val windowStartElapsedMs: Long = 0L,
+    val windowEndElapsedMs: Long = 0L,
+    val bootId: String = "legacy",
+    val blockId: String = "block-0",
+    val sequence: Long = 0L,
+    val validSampleDurationMs: Long = 30_000L,
+    val sessionId: String = "legacy",
+    val collectorGeneration: Long = 0L,
 )
 
 /** Emits one explainable, non-overlapping motion window every 30 seconds. */
@@ -58,9 +66,29 @@ class AccCollector(
     private var stepDetectorRegistered = false
     private var orientationSensorRegistered = false
     private var lastWatchViewable: Boolean? = null
+    private var currentBlockId = "block-0"
+    private var currentBootId = "legacy"
+    private var nextSequence = 0L
+    private var currentSessionId = "legacy"
+    private var collectorGeneration = 0L
 
-    fun start(sessionStartTimeMs: Long = System.currentTimeMillis()): Boolean {
+    fun start(
+        sessionStartTimeMs: Long = System.currentTimeMillis(),
+        blockId: String = "block-0",
+        bootId: String = "legacy",
+        sessionId: String = "legacy",
+    ): Boolean {
         if (this.sessionStartTimeMs != sessionStartTimeMs) resetSession(sessionStartTimeMs)
+        if (currentBlockId != blockId || currentBootId != bootId) {
+            currentBlockId = blockId
+            currentBootId = bootId
+            nextSequence = 0L
+            windowStartNanos = 0L
+            accBuffer.clear()
+            gyroBuffer.clear()
+        }
+        currentSessionId = sessionId
+        collectorGeneration++
         // Motion metrics use 30-second windows, so retaining every sample while
         // batching delivery avoids waking the app for each 25 Hz sensor event.
         val acc = accelerometer?.let {
@@ -170,6 +198,8 @@ class AccCollector(
             lastWatchViewable = viewable
         }
         val observedAtMs = System.currentTimeMillis()
+        val sampleStart = acc.first().timestampNanos
+        val sampleEnd = acc.last().timestampNanos
         val orientationChange = max(
             vectorAngleDegrees(windowStartGravity, latestGravity),
             quaternionAngleDegrees(windowStartOrientation, latestOrientation),
@@ -185,6 +215,14 @@ class AccCollector(
                 immobileNanos / 1e9, baseline?.takeIf { it > 1e-6 }?.let { (movementRms - it) / it },
                 watchRaises, acc.size, gyro.size, windowStepCount, orientationChange,
                 stepDetectorRegistered, orientationSensorRegistered,
+                windowStartElapsedMs = start / 1_000_000L,
+                windowEndElapsedMs = nowNanos / 1_000_000L,
+                bootId = currentBootId,
+                blockId = currentBlockId,
+                sequence = nextSequence++,
+                validSampleDurationMs = ((sampleEnd - sampleStart) / 1_000_000L).coerceIn(0L, 30_000L),
+                sessionId = currentSessionId,
+                collectorGeneration = collectorGeneration,
             )
         )
         windowStepCount = 0

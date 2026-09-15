@@ -25,11 +25,9 @@ object ReminderDiagnostics {
             val file = File(context.noBackupFilesDir, FILE_NAME)
             prune(context)
             if (file.length() > MAX_BYTES) file.writeText("")
-            val plannedAt = when (reminder.attempt.coerceAtLeast(1)) {
-                1 -> reminder.createdAtMs
-                2 -> reminder.createdAtMs + BreakReminderPolicy.RETRY_OFFSETS_MS[1]
-                else -> reminder.createdAtMs + BreakReminderPolicy.RETRY_OFFSETS_MS[2]
-            }
+            val offsetIndex = (reminder.attempt.coerceAtLeast(1) - 1)
+                .coerceAtMost(BreakReminderPolicy.RETRY_OFFSETS_MS.lastIndex)
+            val plannedAt = reminder.createdAtMs + BreakReminderPolicy.RETRY_OFFSETS_MS[offsetIndex]
             val row = JSONObject().apply {
                 put("event_id", reminder.eventId)
                 put("kind", reminder.kind.wireValue)

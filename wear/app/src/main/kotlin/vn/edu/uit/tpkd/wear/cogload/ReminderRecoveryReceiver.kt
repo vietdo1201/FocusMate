@@ -13,7 +13,7 @@ class ReminderRecoveryReceiver : BroadcastReceiver() {
         val repository = StudySessionRepository(context)
         ReminderRecoveryCoordinator(
             object : ReminderRecoveryPort {
-                override fun activeSession(): ActiveStudySession? = repository.activeSession()
+                override fun reconcileActiveSession(): ActiveStudySession? = repository.reconcileActiveSession()
                 override fun cooldownUntilMs(): Long = repository.cooldownUntilMs()
                 override fun cancelAlarms() = BreakReminderScheduler.cancel(context)
                 override fun prepareNotificationChannels() {

@@ -89,6 +89,30 @@ class StudySessionClockTest {
         assertEquals(90_000L, StudySessionClock.totalBreakDurationMs(resting, endedAt))
     }
 
+    @Test
+    fun lateBreakCallbackNeverTurnsAwaitingTimeIntoStudyTime() {
+        val start = 1_000L
+        val breakStartedAt = start + 35 * 60_000L
+        val resting = StudySessionClock.startBreak(active(start), breakStartedAt)
+        val callbackTenMinutesLater = breakStartedAt + 15 * 60_000L
+
+        assertEquals(35 * 60_000L, StudySessionClock.studyDurationMs(resting, callbackTenMinutesLater))
+        assertEquals(15 * 60_000L, StudySessionClock.totalBreakDurationMs(resting, callbackTenMinutesLater))
+    }
+
+    @Test
+    fun pauseStopsStudyWithoutResettingFocusBlock() {
+        val start = 1_000L
+        val pausedAt = start + 20 * 60_000L
+        val paused = requireNotNull(StudySessionClock.pause(active(start), pausedAt))
+        val resumedAt = pausedAt + 10 * 60_000L
+
+        assertEquals(20 * 60_000L, StudySessionClock.studyDurationMs(paused, resumedAt))
+        val resumed = requireNotNull(StudySessionClock.resumeFromPause(paused, resumedAt))
+        assertEquals(20 * 60_000L, StudySessionClock.focusBlockDurationMs(resumed, resumedAt))
+        assertEquals(10 * 60_000L, resumed.accumulatedPauseMs)
+    }
+
     private fun active(startTimeMs: Long) = ActiveStudySession(
         sessionId = "clock-session",
         startTimeMs = startTimeMs,

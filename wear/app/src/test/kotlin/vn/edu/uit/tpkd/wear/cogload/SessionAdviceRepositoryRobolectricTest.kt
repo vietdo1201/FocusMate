@@ -60,9 +60,11 @@ class SessionAdviceRepositoryRobolectricTest {
     }
 
     private fun clearPreferences() {
+        FocusMateSessionDatabaseProvider.closeForTests()
         listOf(BULK_PREFS, ACTIVE_PREFS, "focusmate_local_study_ai_v2").forEach {
             context.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit()
         }
+        context.deleteDatabase(FocusMateSessionDatabase.DATABASE_NAME)
     }
 
     companion object {
