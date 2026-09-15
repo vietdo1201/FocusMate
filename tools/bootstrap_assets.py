@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import zipfile
+import hashlib
 from pathlib import Path
 
 try:
@@ -87,9 +89,9 @@ def prepare(force: bool) -> None:
     # exceed the fixed mp_assets partition. The URL mapper in web_assets.cpp
     # serves these verified bytes for both upstream filenames.
     loader = (package_root / "wasm" / "vision_wasm_nosimd_internal.js").read_bytes()
-    (WEB_ASSETS / "wasm" / "vwi.js").write_bytes(
-        loader + b"\nglobalThis.ModuleFactory = ModuleFactory;\n"
-    )
+    # Keep third-party loader bytes intact. The FocusMate-owned classic worker
+    # bootstrap exposes its global to our module without modifying upstream code.
+    (WEB_ASSETS / "wasm" / "vwi.js").write_bytes(loader)
     for name in ("pose_worker.mjs", "pose_worker_bootstrap.js", "pose_classifier.mjs", "yawn_classifier.mjs"):
         shutil.copy2(ROOT / "firmware" / "main" / "web" / name, WEB_ASSETS / name)
     compact_face = CACHE / "face_landmarker_landmarks_only.task"
@@ -102,6 +104,19 @@ def prepare(force: bool) -> None:
         ],
         check=True,
     )
+    with zipfile.ZipFile(face, "r") as source_bundle, zipfile.ZipFile(compact_face, "r") as compact_bundle:
+        compact_members = []
+        for name in compact_bundle.namelist():
+            source_bytes = source_bundle.read(name)
+            compact_bytes = compact_bundle.read(name)
+            if source_bytes != compact_bytes:
+                raise RuntimeError(f"Compaction changed Face Landmarker member bytes: {name}")
+            compact_members.append({
+                "name": name,
+                "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+                "output_sha256": hashlib.sha256(compact_bytes).hexdigest(),
+                "bytes_unchanged": True,
+            })
     for source, target in (
         (
             package_root / "wasm" / "vision_wasm_nosimd_internal.wasm",
@@ -129,6 +144,14 @@ def prepare(force: bool) -> None:
         "face_model_sha256": FILES[face.name][1],
         "face_model_profile": "landmarks-only-v1",
         "face_asset_sha256": sha256(compact_face),
+        "face_compaction": {
+            "operation": "deterministic_zip_repack_excluding_optional_blendshapes",
+            "input_sha256": sha256(face),
+            "output_sha256": sha256(compact_face),
+            "retained_members": compact_members,
+        },
+        "loader_source_sha256": sha256(package_root / "wasm" / "vision_wasm_nosimd_internal.js"),
+        "loader_modified": False,
         "files": generated,
     }
     (WEB_ASSETS / "asset-manifest.json").write_text(

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 vietdo1201
 // SPDX-License-Identifier: Apache-2.0
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 val repositoryRoot = rootProject.projectDir.parentFile
 val modelAssetDir = layout.projectDirectory.dir("src/main/assets/generated").asFile
@@ -9,6 +10,12 @@ val pinnedAssetManifest = repositoryRoot.resolve("tools/pinned_assets.json")
 val pythonCommand = providers.gradleProperty("focusmatePython").orNull
     ?: System.getenv("PYTHON")
     ?: "python"
+val focusMateVersion = Properties().apply {
+    repositoryRoot.resolve("version.properties").inputStream().use(::load)
+}
+val productionAbis = listOf("armeabi-v7a")
+val developmentAbis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+val includeDevelopmentAbis = providers.gradleProperty("focusmateDevAbis").orNull?.toBoolean() == true
 
 val releaseStoreFile = providers.environmentVariable("FOCUSMATE_RELEASE_STORE_FILE").orNull
 val releaseStorePassword = providers.environmentVariable("FOCUSMATE_RELEASE_STORE_PASSWORD").orNull
@@ -34,12 +41,13 @@ android {
         applicationId   = "vn.edu.uit.tpkd.wear.cogload"
         minSdk          = 30
         targetSdk       = 35
-        versionCode     = 25
-        versionName     = "2.2.2"
+        versionCode     = requireNotNull(focusMateVersion.getProperty("ANDROID_VERSION_CODE")).toInt()
+        versionName     = requireNotNull(focusMateVersion.getProperty("VERSION_NAME"))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // Device-locked build for the current SM-R925F test image.
-            abiFilters += "armeabi-v7a"
+            // Production evidence currently covers Galaxy Watch 5 Pro (armeabi-v7a).
+            // Opt in to emulator/untested ABIs with -PfocusmateDevAbis=true.
+            abiFilters += if (includeDevelopmentAbis) developmentAbis else productionAbis
         }
     }
 

@@ -7,6 +7,9 @@ const queuedMessages = [];
 self.onmessage = event => queuedMessages.push(event);
 
 importScripts("/assets/wasm-compatible-v2/vision_wasm_internal.js");
+// FocusMate compatibility adapter. The imported third-party file remains
+// byte-for-byte identical to the pinned npm package.
+self.ModuleFactory = ModuleFactory;
 import("/assets/pose_worker.mjs?v=yawn-shape-5")
   .then(() => {
     const moduleHandler = self.onmessage;

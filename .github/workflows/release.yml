@@ -27,6 +27,16 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+      - name: Read shared release identity
+        id: version
+        shell: bash
+        run: |
+          NAME="$(sed -n 's/^VERSION_NAME=//p' version.properties)"
+          CODE="$(sed -n 's/^ANDROID_VERSION_CODE=//p' version.properties)"
+          test -n "$NAME"
+          test -n "$CODE"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -41,10 +51,10 @@ jobs:
       - name: Validate immutable release identity
         shell: bash
         run: |
-          test "$GITHUB_REF_NAME" = "v2.2.2"
-          grep -F 'versionCode     = 25' wear/app/build.gradle.kts
-          grep -F 'versionName     = "2.2.2"' wear/app/build.gradle.kts
-          grep -F 'set(PROJECT_VER "2.2.2")' firmware/CMakeLists.txt
+          test "$GITHUB_REF_NAME" = "v${{ steps.version.outputs.name }}"
+          test "${{ steps.version.outputs.code }}" -gt 25
+          grep -F 'focusMateVersion.getProperty("ANDROID_VERSION_CODE")' wear/app/build.gradle.kts
+          grep -F '../version.properties' firmware/CMakeLists.txt
       - name: Restore release keystore without logging secrets
         shell: bash
         env:
@@ -71,11 +81,12 @@ jobs:
           esp_idf_version: v5.5.5
           target: esp32s3
           path: firmware
-          command: idf.py build && cd build && esptool.py --chip esp32s3 merge_bin -o FocusMate-ESP32S3-v2.2.2-factory-full.bin @flash_args
+          command: idf.py build && cd build && esptool.py --chip esp32s3 merge_bin -o FocusMate-ESP32S3-v${{ steps.version.outputs.name }}-factory-full.bin @flash_args
       - name: Verify and stage open release artifacts
         shell: bash
         run: |
           set +x
+          VERSION="${{ steps.version.outputs.name }}"
           mkdir -p release-assets
           APK="wear/app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
@@ -87,20 +98,22 @@ jobs:
             -storepass "$FOCUSMATE_RELEASE_STORE_PASSWORD" \
             -alias "$FOCUSMATE_RELEASE_KEY_ALIAS" \
             > release-assets/FocusMate-release-cert.pem
-          cp "$APK" release-assets/FocusMate-Wear-v2.2.2.apk
-          cp firmware/build/focusmate_esp.bin release-assets/FocusMate-ESP32S3-v2.2.2-update-app.bin
-          cp firmware/build/mp_assets.bin release-assets/FocusMate-ESP32S3-v2.2.2-update-assets.bin
-          cp firmware/build/FocusMate-ESP32S3-v2.2.2-factory-full.bin release-assets/
-          cp sbom/focusmate-v2.2.2.spdx.json release-assets/
-          cp docs/FLASHING_v2.2.2.md release-assets/FLASHING.txt
+          cp "$APK" "release-assets/FocusMate-Wear-v${VERSION}.apk"
+          cp firmware/build/focusmate_esp.bin "release-assets/FocusMate-ESP32S3-v${VERSION}-update-app.bin"
+          cp firmware/build/mp_assets.bin "release-assets/FocusMate-ESP32S3-v${VERSION}-update-assets.bin"
+          cp "firmware/build/FocusMate-ESP32S3-v${VERSION}-factory-full.bin" release-assets/
+          cp sbom/focusmate-current.spdx.json "release-assets/focusmate-v${VERSION}.spdx.json"
+          cp "docs/FLASHING_v${VERSION}.md" release-assets/FLASHING.txt
+          cp LICENSE release-assets/LICENSE.txt
+          cp NOTICE release-assets/NOTICE.txt
           cp THIRD_PARTY_NOTICES.md release-assets/THIRD_PARTY_NOTICES.txt
-          (cd release-assets && sha256sum APK-SIGNATURE.txt FLASHING.txt FocusMate-* focusmate-v2.2.2.spdx.json THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
+          git archive --format=tar.gz --prefix="FocusMate-${VERSION}/" -o "release-assets/FocusMate-${VERSION}-source.tar.gz" HEAD
+          (cd release-assets && sha256sum APK-SIGNATURE.txt FLASHING.txt LICENSE.txt NOTICE.txt FocusMate-* "focusmate-v${VERSION}.spdx.json" THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
-      - name: Publish release only after all gates pass
+      - name: Create draft release only after all gates pass
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* \
-            --verify-tag --draft --title "FocusMate v2.2.2" \
-            --notes-file docs/RELEASE_NOTES_v2.2.2.md
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+            --verify-tag --draft --title "FocusMate v${{ steps.version.outputs.name }}" \
+            --notes-file "docs/RELEASE_NOTES_v${{ steps.version.outputs.name }}.md"

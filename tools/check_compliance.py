@@ -59,14 +59,26 @@ all_text = "\n".join(
     for path in repository_files()
     if path.is_file() and path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".jar"}
 )
+version_properties = {
+    key: value
+    for key, value in (
+        line.split("=", 1)
+        for line in (ROOT / "version.properties").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+}
+version_name = version_properties.get("VERSION_NAME")
+version_code = version_properties.get("ANDROID_VERSION_CODE")
 if ("soucre_code/from_On_Hand_3_" + "android_wear") in all_text:
     errors.append("Stale pre-v2.2.0 Wear path remains")
-if 'versionCode     = 25' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionCode is not 25")
-if 'versionName     = "2.2.2"' not in (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8"):
-    errors.append("Android versionName is not 2.2.2")
-if 'set(PROJECT_VER "2.2.2")' not in (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8"):
-    errors.append("Firmware version is not 2.2.2")
+if version_name != "2.3.0" or version_code != "26":
+    errors.append("Candidate version.properties must identify FocusMate 2.3.0 / Android 26")
+gradle_text = (ROOT / "wear" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+cmake_text = (ROOT / "firmware" / "CMakeLists.txt").read_text(encoding="utf-8")
+if 'focusMateVersion.getProperty("ANDROID_VERSION_CODE")' not in gradle_text or 'focusMateVersion.getProperty("VERSION_NAME")' not in gradle_text:
+    errors.append("Android build does not consume the shared version manifest")
+if "../version.properties" not in cmake_text or "VERSION_NAME=" not in cmake_text:
+    errors.append("Firmware build does not consume the shared version manifest")
 
 sbom = json.loads((ROOT / "sbom" / "focusmate-v2.2.2.spdx.json").read_text(encoding="utf-8"))
 project_packages = [item for item in sbom.get("packages", []) if item.get("SPDXID") == "SPDXRef-Package-FocusMate"]
@@ -79,6 +91,50 @@ if (
     or len(sbom.get("packages", [])) < 10
 ):
     errors.append("SPDX 2.3 SBOM is missing or incomplete")
+
+current_sbom = json.loads((ROOT / "sbom" / "focusmate-current.spdx.json").read_text(encoding="utf-8"))
+current_packages = {
+    reference["referenceLocator"]: package
+    for package in current_sbom.get("packages", [])
+    for reference in package.get("externalRefs", [])
+    if reference.get("referenceType") == "purl"
+}
+lock_text = (ROOT / "firmware" / "dependencies.lock").read_text(encoding="utf-8")
+locked_firmware = {}
+for match in re.finditer(
+    r"^  (?P<name>espressif/[^:]+):\n(?P<body>(?: {4}.*\n)+)",
+    lock_text,
+    flags=re.MULTILINE,
+):
+    version_match = re.search(r"^ {4}version: ['\"]?(?P<version>[^'\"\r\n]+)", match.group("body"), re.MULTILINE)
+    if version_match:
+        locked_firmware[match.group("name")] = version_match.group("version")
+idf_match = re.search(r"^  idf:\n(?: {4}.*\n)*? {4}version: (?P<version>[^\r\n]+)", lock_text, re.MULTILINE)
+if idf_match:
+    locked_firmware["espressif/esp-idf"] = idf_match.group("version")
+expected_firmware = {
+    f"pkg:generic/{name}@{version}"
+    for name, version in locked_firmware.items()
+}
+missing_firmware = sorted(expected_firmware - current_packages.keys())
+if len(locked_firmware) != 8 or missing_firmware:
+    errors.append(f"Current SBOM does not match all 8 firmware lock entries: {missing_firmware}")
+expected_unresolved = {
+    "pkg:generic/mediapipe/pose-landmarker-lite-float16@1",
+    "pkg:generic/mediapipe/face-landmarker-float16@1",
+}
+actual_unresolved = {
+    purl
+    for purl, package in current_packages.items()
+    if package.get("licenseDeclared") == "NOASSERTION"
+}
+if actual_unresolved != expected_unresolved:
+    errors.append(
+        "Current SBOM NOASSERTION set changed; audit each exact artifact: "
+        f"expected {sorted(expected_unresolved)}, found {sorted(actual_unresolved)}"
+    )
+if "tests/FocusMate_Test/Evidence/ export-ignore" not in (ROOT / ".gitattributes").read_text(encoding="utf-8"):
+    errors.append("Binary test evidence is not excluded from source archives")
 battery = ROOT / "reports" / "assets" / "2026-08-25-galaxy-watch5-pro-battery-usage.png"
 if hashlib.sha256(battery.read_bytes()).hexdigest().upper() != "1C5029065197E50F28A133518701CD92EB6F77323BAFE7F6679E0758864EC26E":
     errors.append("Battery evidence image hash changed")

@@ -12,7 +12,15 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROJECT_VERSION = "2.2.2-current-audit"
+VERSION_PROPERTIES = {
+    key: value
+    for key, value in (
+        line.split("=", 1)
+        for line in (ROOT / "version.properties").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+}
+PROJECT_VERSION = f"{VERSION_PROPERTIES['VERSION_NAME']}-candidate"
 DEFAULT_OUTPUT = ROOT / "sbom" / "focusmate-current.spdx.json"
 DEFAULT_PROVENANCE = ROOT / "sbom" / "license-provenance.json"
 PROJECT_ID = "SPDXRef-Package-FocusMate"
@@ -99,10 +107,14 @@ def build_document(
             packages[(name, version)] = package(name, version, purl, provenance)
 
     distributed_components = (
+        ("espressif/dl_fft", "0.6.0", "pkg:generic/espressif/dl_fft@0.6.0"),
         ("espressif/esp-dl", "3.3.9", "pkg:generic/espressif/esp-dl@3.3.9"),
         ("espressif/esp32-camera", "2.1.7", "pkg:generic/espressif/esp32-camera@2.1.7"),
+        ("espressif/esp_jpeg", "1.3.1", "pkg:generic/espressif/esp_jpeg@1.3.1"),
+        ("espressif/esp_new_jpeg", "1.0.2", "pkg:generic/espressif/esp_new_jpeg@1.0.2"),
         ("espressif/human_face_detect", "0.5.0", "pkg:generic/espressif/human_face_detect@0.5.0"),
         ("espressif/mdns", "1.9.1", "pkg:generic/espressif/mdns@1.9.1"),
+        ("ESP-IDF", "5.5.5", "pkg:generic/espressif/esp-idf@5.5.5"),
         ("@mediapipe/tasks-vision", "1.0.1", "pkg:npm/%40mediapipe/tasks-vision@1.0.1"),
         ("mediapipe/pose-landmarker-lite-float16", "1", "pkg:generic/mediapipe/pose-landmarker-lite-float16@1"),
         ("mediapipe/face-landmarker-float16", "1", "pkg:generic/mediapipe/face-landmarker-float16@1"),
@@ -134,24 +146,38 @@ def build_document(
         "relatedSpdxElement": dependency["SPDXID"],
     } for dependency in dependencies)
 
-    return {
+    document = {
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "FocusMate-current-runtime-audit",
         "documentNamespace": "https://github.com/vietdo1201/FocusMate/tree/main#spdx-current-runtime-audit",
         "creationInfo": {
-            "created": "2026-09-06T00:00:00Z",
+            "created": "2026-09-16T00:00:00Z",
             "creators": ["Tool: FocusMate-tools-generate-sbom-2.0", "Person: vietdo1201"],
             "licenseListVersion": "3.25",
             "comment": (
                 "Includes Android releaseRuntimeClasspath plus direct pinned firmware components and AI assets. "
-                "The transitive firmware-component license audit is incomplete; unknown licenses remain NOASSERTION."
+                "Only artifacts without explicit version-specific license evidence remain NOASSERTION."
             ),
         },
         "packages": [project, *dependencies],
         "relationships": relationships,
     }
+    extracted = []
+    for evidence in provenance.values():
+        license_id = evidence.get("license", "")
+        license_text = evidence.get("licenseText")
+        if license_id.startswith("LicenseRef-") and license_text:
+            extracted.append({
+                "licenseId": license_id,
+                "extractedText": license_text,
+                "seeAlsos": [evidence["source"]],
+                "comment": evidence.get("evidence", "Version-specific upstream license text"),
+            })
+    if extracted:
+        document["hasExtractedLicensingInfos"] = sorted(extracted, key=lambda item: item["licenseId"])
+    return document
 
 
 def main() -> None:
