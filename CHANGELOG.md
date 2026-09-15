@@ -2,7 +2,17 @@
 
 ## Chưa phát hành
 
-- Chưa có thay đổi.
+- Chuẩn bị ứng viên 2.3.0 với state machine/SQLite v2 cho phiên học, clock monotonic,
+  deadline nghỉ bất biến qua checkpoint và phục hồi boot an toàn.
+- Gộp thao tác chấp nhận nhắc và bắt đầu nghỉ trong một transaction; thêm delivery
+  slot chống rung lặp và thẻ đề nghị nghỉ không chặn giao diện.
+- Bổ sung check-in shadow theo monotonic time, callback motion có identity thế hệ và
+  báo cáo tách học/nghỉ/tạm dừng/chưa xác định; giữ lịch sử từng delivery và
+  feedback thay vì suy việc người dùng đã thấy từ kết quả post notification.
+- Bổ sung rollback test cho accept/resume/finish/migration, test retention 500 phiên
+  và sửa dọn toàn bộ bản ghi con khi phiên bị hết hạn hoặc bị đẩy khỏi giới hạn.
+- Chuẩn hóa version manifest, source archive, SBOM candidate và provenance/manifest
+  biến đổi asset. Bản này chưa phát hành và chưa có chứng nhận thiết bị 2.3.0.
 
 ## 2.2.2 — 2026-08-28
 

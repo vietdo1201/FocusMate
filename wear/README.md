@@ -17,7 +17,9 @@ cd wear
 
 Gradle tự xác minh hash hai model trước `preBuild` nhưng không tự tải qua mạng.
 Thiếu/sai model thì quay lại root và chạy bootstrap. APK hiện giới hạn ABI
-`armeabi-v7a`, tương ứng Galaxy Watch 5 Pro SM-R925F dùng trong hồ sơ; các Watch
+`armeabi-v7a`, tương ứng Galaxy Watch 5 Pro SM-R925F dùng trong hồ sơ. Build phát
+triển có thể thêm `arm64-v8a`/`x86_64` bằng `-PfocusmateDevAbis=true`; các ABI này
+chưa được quảng cáo là đã qua kiểm thử thiết bị. Các Watch
 hoặc ABI khác chưa được xác nhận bằng kiểm thử thiết bị của dự án.
 
 APK debug nằm tại `app/build/outputs/apk/debug/app-debug.apk`. APK release chỉ

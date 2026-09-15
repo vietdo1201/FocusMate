@@ -27,8 +27,11 @@ cd wear
 Trên Windows dùng `gradlew.bat`. Release signing chỉ đọc biến môi trường, không
 đọc keystore hoặc mật khẩu từ repository. Task `:app:verifyWearModels` được nối
 vào `preBuild`, nên Gradle dừng với hướng dẫn bootstrap nếu model thiếu hoặc sai
-hash, kể cả khi người dùng gọi Gradle trực tiếp. APK hiện chỉ đóng
+hash, kể cả khi người dùng gọi Gradle trực tiếp. APK production mặc định chỉ đóng
 `armeabi-v7a`; target thiết bị đã ghi nhận là Galaxy Watch 5 Pro SM-R925F.
+Để build emulator/kiểm tra phát triển có thể dùng
+`./gradlew -PfocusmateDevAbis=true :app:assembleDebug`; tùy chọn này thêm
+`arm64-v8a` và `x86_64` nhưng không phải tuyên bố hai ABI đó đã qua device test.
 
 ## ESP32-S3
 
@@ -65,4 +68,24 @@ cập nhật thông thường. Xem [FLASHING_v2.2.2.md](FLASHING_v2.2.2.md).
 
 Lệnh chạy bootstrap, Python/Node contracts, Gradle test/lint/APK và firmware
 clean build. Dependency Android được khóa bằng lockfile và verification metadata;
-ESP component được pin trong `firmware/main/idf_component.yml`.
+ESP component được khai báo trong `firmware/main/idf_component.yml` và khóa đúng
+version/hash trong `firmware/dependencies.lock`.
+
+Rà license runtime và tạo lại SBOM candidate:
+
+```bash
+python tools/audit_maven_licenses.py          # chỉ báo kết quả, không sửa file
+python tools/audit_maven_licenses.py --write  # cập nhật provenance sau khi review
+python tools/generate_sbom.py
+python tools/check_compliance.py
+reuse lint
+```
+
+Audit Maven chỉ chấp nhận license có ánh xạ rõ từ POM đúng package/version hoặc
+parent POM được khai báo; license mơ hồ vẫn là `NOASSERTION`. Hai model phải có
+bằng chứng artifact-specific riêng, không kế thừa license của MediaPipe runtime.
+
+Để chứng minh build không phụ thuộc `.git`, đường dẫn máy tác giả hoặc cache nằm
+trong repo, giải nén source `.tar.gz` sang một thư mục mới bên ngoài checkout và
+chạy `verify.ps1`/`verify.sh` tại đó. Script tự tải asset theo URL/hash đã pin;
+source archive không chứa model, APK, firmware build, cache hoặc dữ liệu test ảnh/video.
