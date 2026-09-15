@@ -57,7 +57,7 @@ phải thiết bị y tế và không dùng để chẩn đoán sức khỏe.
   <img src="tests/FocusMate_Test/Evidence/TC05_camera_web.png" width="900" alt="Dashboard FocusMate hiển thị camera, landmark khuôn mặt và trạng thái ngồi đúng">
 </a>
 
-*Dashboard được phục vụ từ ESP32-S3 trong mạng local; nhấp ảnh để mở bản đầy đủ.*
+*Dashboard được phục vụ từ ESP32-S3 trong mạng local*
 
 ### Phiên học trên Galaxy Watch
 
@@ -65,7 +65,7 @@ phải thiết bị y tế và không dùng để chẩn đoán sức khỏe.
   <img src="tests/FocusMate_Test/Evidence/TC24_StartDH.jpg" width="360" alt="Galaxy Watch chạy FocusMate với bộ đếm thời gian của phiên học">
 </a>
 
-*Phiên học đang chạy trên thiết bị thật; ảnh giữ nguyên tỷ lệ gốc.*
+*Phiên học đang chạy trên thiết bị thật.*
 
 ### Gợi ý cuối phiên
 
