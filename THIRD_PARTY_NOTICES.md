@@ -7,7 +7,7 @@ are in `firmware/dependencies.lock`.
 
 | Runtime component | Pinned version | License | Upstream |
 |---|---:|---|---|
-| Android/JVM runtime dependency graph | exact versions in lockfiles | version-specific POM audit; only the two model artifacts remain `NOASSERTION` | `sbom/license-provenance.json`, current SPDX SBOM |
+| Android/JVM runtime dependency graph | exact versions in lockfiles | version-specific POM/model-card audit | `sbom/license-provenance.json`, current SPDX SBOM |
 | MediaPipe Tasks Vision Android | 1.0.0 | Apache-2.0 | version-specific Google Maven POM in `sbom/license-provenance.json` |
 | MediaPipe Tasks Vision Web | 1.0.1 | Apache-2.0 | `package.json` inside the hash-pinned npm tarball; source recorded in `sbom/license-provenance.json` |
 | Guava Android | 31.1-android | Apache-2.0 | version-matched parent POM in `sbom/license-provenance.json` |
@@ -22,18 +22,18 @@ are in `firmware/dependencies.lock`.
 | esp_new_jpeg | 1.0.2 | `LicenseRef-Espressif-MIT` | upstream terms restrict use to Espressif products; not represented as standard MIT |
 | human_face_detect | 0.5.0 | MIT | commit-pinned LICENSE in `sbom/license-provenance.json` |
 | mdns | 1.9.1 | Apache-2.0 | commit-pinned LICENSE in `sbom/license-provenance.json` |
-| Pose Landmarker Lite float16 | revision 1 | `NOASSERTION` in current audit | <https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker> |
-| Face Landmarker float16 | revision 1 | `NOASSERTION` in current audit | <https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker> |
+| Pose Landmarker Lite float16 | revision 1 | Apache-2.0 | official bundle table and linked BlazePose GHUM 3D model card in `sbom/license-provenance.json` |
+| Face Landmarker float16 | revision 1 | Apache-2.0 | official bundle table and linked BlazeFace, Face Mesh V2 and Blendshape V2 cards in `sbom/license-provenance.json` |
 | MediaPipe Tasks JNI native runtime (`libmediapipe_tasks_jni.so`) | from Android artifact 1.0.0 | Apache-2.0 declared by the version-specific POM | bundled unchanged; Android packaging could not strip debug symbols and retained the upstream binary |
 
 Model and package hashes are enforced by `tools/bootstrap_assets.py`. Release
 binaries contain runtime dependencies and models as required for offline local
 inference; no separately vendored dependency source is included. The historical
 `v2.2.2` SBOM is unchanged. The current runtime audit is generated separately,
-does not infer licenses from package namespaces, and intentionally leaves
-unverified entries as `NOASSERTION`. The current audit reduces this set to the
-two exact MediaPipe model files; it does not transfer the Apache-2.0 runtime
-license to those model bytes. The generated SPDX document includes every
+does not infer licenses from package namespaces. The two exact MediaPipe model
+files are mapped separately from the runtime through Google's official bundle
+tables and linked model cards; revision 1 and `latest` were verified byte-identical
+on 2026-09-16. The generated SPDX document includes every
 component resolved by `firmware/dependencies.lock`; it records the non-standard
 `esp_new_jpeg` terms as an extracted `LicenseRef` instead of relabeling them MIT.
 This inventory is not a complete legal audit. Full Apache and MIT texts governing

@@ -13,4 +13,4 @@
 - Dùng manifest phiên bản chung cho Watch, firmware, workflow và SBOM candidate.
 - Giữ loader MediaPipe nguyên byte; ghi manifest phép đóng gói lại Face Landmarker.
 
-Candidate đã clean-build từ source archive ngoài repository và đạt cổng `code-ready`. Giới hạn: chưa có device report cho đúng artifact 2.3.0; hai model đúng hash vẫn cần bằng chứng quyền phân phối artifact-specific và APK vẫn cần khóa nâng cấp hợp lệ trước khi release binary được coi là sẵn sàng.
+Candidate đã clean-build từ source archive ngoài repository và đạt cổng `code-ready`. Hai bundle model revision 1 đã được đối chiếu byte-exact với URL chính thức và model card Apache-2.0 theo từng thành phần. Giới hạn: người dùng xác nhận đã cập nhật/kiểm thử thiết bị, nhưng chưa có device report byte-exact cho artifact CI 2.3.0 với đầy đủ bài soak/Doze và thống kê delivery timing.

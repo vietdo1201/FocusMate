@@ -1292,8 +1292,8 @@
       "versionInfo": "1",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "copyrightText": "NOASSERTION",
       "externalRefs": [
         {
@@ -1301,7 +1301,8 @@
           "referenceType": "purl",
           "referenceLocator": "pkg:generic/mediapipe/face-landmarker-float16@1"
         }
-      ]
+      ],
+      "comment": "License evidence for 1: https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker (Official bundle table maps FaceDetector, FaceMesh-V2 and Blendshape members to model cards that each declare Apache-2.0. Revision 1 and latest were byte-identical on 2026-09-16: 3,758,596 bytes, SHA-256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff, GCS ETag b0e7274907a1644404fef66b28dd6d85. Cards: BlazeFace Short Range, Face Mesh V2 and Blendshape V2 linked from the source page. FocusMate's landmarks-only Web bundle retains the detector, mesh and geometry metadata bytes unchanged and omits the optional blendshape member.)"
     },
     {
       "SPDXID": "SPDXRef-Package-mediapipe-pose-landmarker-lite-float16-1",
@@ -1309,8 +1310,8 @@
       "versionInfo": "1",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
       "copyrightText": "NOASSERTION",
       "externalRefs": [
         {
@@ -1318,7 +1319,8 @@
           "referenceType": "purl",
           "referenceLocator": "pkg:generic/mediapipe/pose-landmarker-lite-float16@1"
         }
-      ]
+      ],
+      "comment": "License evidence for 1: https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker (Official bundle table links the Pose Landmarker Lite float16 download to the BlazePose GHUM 3D model card, which declares Apache-2.0. Revision 1 and latest were byte-identical on 2026-09-16: 5,777,746 bytes, SHA-256 59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a, GCS ETag 04a75ddf7c811ac7a1a4523266dd7d88. Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf)"
     },
     {
       "SPDXID": "SPDXRef-Package-org.checkerframework-checker-compat-qual-2.5.3",

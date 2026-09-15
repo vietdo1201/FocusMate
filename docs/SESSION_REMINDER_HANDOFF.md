@@ -32,6 +32,6 @@ Ngày: 2026-09-16. Đây là index triển khai; đặc tả và evidence canoni
 
 Từ `wear/`: `gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleRelease`. Hai model generated hiện đã được bootstrap và task `verifyWearModels` qua. Không coi host build là device verification.
 
-Kết quả gần nhất: Android có 148 unit/Robolectric test, 0 failure; lint, debug/release APK đều xanh. Python có 33 test, Node có 19 test. Source archive candidate 349 mục đã clean-build ngoài repository với ESP-IDF 5.5.5, firmware 2.3.0 và `dl_fft 0.6.0`. Candidate đạt `code-ready`; Watch/ESP chưa được cài hoặc flash nên chưa `device-verified`, và blocker license model/chữ ký vẫn khiến bản này chưa `release-ready`.
+Kết quả gần nhất: Android có 148 unit/Robolectric test, 0 failure; lint, debug/release APK đều xanh. Python có 33 test, Node có 19 test. Source archive candidate 349 mục đã clean-build ngoài repository với ESP-IDF 5.5.5, firmware 2.3.0 và `dl_fft 0.6.0`. Candidate đạt `code-ready`; người dùng xác nhận đã cập nhật/kiểm thử thiết bị, nhưng chưa có report byte-exact cho artifact CI 2.3.0 với đầy đủ soak/Doze và delivery timing nên trạng thái `device-verified` vẫn để riêng.
 
 Không commit/push/flash từ handoff này nếu người dùng chưa yêu cầu.

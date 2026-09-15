@@ -20,9 +20,6 @@ jobs:
     timeout-minutes: 60
     env:
       FOCUSMATE_RELEASE_STORE_FILE: ${{ github.workspace }}/release-key.jks
-      FOCUSMATE_RELEASE_STORE_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_STORE_PASSWORD }}
-      FOCUSMATE_RELEASE_KEY_ALIAS: ${{ secrets.FOCUSMATE_RELEASE_KEY_ALIAS }}
-      FOCUSMATE_RELEASE_KEY_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -59,16 +56,34 @@ jobs:
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.FOCUSMATE_RELEASE_KEYSTORE_BASE64 }}
+          FOCUSMATE_RELEASE_STORE_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_STORE_PASSWORD }}
+          FOCUSMATE_RELEASE_KEY_ALIAS: ${{ secrets.FOCUSMATE_RELEASE_KEY_ALIAS }}
         run: |
           set +x
           test -n "$KEYSTORE_BASE64"
           test -n "$FOCUSMATE_RELEASE_STORE_PASSWORD"
           test -n "$FOCUSMATE_RELEASE_KEY_ALIAS"
-          test -n "$FOCUSMATE_RELEASE_KEY_PASSWORD"
           umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$FOCUSMATE_RELEASE_STORE_FILE"
+          EXPECTED="$(sed -n 's/^EXPECTED_CERT_SHA256=//p' release-signing.properties)"
+          test -n "$EXPECTED"
+          keytool -exportcert -rfc \
+            -keystore "$FOCUSMATE_RELEASE_STORE_FILE" \
+            -storepass "$FOCUSMATE_RELEASE_STORE_PASSWORD" \
+            -alias "$FOCUSMATE_RELEASE_KEY_ALIAS" \
+            > release-cert.pem
+          ACTUAL="$(keytool -printcert -file release-cert.pem | sed -n 's/.*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL" = "$EXPECTED"
       - name: Build, test and sign Wear APK
+        env:
+          FOCUSMATE_RELEASE_STORE_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_STORE_PASSWORD }}
+          FOCUSMATE_RELEASE_KEY_ALIAS: ${{ secrets.FOCUSMATE_RELEASE_KEY_ALIAS }}
+          FOCUSMATE_RELEASE_KEY_PASSWORD: ${{ secrets.FOCUSMATE_RELEASE_KEY_PASSWORD }}
         run: |
+          set +x
+          test -n "$FOCUSMATE_RELEASE_STORE_PASSWORD"
+          test -n "$FOCUSMATE_RELEASE_KEY_ALIAS"
+          test -n "$FOCUSMATE_RELEASE_KEY_PASSWORD"
           python -m pip install --disable-pip-version-check reuse==6.2.0 charset-normalizer==3.4.3
           python tools/bootstrap_assets.py
           python tools/generate_sbom.py
@@ -90,14 +105,19 @@ jobs:
           mkdir -p release-assets
           APK="wear/app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          EXPECTED_CERT="$(sed -n 's/^EXPECTED_CERT_SHA256=//p' release-signing.properties)"
+          EXPECTED_CODE="${{ steps.version.outputs.code }}"
+          APP_PACKAGE="vn.edu.uit.tpkd.wear.cogload"
           test -f "$APK"
           test -x "$APKSIGNER"
+          test -x "$AAPT"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > release-assets/APK-SIGNATURE.txt
-          keytool -exportcert -rfc \
-            -keystore "$FOCUSMATE_RELEASE_STORE_FILE" \
-            -storepass "$FOCUSMATE_RELEASE_STORE_PASSWORD" \
-            -alias "$FOCUSMATE_RELEASE_KEY_ALIAS" \
-            > release-assets/FocusMate-release-cert.pem
+          test "$(grep -Fc "certificate SHA-256 digest: $EXPECTED_CERT" release-assets/APK-SIGNATURE.txt)" -eq 1
+          grep -F "Number of signers: 1" release-assets/APK-SIGNATURE.txt
+          "$AAPT" dump badging "$APK" > release-assets/APK-METADATA.txt
+          grep -F "package: name='$APP_PACKAGE' versionCode='$EXPECTED_CODE' versionName='$VERSION'" release-assets/APK-METADATA.txt
+          cp release-cert.pem release-assets/FocusMate-release-cert.pem
           cp "$APK" "release-assets/FocusMate-Wear-v${VERSION}.apk"
           cp firmware/build/focusmate_esp.bin "release-assets/FocusMate-ESP32S3-v${VERSION}-update-app.bin"
           cp firmware/build/mp_assets.bin "release-assets/FocusMate-ESP32S3-v${VERSION}-update-assets.bin"
@@ -105,11 +125,34 @@ jobs:
           cp sbom/focusmate-current.spdx.json "release-assets/focusmate-v${VERSION}.spdx.json"
           cp "docs/FLASHING_v${VERSION}.md" release-assets/FLASHING.txt
           cp LICENSE release-assets/LICENSE.txt
+          cp LICENSES/MIT.txt release-assets/MIT-LICENSE.txt
           cp NOTICE release-assets/NOTICE.txt
           cp THIRD_PARTY_NOTICES.md release-assets/THIRD_PARTY_NOTICES.txt
+          cp docs/LICENSING.md release-assets/LICENSING.txt
           git archive --format=tar.gz --prefix="FocusMate-${VERSION}/" -o "release-assets/FocusMate-${VERSION}-source.tar.gz" HEAD
-          (cd release-assets && sha256sum APK-SIGNATURE.txt FLASHING.txt LICENSE.txt NOTICE.txt FocusMate-* "focusmate-v${VERSION}.spdx.json" THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
+          (cd release-assets && sha256sum APK-METADATA.txt APK-SIGNATURE.txt FLASHING.txt LICENSE.txt LICENSING.txt MIT-LICENSE.txt NOTICE.txt FocusMate-* "focusmate-v${VERSION}.spdx.json" THIRD_PARTY_NOTICES.txt > SHA256SUMS.txt)
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
+          cat > expected-assets.txt <<EOF
+          APK-METADATA.txt
+          APK-SIGNATURE.txt
+          FLASHING.txt
+          FocusMate-ESP32S3-v${VERSION}-factory-full.bin
+          FocusMate-ESP32S3-v${VERSION}-update-app.bin
+          FocusMate-ESP32S3-v${VERSION}-update-assets.bin
+          FocusMate-Wear-v${VERSION}.apk
+          FocusMate-${VERSION}-source.tar.gz
+          FocusMate-release-cert.pem
+          LICENSE.txt
+          LICENSING.txt
+          MIT-LICENSE.txt
+          NOTICE.txt
+          SHA256SUMS.txt
+          THIRD_PARTY_NOTICES.txt
+          focusmate-v${VERSION}.spdx.json
+          EOF
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > actual-assets.txt
+          sort -o expected-assets.txt expected-assets.txt
+          diff -u expected-assets.txt actual-assets.txt
       - name: Create draft release only after all gates pass
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,3 +160,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --verify-tag --draft --title "FocusMate v${{ steps.version.outputs.name }}" \
             --notes-file "docs/RELEASE_NOTES_v${{ steps.version.outputs.name }}.md"
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: rm -f "$FOCUSMATE_RELEASE_STORE_FILE" release-cert.pem

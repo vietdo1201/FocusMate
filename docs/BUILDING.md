@@ -82,8 +82,9 @@ reuse lint
 ```
 
 Audit Maven chỉ chấp nhận license có ánh xạ rõ từ POM đúng package/version hoặc
-parent POM được khai báo; license mơ hồ vẫn là `NOASSERTION`. Hai model phải có
-bằng chứng artifact-specific riêng, không kế thừa license của MediaPipe runtime.
+parent POM được khai báo; license mơ hồ vẫn là `NOASSERTION`. Hai model revision
+1 hiện được nối từ SHA-256 tới bảng bundle chính thức và model card Apache-2.0;
+không kế thừa license của MediaPipe runtime.
 
 Để chứng minh build không phụ thuộc `.git`, đường dẫn máy tác giả hoặc cache nằm
 trong repo, giải nén source `.tar.gz` sang một thư mục mới bên ngoài checkout và

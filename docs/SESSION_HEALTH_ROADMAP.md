@@ -70,6 +70,6 @@ Cho phép: “ít chuyển động cổ tay”, “chưa đủ dữ liệu”, �
 - Android lần cuối: 148 unit/Robolectric test, 0 failure; lint, debug APK và release APK đều build thành công.
 - Firmware artifact đã build: `firmware/build/focusmate_esp.bin`, 3.158.688 byte.
 - Source archive candidate 349 mục đã được giải nén ngoài repository và chạy lại toàn bộ các cổng trên; firmware dùng đúng lock `dl_fft 0.6.0` và còn 25% app partition.
-- SBOM candidate có 86 package; REUSE đạt 303/303 tệp và compliance/secret-pattern check đạt. Hai model vẫn là hai package `NOASSERTION` duy nhất cho tới khi có bằng chứng quyền phân phối đúng artifact.
+- SBOM candidate có 86 package; REUSE đạt 303/303 tệp và compliance/secret-pattern check đạt. Hai model revision 1 đã được nối từ SHA-256 tới bảng bundle chính thức và model card Apache-2.0 theo thành phần.
 - Trạng thái hiện tại: `code-ready`; chưa `device-verified` và chưa `release-ready`.
 - Chưa flash, chưa chạy Watch device/Doze/battery-saver test và chưa pilot trong lần triển khai này.

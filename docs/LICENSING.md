@@ -25,9 +25,10 @@ Artifact được phép đưa vào build thử nghiệm chỉ khi hash khớp co
 - Model: Face Landmarker float16 revision 1, 3,758,596 bytes, SHA-256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`.
 
 Hash chỉ chứng minh artifact byte-exact, không tự chứng minh quyền phân phối.
-Nguồn license package Android/Web đã xác minh được ghi theo phiên bản trong
-`sbom/license-provenance.json`; license của đúng byte model vẫn để
-`NOASSERTION` trong audit hiện tại cho tới khi lưu được nguồn phù hợp. Trước
-release phải lưu trang/model card hoặc license đi kèm của đúng revision, SPDX,
-attribution/NOTICE và điều khoản redistribution vào inventory report. Thiếu bất
-kỳ mục nào thì model path vẫn `EXPERIMENTAL`, không `RELEASE_ELIGIBLE`.
+Nguồn license package Android/Web và model được ghi theo phiên bản trong
+`sbom/license-provenance.json`. Ngày 2026-09-16, URL `latest` và revision 1 của
+cả hai bundle có cùng kích thước và SHA-256. Trang model chính thức liên kết
+trực tiếp Pose bundle với BlazePose GHUM 3D card; Face bundle với BlazeFace,
+Face Mesh V2 và Blendshape V2 card. Các card này đều ghi Apache-2.0. Face Web
+compact chỉ bỏ blendshape tùy chọn; detector, mesh và metadata được kiểm tra
+giữ nguyên byte. Đây là hồ sơ provenance kỹ thuật, không phải ý kiến pháp lý.

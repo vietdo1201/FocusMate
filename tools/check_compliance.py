@@ -119,10 +119,7 @@ expected_firmware = {
 missing_firmware = sorted(expected_firmware - current_packages.keys())
 if len(locked_firmware) != 8 or missing_firmware:
     errors.append(f"Current SBOM does not match all 8 firmware lock entries: {missing_firmware}")
-expected_unresolved = {
-    "pkg:generic/mediapipe/pose-landmarker-lite-float16@1",
-    "pkg:generic/mediapipe/face-landmarker-float16@1",
-}
+expected_unresolved: set[str] = set()
 actual_unresolved = {
     purl
     for purl, package in current_packages.items()
@@ -133,6 +130,14 @@ if actual_unresolved != expected_unresolved:
         "Current SBOM NOASSERTION set changed; audit each exact artifact: "
         f"expected {sorted(expected_unresolved)}, found {sorted(actual_unresolved)}"
     )
+expected_model_licenses = {
+    "pkg:generic/mediapipe/pose-landmarker-lite-float16@1": "Apache-2.0",
+    "pkg:generic/mediapipe/face-landmarker-float16@1": "Apache-2.0",
+}
+for purl, expected_license in expected_model_licenses.items():
+    model_package = current_packages.get(purl)
+    if model_package is None or model_package.get("licenseDeclared") != expected_license:
+        errors.append(f"Missing verified model license in current SBOM: {purl}")
 if "tests/FocusMate_Test/Evidence/ export-ignore" not in (ROOT / ".gitattributes").read_text(encoding="utf-8"):
     errors.append("Binary test evidence is not excluded from source archives")
 battery = ROOT / "reports" / "assets" / "2026-08-25-galaxy-watch5-pro-battery-usage.png"

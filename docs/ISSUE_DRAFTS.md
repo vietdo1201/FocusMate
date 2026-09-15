@@ -30,4 +30,4 @@ Không coi các mục dưới đây là issue đã đăng. Khi được phép t�
 
 - Actual: release workflow khóa cứng 2.2.2, loader MediaPipe bị append mã, model compact thiếu manifest thành viên.
 - Expected: version manifest chung, loader byte-exact, transform manifest, source `.tar.gz`, license/notices/SBOM/checksum.
-- Blocker: nguồn license artifact-specific của model Pose/Face đúng hash chưa được lưu.
+- Kết quả: model revision 1 đã được nối từ SHA-256 tới bảng bundle chính thức và model card Apache-2.0; Face compact giữ nguyên byte các thành viên được giữ lại.
