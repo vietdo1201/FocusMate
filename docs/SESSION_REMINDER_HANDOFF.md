@@ -32,6 +32,10 @@ Ngày: 2026-09-16. Đây là index triển khai; đặc tả và evidence canoni
 
 Từ `wear/`: `gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleRelease`. Hai model generated hiện đã được bootstrap và task `verifyWearModels` qua. Không coi host build là device verification.
 
-Kết quả gần nhất: Android có 148 unit/Robolectric test, 0 failure; lint, debug/release APK đều xanh. Python có 33 test, Node có 19 test. Source archive candidate 349 mục đã clean-build ngoài repository với ESP-IDF 5.5.5, firmware 2.3.0 và `dl_fft 0.6.0`. Candidate đạt `code-ready`; người dùng xác nhận đã cập nhật/kiểm thử thiết bị, nhưng chưa có report byte-exact cho artifact CI 2.3.0 với đầy đủ soak/Doze và delivery timing nên trạng thái `device-verified` vẫn để riêng.
-
-Không commit/push/flash từ handoff này nếu người dùng chưa yêu cầu.
+Hồ sơ hiện tại ghi nhận: Android 152/152 unit/Robolectric test, protocol 26/26,
+audit recovery độc lập 2/2, lint 0 lỗi, debug/release APK qua; Python 33/33 và
+Node 19/19. Release tối ưu giữ đủ member JNI MediaPipe trong DEX. Source archive
+candidate 349 mục đã clean-build ngoài repository với ESP-IDF 5.5.5 và
+`dl_fft 0.6.0`. `v2.3.0` đã phát hành tại `d7c072e`, Watch code 26. Xem
+[STATUS.md](STATUS.md) và [hồ sơ đồng bộ](V2.3.0_SYNC_PLAN.md); các cải tiến cũ
+được đối chiếu theo từng nhóm để giữ nguyên session UI và hợp đồng ADR 0008.

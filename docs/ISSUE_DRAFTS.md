@@ -1,6 +1,12 @@
-# Draft issue cho ứng viên 2.3.0
+# Draft issue — hồ sơ công việc v2.3.0
 
-Không coi các mục dưới đây là issue đã đăng. Khi được phép tạo issue, mỗi mục cần link commit/test thực tế rồi mới đóng.
+Các mục dưới đây là hồ sơ Actual/Expected, không phải issue đã đăng. Khi mở issue,
+mỗi mục liên kết commit và test thực tế trước khi đóng.
+
+`v2.3.0` đã phát hành tại `d7c072e`. Các mục Actual/Expected dưới đây ghi lại
+bối cảnh trước triển khai; kết quả host tests nằm trong
+[handoff](SESSION_REMINDER_HANDOFF.md). Checklist tiếp theo xem
+[kế hoạch đồng bộ/kiểm chứng](V2.3.0_SYNC_PLAN.md).
 
 ## Checkpoint làm mới deadline nghỉ
 
@@ -24,7 +30,7 @@ Không coi các mục dưới đây là issue đã đăng. Khi được phép t�
 
 - Actual: schema v1 không có deadline/slot/unknown interval/check-in break link.
 - Expected: migration cộng dồn, không phá hủy; dữ liệu phụ bị xóa theo session, recovery record tối đa 30 ngày.
-- Regression cần bổ sung trước release: mở fixture v1, migrate hai lần, failure injection và erase dataset lớn.
+- Checklist regression: mở fixture v1, migrate hai lần, failure injection và erase dataset lớn; đối chiếu các test repository hiện có trước khi bổ sung.
 
 ## Packaging và provenance
 

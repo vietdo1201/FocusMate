@@ -5,8 +5,10 @@ package vn.edu.uit.tpkd.wear.cogload
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +20,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -85,6 +88,14 @@ class MainActivity : Activity() {
     private var taskIndex = 0
     private var focusScore = 3
     private var fatigueScore = 5
+    private var sensorServiceReceiverRegistered = false
+    private val sensorServiceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != SessionSensorService.ACTION_START_FAILED || !isResumed) return
+            val active = repository.activeSession()?.takeIf { isCurrentlyStudying(it) } ?: return
+            startMotionFallback(active)
+        }
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -128,6 +139,15 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         isResumed = true
+        if (!sensorServiceReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                sensorServiceReceiver,
+                IntentFilter(SessionSensorService.ACTION_START_FAILED),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            sensorServiceReceiverRegistered = true
+        }
         BreakAlertChannels.ensureStandard(this)
         BreakAlertChannels.ensurePriorityIfAllowed(this)
         renderAll()
@@ -153,6 +173,10 @@ class MainActivity : Activity() {
     override fun onPause() {
         isResumed = false
         uiHandler.removeCallbacks(ticker)
+        if (sensorServiceReceiverRegistered) {
+            unregisterReceiver(sensorServiceReceiver)
+            sensorServiceReceiverRegistered = false
+        }
         super.onPause()
     }
 
@@ -904,25 +928,30 @@ class MainActivity : Activity() {
 
     private fun updateSensorCollection() {
         val active = repository.activeSession()
-        accCollector?.stop()
-        isCollecting = false
-        val servicePermissionGranted =
-            hasHeartRatePermission() ||
-                checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED ||
-                hasBluetoothPermissions()
         val studyingActive = active?.takeIf { isCurrentlyStudying(it) }
-        if (studyingActive != null && servicePermissionGranted) {
-            SessionSensorService.start(this)
-        } else if (studyingActive != null && isResumed) {
-            isCollecting = accCollector?.start(
-                studyingActive.startTimeMs,
-                studyingActive.focusBlockId,
-                AndroidSessionClock(this).now().bootId,
-                studyingActive.sessionId,
-            ) == true
-        } else {
+        if (studyingActive == null) {
+            accCollector?.stop()
+            isCollecting = false
             SessionSensorService.stop(this)
+            return
         }
+
+        if (SessionSensorService.start(this)) {
+            accCollector?.stop()
+            isCollecting = false
+        } else if (isResumed && !isCollecting) {
+            startMotionFallback(studyingActive)
+        }
+    }
+
+    private fun startMotionFallback(active: ActiveStudySession) {
+        accCollector?.stop()
+        isCollecting = accCollector?.start(
+            active.startTimeMs,
+            active.focusBlockId,
+            AndroidSessionClock(this).now().bootId,
+            active.sessionId,
+        ) == true
     }
 
     private fun stopSensorCollection() {
@@ -955,15 +984,6 @@ class MainActivity : Activity() {
             ) add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_SESSION_PERMISSIONS)
-    }
-
-    private fun hasHeartRatePermission(): Boolean {
-        val permission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
-            HEART_RATE_PERMISSION
-        } else {
-            Manifest.permission.BODY_SENSORS
-        }
-        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun syncStudyDnd(sessionActive: Boolean) {
@@ -1057,10 +1077,6 @@ class MainActivity : Activity() {
     private fun isCurrentlyStudying(active: ActiveStudySession?): Boolean =
         active != null && !StudySessionClock.isOnBreak(active, System.currentTimeMillis()) &&
             !StudySessionClock.isPaused(active)
-
-    private fun hasBluetoothPermissions(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-        (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)

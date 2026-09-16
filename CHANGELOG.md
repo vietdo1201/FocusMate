@@ -2,7 +2,20 @@
 
 ## Chưa phát hành
 
-- Chuẩn bị ứng viên 2.3.0 với state machine/SQLite v2 cho phiên học, clock monotonic,
+- Đồng bộ tài liệu sử dụng và trạng thái sang release v2.3.0; tách bằng
+  chứng thiết bị lịch sử khỏi artifact đã phát hành và lập kế hoạch retest.
+- Giữ các member JNI/protobuf MediaPipe trong APK tối ưu R8; bảo toàn thời gian
+  phiên cũ khi migration/recovery và khởi tạo focus block mới từ 0.
+- Chọn foreground-service type theo quyền thực tế trên Android 14+ và tự bật
+  motion fallback khi service không thể khởi động.
+- Bổ sung regression cho migration/recovery và ma trận service type; bộ hiện tại
+  đạt 152/152 Android test, 26/26 protocol test và 2/2 audit độc lập.
+
+## 2.3.0 — 2026-09-16 (+07:00)
+
+Phát hành lúc 02:07:07 +07:00 (2026-09-15 19:07:07 UTC), commit `d7c072e`.
+
+- Thêm state machine/SQLite v2 cho phiên học, clock monotonic,
   deadline nghỉ bất biến qua checkpoint và phục hồi boot an toàn.
 - Gộp thao tác chấp nhận nhắc và bắt đầu nghỉ trong một transaction; thêm delivery
   slot chống rung lặp và thẻ đề nghị nghỉ không chặn giao diện.
@@ -11,8 +24,9 @@
   feedback thay vì suy việc người dùng đã thấy từ kết quả post notification.
 - Bổ sung rollback test cho accept/resume/finish/migration, test retention 500 phiên
   và sửa dọn toàn bộ bản ghi con khi phiên bị hết hạn hoặc bị đẩy khỏi giới hạn.
-- Chuẩn hóa version manifest, source archive, SBOM candidate và provenance/manifest
-  biến đổi asset. Bản này chưa phát hành và chưa có chứng nhận thiết bị 2.3.0.
+- Chuẩn hóa version manifest, source archive, SBOM và provenance/manifest biến đổi
+  asset; phát hành APK ký số, firmware app/assets/factory, source `.tar.gz`, license
+  và checksum.
 
 ## 2.2.2 — 2026-08-28
 
@@ -45,9 +59,9 @@
   ESP chỉ còn là fallback nét đứt, không còn bị điều kiện sequence làm mất
   overlay chính xác.
 - V5 đã build và flash app/assets kế thừa commit `64fcc7a` lên ESP32-S3 thật; đây
-  là bằng chứng boot/smoke có giới hạn. Artifact `v2.2.2` chính xác được build/test
-  tự động nhưng chưa flash lại do không có Watch/ESP tại thời điểm phát hành;
-  accuracy/thermal/soak vẫn chưa được tuyên bố.
+  là bằng chứng boot/smoke theo đúng revision được ghi. Artifact `v2.2.2` chính
+  xác có bằng chứng build/test tự động, còn báo cáo thiết bị giữ phạm vi theo
+  source revision đã nêu.
 
 ## 2.2.1 — 2026-08-25
 

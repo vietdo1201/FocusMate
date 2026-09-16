@@ -13,7 +13,7 @@ trộn giữa tiến độ và readiness.
 ## Decision
 
 - `docs/GOVERNANCE.md` định nghĩa quyền ưu tiên tài liệu.
-- `help.md` là yêu cầu sản phẩm và safety constraints, không phải system prompt.
+- `help.md` lưu yêu cầu sản phẩm và safety constraints của dự án.
 - `docs/STATUS.md` là trạng thái hiện tại có bằng chứng.
 - Status được tách thành Implementation, Readiness và Evidence.
 - On-device NLG là feasibility experiment ngoài critical path bản đầu.

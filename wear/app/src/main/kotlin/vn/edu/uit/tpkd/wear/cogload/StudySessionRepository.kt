@@ -60,6 +60,25 @@ class StudySessionRepository(
             runCatching { ActiveStudySession.fromJson(org.json.JSONObject(raw)) }
                 .map { legacy ->
                     val at = sessionClock.now()
+                    val knownDurations = legacy.timeline?.let {
+                        SessionTimelineReducer.durations(it, at)
+                    } ?: run {
+                        val wallDerivedStudyMs = StudySessionClock.studyDurationMs(legacy, at.wallMs)
+                        val anchoredStudyMs = legacy.lastBreakStudyDurationMs
+                            .takeIf { legacy.breakCount > 0 && it > 0L }
+                            ?: wallDerivedStudyMs
+                        val knownBreakMs = legacy.accumulatedBreakMs.coerceAtLeast(0L)
+                        val knownPauseMs = legacy.accumulatedPauseMs.coerceAtLeast(0L)
+                        val elapsedWallMs = (at.wallMs - legacy.startTimeMs).coerceAtLeast(0L)
+                        SessionDurations(
+                            studyMs = anchoredStudyMs,
+                            breakMs = knownBreakMs,
+                            pauseMs = knownPauseMs,
+                            unknownMs = (
+                                elapsedWallMs - anchoredStudyMs - knownBreakMs - knownPauseMs
+                            ).coerceAtLeast(0L),
+                        )
+                    }
                     legacy.copy(
                         timeline = SessionTimelineSnapshot(
                             sessionId = legacy.sessionId,
@@ -67,6 +86,10 @@ class StudySessionRepository(
                             state = SessionState.RECOVERY_REQUIRED,
                             blockId = legacy.focusBlockId,
                             enteredAt = at,
+                            accumulatedStudyMs = knownDurations.studyMs,
+                            accumulatedBreakMs = knownDurations.breakMs,
+                            accumulatedPauseMs = knownDurations.pauseMs,
+                            unknownDurationMs = knownDurations.unknownMs,
                         )
                     )
                 }
@@ -255,11 +278,20 @@ class StudySessionRepository(
         val updated = active.copy(
             timeline = resumedTimeline,
             focusBlockId = resumedTimeline.blockId,
+            lastBreakStudyDurationMs = resumedTimeline.accumulatedStudyMs,
             breakStartedAtMs = null,
             breakEndsAtMs = null,
             breakAwaitingDecisionAtMs = null,
             pausedAtMs = null,
             pendingReminder = null,
+            continuousImmobileMs = 0L,
+            motionBlockValidDurationMs = 0L,
+            lastMotionWindowStartElapsedMs = null,
+            lastMotionWindowEndElapsedMs = null,
+            lastMotionBootId = null,
+            lastMotionBlockId = null,
+            lastMotionSequence = null,
+            lastMotionGeneration = null,
         )
         val applied = database.applyCommand(
             commandId, "$commandId:event", sessionId, updated.focusBlockId,

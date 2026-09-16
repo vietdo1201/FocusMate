@@ -36,5 +36,6 @@ Watch thu 20 bbox ổn định để lấy median calibration. Chuỗi synthetic
 
 Ví dụ rule: tại 45:00, fatigue 6 tạo một break suggestion với `RULE_V1_DURATION_FATIGUE`. Nếu đang trong cooldown, reason vẫn được ghi và decision thêm `SUPPRESSED_COOLDOWN` nhưng không prompt.
 
-Yawn advisory: ba chu kỳ ngáp hợp lệ trong cửa sổ 10 phút tạo một rung ngắn và
-banner nếu màn hình Watch đang bật. Sự kiện được ghi vào báo cáo nhưng không tạo break suggestion.
+Yawn advisory ở `v2.3.0`: số ngáp và cửa sổ 10 phút được dùng cho hiển thị/báo cáo
+yên lặng. Lời nhắc nghỉ thuộc `watch_rules_v2`; HR, tư thế, ngáp và check-in
+shadow được xử lý riêng theo [ADR 0008](decisions/0008-session-health-reminder-lifecycle.md).

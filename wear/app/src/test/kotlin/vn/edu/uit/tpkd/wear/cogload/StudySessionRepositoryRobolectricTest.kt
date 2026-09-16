@@ -79,6 +79,96 @@ class StudySessionRepositoryRobolectricTest {
     }
 
     @Test
+    fun activeMigrationPreservesKnownStudyTimeWhenRecoveryIsRequired() {
+        val now = 45 * 60_000L
+        val clock = MutableSessionClock(TimePoint(now, now, "boot-after-upgrade"))
+        context.getSharedPreferences(BULK_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(
+                "active_session",
+                ActiveStudySession(
+                    sessionId = "legacy-active",
+                    startTimeMs = 0L,
+                    taskType = "Đọc tài liệu",
+                    focusScore = 3,
+                    fatigueScore = 5,
+                ).toJson().toString(),
+            )
+            .commit()
+
+        val repository = StudySessionRepository(context, clock)
+        val migrated = requireNotNull(repository.activeSession())
+
+        assertEquals(SessionState.RECOVERY_REQUIRED, migrated.timeline?.state)
+        assertEquals(now, migrated.timeline?.accumulatedStudyMs)
+        assertEquals(now, repository.studyDurationMs(migrated, now))
+        assertEquals(45, repository.finishActiveSession(now, "finish-migrated", clock.now())?.durationMinutes)
+    }
+
+    @Test
+    fun activeMigrationUsesLastBreakAnchorAndMarksLaterIntervalUnknown() {
+        val now = 60 * 60_000L
+        val knownAtLastBreak = 45 * 60_000L
+        val clock = MutableSessionClock(TimePoint(now, 70 * 60_000L, "boot-after-upgrade"))
+        context.getSharedPreferences(BULK_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(
+                "active_session",
+                ActiveStudySession(
+                    sessionId = "legacy-after-break",
+                    startTimeMs = 0L,
+                    taskType = "Đọc tài liệu",
+                    focusScore = 3,
+                    fatigueScore = 5,
+                    breakCount = 1,
+                    lastBreakStudyDurationMs = knownAtLastBreak,
+                ).toJson().toString(),
+            )
+            .commit()
+
+        val migrated = requireNotNull(StudySessionRepository(context, clock).activeSession())
+
+        assertEquals(knownAtLastBreak, migrated.timeline?.accumulatedStudyMs)
+        assertEquals(15 * 60_000L, migrated.timeline?.unknownDurationMs)
+    }
+
+    @Test
+    fun recoveredSessionStartsANewZeroLengthFocusBlock() {
+        val accumulatedStudy = 55 * 60_000L
+        val clock = MutableSessionClock(TimePoint(100_000L, 5_000L, "boot-new"))
+        val repository = StudySessionRepository(context, clock)
+        repository.saveActiveSession(
+            ActiveStudySession(
+                sessionId = "recovered-block",
+                startTimeMs = 0L,
+                taskType = "Bài tập",
+                focusScore = 3,
+                fatigueScore = 5,
+                focusBlockId = "block-2",
+                lastBreakStudyDurationMs = 45 * 60_000L,
+                continuousImmobileMs = 120_000L,
+                motionBlockValidDurationMs = 300_000L,
+                timeline = SessionTimelineSnapshot(
+                    sessionId = "recovered-block",
+                    revision = 4L,
+                    state = SessionState.RECOVERY_REQUIRED,
+                    blockId = "block-2",
+                    enteredAt = TimePoint(90_000L, 4_000L, "boot-old"),
+                    accumulatedStudyMs = accumulatedStudy,
+                ),
+            )
+        )
+
+        val resumed = requireNotNull(
+            repository.resumeRecoveredSession("recovered-block", "resume-recovered", clock.now())
+        )
+
+        assertEquals("block-3", resumed.focusBlockId)
+        assertEquals(accumulatedStudy, resumed.lastBreakStudyDurationMs)
+        assertEquals(0L, repository.focusBlockDurationMs(resumed, clock.current.wallMs))
+        assertEquals(0L, resumed.continuousImmobileMs)
+        assertEquals(0L, resumed.motionBlockValidDurationMs)
+    }
+
+    @Test
     fun sqliteVersionOneMigratesAdditivelyToVersionTwo() {
         val path = context.getDatabasePath(FocusMateSessionDatabase.DATABASE_NAME)
         path.parentFile?.mkdirs()

@@ -6,11 +6,13 @@
 |---|---|
 | Governance/status | `docs/GOVERNANCE.md`, `docs/STATUS.md` |
 | Yêu cầu và an toàn | `help.md` |
+| Vòng đời phiên/reminder từ 2.3.0 | `docs/SESSION_HEALTH_ROADMAP.md`, ADR 0008; bao gồm check-in shadow và advisory ngáp yên lặng |
 | Quyết định kiến trúc | ADR trong `docs/decisions/` |
 | Wire format và GATT profile | `docs/GATT_PROFILE.md` — normative, chốt bởi ADR 0004 |
 | Local frame, FaceMeta và pose labels | `docs/LOCAL_FRAME_V1.md` — normative, chốt bởi ADR 0006 |
 | HTTP dashboard browser | `docs/WEB_DASHBOARD.md` — chốt bởi ADR 0005/0006 |
 | Phạm vi release | `wear/ROADMAP.md` |
+| Bản đã phát hành | `version.properties`, GitHub Release theo tag, `docs/RELEASE_NOTES_v2.3.0.md` |
 | Definition of Done | `wear/IMPLEMENTATION_PLAN.md` |
 | Hành vi triển khai | Source code + automated tests |
 | Sơ đồ chân | `data/So_do_chan.md` — pinout hiện đã `VERIFIED_DEVICE`; mọi đổi dây/board phải tạo evidence mới |

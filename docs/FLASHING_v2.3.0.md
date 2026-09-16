@@ -1,6 +1,9 @@
-# Flash FocusMate v2.3.0 (candidate)
+# Flash FocusMate v2.3.0
 
-Chỉ dùng các lệnh này sau khi kiểm tra đúng board ESP32-S3 N16R8, đúng cổng serial và SHA-256 trong bộ artifact. Bản candidate chưa được flash/xác nhận thiết bị tại thời điểm viết.
+Tải từ [release v2.3.0](https://github.com/vietdo1201/FocusMate/releases/tag/v2.3.0).
+Chỉ dùng các lệnh này sau khi kiểm tra đúng board ESP32-S3 N16R8, đúng cổng serial,
+partition table và SHA-256 trong `SHA256SUMS.txt`. Hồ sơ phát hành và phạm vi
+kiểm chứng được tổng hợp tại [STATUS.md](STATUS.md).
 
 ## Cập nhật giữ NVS
 

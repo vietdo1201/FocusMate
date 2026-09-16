@@ -1,5 +1,9 @@
 # Build từ mã nguồn
 
+Baseline phát hành: [v2.3.0](https://github.com/vietdo1201/FocusMate/releases/tag/v2.3.0),
+commit `d7c072e`; phiên bản chung nằm trong `version.properties` (Watch code 26).
+Để đối chiếu với release, dùng đúng tag và checksum của artifact tương ứng.
+
 ## Yêu cầu
 
 - Python 3.11 trở lên, Node.js 20 trở lên và Git.
@@ -46,18 +50,18 @@ Chỉ flash sau khi người vận hành xác nhận đúng board.
 
 ## Cập nhật thiết bị mà không xóa NVS
 
-Release `v2.2.2` phát hành riêng app firmware và phân vùng Web assets. Sau khi
+Release `v2.3.0` phát hành riêng app firmware và phân vùng Web assets. Sau khi
 xác nhận đúng cổng serial và đúng board, có thể cập nhật hai phân vùng này:
 
 ```bash
 esptool.py --chip esp32s3 --port <PORT> write_flash \
-  0x10000 FocusMate-ESP32S3-v2.2.2-update-app.bin \
-  0x410000 FocusMate-ESP32S3-v2.2.2-update-assets.bin
+  0x10000 FocusMate-ESP32S3-v2.3.0-update-app.bin \
+  0x410000 FocusMate-ESP32S3-v2.3.0-update-assets.bin
 ```
 
 Lệnh này không ghi vào phân vùng NVS. File `factory-full` chỉ dành cho cài mới
 hoặc phục hồi toàn bộ và có thể thay thế NVS/Wi-Fi/baseline; không dùng nó cho
-cập nhật thông thường. Xem [FLASHING_v2.2.2.md](FLASHING_v2.2.2.md).
+cập nhật thông thường. Xem [FLASHING_v2.3.0.md](FLASHING_v2.3.0.md).
 
 ## Kiểm tra toàn bộ
 
@@ -71,7 +75,7 @@ clean build. Dependency Android được khóa bằng lockfile và verification 
 ESP component được khai báo trong `firmware/main/idf_component.yml` và khóa đúng
 version/hash trong `firmware/dependencies.lock`.
 
-Rà license runtime và tạo lại SBOM candidate:
+Rà license runtime và tạo lại SBOM của source hiện tại:
 
 ```bash
 python tools/audit_maven_licenses.py          # chỉ báo kết quả, không sửa file
@@ -85,6 +89,10 @@ Audit Maven chỉ chấp nhận license có ánh xạ rõ từ POM đúng packag
 parent POM được khai báo; license mơ hồ vẫn là `NOASSERTION`. Hai model revision
 1 hiện được nối từ SHA-256 tới bảng bundle chính thức và model card Apache-2.0;
 không kế thừa license của MediaPipe runtime.
+
+SBOM phát hành `focusmate-v2.3.0.spdx.json` nằm trong GitHub Release; không ghi đè
+artifact lịch sử bằng kết quả sinh từ working tree mới. `sbom/focusmate-current.spdx.json`
+là inventory của source hiện tại.
 
 Để chứng minh build không phụ thuộc `.git`, đường dẫn máy tác giả hoặc cache nằm
 trong repo, giải nén source `.tar.gz` sang một thư mục mới bên ngoài checkout và

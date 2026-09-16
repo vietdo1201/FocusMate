@@ -2,6 +2,11 @@
 
 FocusMate completed the recorded system test suite on 28–29 August 2026.
 
+This is a historical evidence set. Version 2.3.0 uses silent yawn advisories
+under [ADR 0008](../../docs/decisions/0008-session-health-reminder-lifecycle.md);
+the original vibration recordings retain their recorded-version context.
+Version-specific follow-up is tracked in the [verification plan](../../docs/V2.3.0_SYNC_PLAN.md).
+
 Test classification: `RECORDED_FUNCTIONAL_TEST`. This record covers the listed
 functional scenarios only; it does not promote posture/yawn accuracy, thermal,
 low-light or two-hour soak readiness to `VERIFIED_DEVICE`.

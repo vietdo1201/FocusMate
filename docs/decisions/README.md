@@ -1,3 +1,7 @@
 # Decision records
 
+Phiên bản 2.3.0 áp dụng [ADR 0008](0008-session-health-reminder-lifecycle.md)
+cho vòng đời phiên và lời nhắc. ADR này thay thế riêng phần rung ngáp của
+[ADR 0007](0007-local-yawn-advisory.md); nội dung quyết định cũ được giữ làm lịch sử.
+
 ADR là append-only. Xem `0001-document-authority-and-status.md`, `0002-watch-rule-engine-and-detector-split.md`, `0003-optional-frame-transport-to-watch.md`, `0004-gatt-profile-and-canonical-framing.md`, `0005-local-realtime-shadow-dashboard.md` và `0006-local-frame-and-pose-posture.md`. ADR 0003 chỉ thay đổi ràng buộc truyền frame; Rule Engine deterministic của ADR 0002 vẫn giữ nguyên. ADR 0004 chốt canonical wire format và GATT profile; spec normative nằm ở `../GATT_PROFILE.md`. ADR 0005 cho phép dashboard frame local; ADR 0006 khóa sidecar Watch, FaceMeta và pose posture, thay mệnh đề bbox-only của ADR 0002 cùng giới hạn bbox/shadow-only của ADR 0005 cho pose path nhưng vẫn giữ Rule Engine độc lập. Contract normative nằm ở `../LOCAL_FRAME_V1.md`; HTTP browser nằm ở `../WEB_DASHBOARD.md`.

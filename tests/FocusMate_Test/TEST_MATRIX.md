@@ -5,6 +5,12 @@
 > Thiết bị: ESP32-S3 N16R8 + OV2640 + Galaxy Watch 5 Pro + Web Dashboard
 > Ngày thực hiện: 28–29/08/2026
 
+Đây là hồ sơ kiểm thử lịch sử, giữ nguyên expected/actual và evidence của lần
+chạy đó. Với `v2.3.0`, advisory ngáp chuyển sang yên lặng theo
+[ADR 0008](../../docs/decisions/0008-session-health-reminder-lifecycle.md).
+Các video rung ngáp trong TC17 được đọc theo hành vi tại thời điểm ghi hình;
+kiểm thử 2.3.0 được ghi riêng theo [kế hoạch](../../docs/V2.3.0_SYNC_PLAN.md).
+
 Kết quả dưới đây xác minh các kịch bản chức năng đã được tài liệu hóa. Đây không
 phải tuyên bố tổng quát về độ chính xác AI, y tế, nhiệt độ hoặc độ tin cậy dài
 hạn.

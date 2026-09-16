@@ -2,11 +2,50 @@
 // SPDX-License-Identifier: Apache-2.0
 package vn.edu.uit.tpkd.wear.cogload
 
+import android.content.pm.ServiceInfo
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionSensorServiceLifecycleTest {
+    @Test
+    fun foregroundServiceUsesOnlyTypesBackedByGrantedCapabilities() {
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
+            sessionSensorForegroundServiceTypes(
+                hasHeartRate = false,
+                hasActivityRecognition = true,
+                hasBluetooth = false,
+            ),
+        )
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            sessionSensorForegroundServiceTypes(
+                hasHeartRate = false,
+                hasActivityRecognition = false,
+                hasBluetooth = true,
+            ),
+        )
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            sessionSensorForegroundServiceTypes(
+                hasHeartRate = true,
+                hasActivityRecognition = false,
+                hasBluetooth = true,
+            ),
+        )
+        assertEquals(
+            0,
+            sessionSensorForegroundServiceTypes(
+                hasHeartRate = false,
+                hasActivityRecognition = false,
+                hasBluetooth = false,
+            ),
+        )
+    }
+
     @Test
     fun releasesDndOnlyWhenSessionIsAbsentOrOnBreak() {
         val active = ActiveStudySession(

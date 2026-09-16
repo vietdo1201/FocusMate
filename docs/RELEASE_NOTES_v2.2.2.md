@@ -26,11 +26,10 @@ cài mới hoặc phục hồi.
 
 ### Giới hạn bằng chứng
 
-Tag `v2.2.2` được build/test bằng CI và local gate. Không có Watch/ESP tại thời
-điểm phát hành nên byte-exact APK/firmware của release chưa được cài/flash lại.
-Device smoke trước đó chỉ là bằng chứng cho source tổ tiên. Accuracy ngáp/cười/
-nói, posture đủ tám state, low-light, thermal và soak dài vẫn là experimental;
-đây không phải tính năng chẩn đoán y tế.
+Tag `v2.2.2` được build/test bằng CI và local gate. Device smoke được gắn với
+đúng source revision trong report. Accuracy ngáp/cười/nói, posture đủ tám state,
+low-light, thermal và soak dài giữ nhãn experimental; đây không phải tính năng
+chẩn đoán y tế.
 
 ## English
 
@@ -42,7 +41,6 @@ advisories and never replace the deterministic break-rule authority.
 
 The release includes a signed Wear APK, separate app/assets update images, a
 factory image, signature evidence, checksums, flashing instructions, notices,
-and an SPDX 2.3 SBOM. Exact v2.2.2 artifacts were built and tested but could not
-be installed or flashed at release time because the Watch and ESP32-S3 were not
-available. Real-user accuracy, low-light, thermal, and long soak claims remain
-explicitly out of scope.
+and an SPDX 2.3 SBOM. Exact v2.2.2 artifacts were built and tested; device smoke
+reports retain their source-revision scope. Real-user accuracy, low-light,
+thermal, and long-soak metrics remain separate experimental evidence targets.

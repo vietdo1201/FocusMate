@@ -1,6 +1,8 @@
 # FocusMate — roadmap phiên học và sức khỏe
 
-Ngày cập nhật: 2026-09-16. Baseline: `0de490ee25a829e5033749d943539138ef9a4b10`.
+Ngày cập nhật: 2026-09-16. Baseline trước triển khai: `0de490ee25a829e5033749d943539138ef9a4b10`.
+Source đã phát hành: `v2.3.0`, commit `d7c072e`. Các kết quả dưới đây được gắn
+với đúng tag, current main hoặc report lịch sử theo [STATUS.md](STATUS.md).
 
 ## Mục tiêu
 
@@ -31,14 +33,14 @@ Registry có cấu trúc, ngày truy cập và mapping requirement nằm trong `
 
 ## Trạng thái lát cắt
 
-| Lát | Trạng thái | Còn lại |
+| Lát | Trạng thái | Kế hoạch evidence |
 |---|---|---|
 | A — đặc tả/evidence/ADR | Đã có code registry + ADR 0008 + tài liệu này | rà soát nội dung bởi chuyên môn trước pilot |
 | B — regression | Đã có timer callback trễ, pause, motion identity, retry, shadow, callback cũ hơn checkpoint và chuỗi transition seed cố định | process-kill thật vẫn cần device/instrumentation |
 | C — store/clock/controller | SQLite/migration/contracts/reducer đã có; command pause/resume/break/recovery/finish/cancel dùng identity và idempotency; checkpoint 30 giây chạy trong service; host failure-injection phủ accept/resume/finish/migration | xác minh process death/force-stop thật trên Watch |
 | D — delivery | alarm dùng elapsed realtime trong cùng boot; retry budget, late grace, delivery slot cho cả hai loại reminder, immediate motion check và silent yawn đã có | đo Doze/permission thực tế trên Watch |
 | E — check-in/report/shadow | check-in tự nguyện, chuyển nhiệm vụ, before/after/end; after-break chỉ hiện lựa chọn không tự bật dialog; ghép fatigue theo break, shadow comparison và lịch sử từng delivery/feedback đã có | rà UX màn hình tròn và report phiên thật nhiều break |
-| F — device/pilot | Chưa chạy | Watch-only trước, Watch+ESP sau; 10 người lớn × 6 phiên nếu được đồng thuận |
+| F — device/pilot | Lộ trình pilot | Watch-only trước, Watch+ESP sau; 10 người lớn × 6 phiên nếu được đồng thuận |
 
 ## Acceptance và trạng thái hiện tại
 
@@ -57,7 +59,8 @@ Registry có cấu trúc, ngày truy cập và mapping requirement nằm trong `
 | REPORT-01 | report tách study/break/pause/unknown, lưu từng reminder cùng scheduled/receiver/post/result/response/feedback và ghép fatigue cùng break trong ±5 phút | xác minh UI thật với nhiều block/break |
 | PRIVACY-01 | test 500 phiên chứng minh xóa child rows bị đẩy khỏi giới hạn; test expiry xóa child + recovery payload; xóa toàn bộ có test riêng | xác minh erase/retention trên thiết bị |
 
-Test host không thay thế kiểm tra Watch màn hình tắt/Doze/battery saver/reboot/quyền/phiên 2 giờ.
+Host tests và device reports được công bố thành hai lớp evidence riêng, cùng
+commit/hash và điều kiện chạy tương ứng.
 
 ## Câu chữ
 
@@ -67,9 +70,12 @@ Cho phép: “ít chuyển động cổ tay”, “chưa đủ dữ liệu”, �
 
 - `python tools/bootstrap_assets.py` đã khôi phục và kiểm tra hai model generated.
 - Python: 33 test qua; Node: 19 test qua; firmware ESP-IDF clean build qua.
-- Android lần cuối: 148 unit/Robolectric test, 0 failure; lint, debug APK và release APK đều build thành công.
+- Android lần cuối: 152/152 unit/Robolectric test và 26/26 protocol test; audit
+  recovery độc lập 2/2; lint 0 lỗi, debug APK và release APK đều build thành công.
+- Release tối ưu R8 giữ đủ member JNI/protobuf MediaPipe cần cho graph/model startup.
 - Firmware artifact đã build: `firmware/build/focusmate_esp.bin`, 3.158.688 byte.
 - Source archive candidate 349 mục đã được giải nén ngoài repository và chạy lại toàn bộ các cổng trên; firmware dùng đúng lock `dl_fft 0.6.0` và còn 25% app partition.
 - SBOM candidate có 86 package; REUSE đạt 303/303 tệp và compliance/secret-pattern check đạt. Hai model revision 1 đã được nối từ SHA-256 tới bảng bundle chính thức và model card Apache-2.0 theo thành phần.
-- Trạng thái hiện tại: `code-ready`; chưa `device-verified` và chưa `release-ready`.
-- Chưa flash, chưa chạy Watch device/Doze/battery-saver test và chưa pilot trong lần triển khai này.
+- Trạng thái hiện tại: `code-ready`, đã [phát hành v2.3.0](https://github.com/vietdo1201/FocusMate/releases/tag/v2.3.0).
+  Nhãn `device-verified` được quản lý theo từng component/report; tiêu chí
+  `RELEASE_ELIGIBLE` đối chiếu riêng với checklist của Ban tổ chức.

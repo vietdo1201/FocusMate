@@ -10,6 +10,7 @@ trên dữ liệu người dùng và không gửi frame lên cloud.
 | Pose Landmarker Lite | Watch/Web | 33 landmarks | Posture advisory |
 | Face Landmarker | Watch/Web | mouth landmarks; `jawOpen` chỉ có ở Watch | Yawn advisory |
 | Rule Engine v2 | Watch | break decision/reason | Nguồn quyết định nghỉ duy nhất |
+| Check-in shadow v1 | Watch | kết quả so sánh policy | Check-in tự nguyện, chỉ ghi so sánh |
 | Session Advice v1 | Watch | tối đa ba action code + evidence | Lời khuyên cuối phiên, không phát reminder |
 
 Model/runtime được khóa bằng phiên bản và SHA-256 trong
@@ -25,7 +26,9 @@ gate và thêm blendshape `jawOpen`. Cả hai chỉ đếm sau ít nhất 1,6 gi
 
 Posture và yawn là tín hiệu hỗ trợ, có thể sai khi thiếu sáng, bị che mặt hoặc
 góc camera không phù hợp. Chúng không chẩn đoán sức khỏe, không sửa fatigue score
-và không thay đổi `watch_rules_v2`.
+và không thay đổi `watch_rules_v2`. Trong `v2.3.0`, HR và check-in shadow cũng
+tách khỏi thời điểm nhắc nghỉ; posture/ngáp hiển thị yên lặng theo
+[ADR 0008](decisions/0008-session-health-reminder-lifecycle.md).
 
 `session_advice_v1` chạy deterministic và local khi đóng phiên. Engine ưu tiên
 reason code v1/v2, sau đó mới dùng posture/ngáp và nhịp tim. Nhịp tim chỉ được

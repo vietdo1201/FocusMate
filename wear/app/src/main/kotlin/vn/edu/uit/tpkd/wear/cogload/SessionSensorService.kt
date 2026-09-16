@@ -3,6 +3,7 @@
 package vn.edu.uit.tpkd.wear.cogload
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -229,11 +231,26 @@ class SessionSensorService : Service() {
             return START_NOT_STICKY
         }
         StudyDndController.enable(this)
+        val serviceTypes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            foregroundServiceTypes(this)
+        } else {
+            0
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && serviceTypes == 0) {
+            ReminderDiagnostics.recordEvent(this, "sensor_service_permission_missing", "no_eligible_fgs_type")
+            notifyStartFailed()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         try {
-            startForeground(NOTIFICATION_ID, notification())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification(), serviceTypes)
+            } else {
+                startForeground(NOTIFICATION_ID, notification())
+            }
         } catch (error: Exception) {
             ReminderDiagnostics.recordEvent(this, "sensor_service_foreground_failed", error.javaClass.simpleName)
-            StudyDndController.disable(this)
+            notifyStartFailed()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -337,6 +354,10 @@ class SessionSensorService : Service() {
         )
     }
 
+    private fun notifyStartFailed() {
+        sendBroadcast(Intent(ACTION_START_FAILED).setPackage(packageName))
+    }
+
     companion object {
         private const val CHECKPOINT_INTERVAL_MS = 30_000L
         private const val ANDROID_16_API = 36
@@ -346,18 +367,60 @@ class SessionSensorService : Service() {
         private const val HEART_RATE_INTERVAL_MS = 5 * 60_000L
         private const val HEART_RATE_DURATION_MS = 60_000L
         private const val HEART_RATE_TICK_MS = 5_000L
+        internal const val ACTION_START_FAILED =
+            "vn.edu.uit.tpkd.wear.cogload.action.SENSOR_SERVICE_START_FAILED"
 
-        fun start(context: Context) {
-            runCatching { context.startForegroundService(Intent(context, SessionSensorService::class.java)) }
-                .onFailure { ReminderDiagnostics.recordEvent(context, "sensor_service_start_failed", it.javaClass.simpleName) }
+        fun start(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                foregroundServiceTypes(context) == 0
+            ) {
+                ReminderDiagnostics.recordEvent(context, "sensor_service_permission_missing", "no_eligible_fgs_type")
+                return false
+            }
+            return runCatching {
+                context.startForegroundService(Intent(context, SessionSensorService::class.java))
+            }.onFailure {
+                ReminderDiagnostics.recordEvent(context, "sensor_service_start_failed", it.javaClass.simpleName)
+            }.isSuccess
         }
 
         fun stop(context: Context) {
             context.stopService(Intent(context, SessionSensorService::class.java))
         }
+
+        internal fun foregroundServiceTypes(context: Context): Int {
+            val heartRatePermission = if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+                HEART_RATE_PERMISSION
+            } else {
+                Manifest.permission.BODY_SENSORS
+            }
+            val hasHeartRate = context.checkSelfPermission(heartRatePermission) == PackageManager.PERMISSION_GRANTED
+            val hasActivityRecognition =
+                context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+            val hasBluetooth = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                (context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
+            return sessionSensorForegroundServiceTypes(hasHeartRate, hasActivityRecognition, hasBluetooth)
+        }
     }
 
     private data class CollectionIdentity(val sessionId: String, val blockId: String, val generation: Long)
+}
+
+@SuppressLint("InlinedApi")
+internal fun sessionSensorForegroundServiceTypes(
+    hasHeartRate: Boolean,
+    hasActivityRecognition: Boolean,
+    hasBluetooth: Boolean,
+): Int {
+    var types = 0
+    if (hasHeartRate || hasActivityRecognition) {
+        types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+    }
+    if (hasBluetooth) {
+        types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+    }
+    return types
 }
 
 internal fun shouldReleaseStudyDnd(active: ActiveStudySession?, nowMs: Long): Boolean =

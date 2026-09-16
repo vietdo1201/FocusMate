@@ -51,6 +51,10 @@ phải thiết bị y tế và không dùng để chẩn đoán sức khỏe.
 
 ## Hình ảnh và demo
 
+Ảnh/video dưới đây ghi lại bộ kiểm thử ngày 28–29/08/2026. `v2.3.0` tiếp tục
+phát triển trải nghiệm với advisory ngáp yên lặng, nghỉ chủ động và check-in
+tự nguyện theo [ADR 0008](docs/decisions/0008-session-health-reminder-lifecycle.md).
+
 ### Dashboard camera và trạng thái tư thế
 
 <a href="tests/FocusMate_Test/Evidence/TC05_camera_web.png">
@@ -87,10 +91,11 @@ kết thúc và báo cáo trên Watch, không phải bản demo toàn hệ thố
 
 | Tính năng | Giá trị mang lại |
 |---|---|
-| Quản lý phiên học | Bắt đầu, theo dõi và kết thúc phiên ngay trên Watch, kể cả khi kết nối local tạm thời gián đoạn. |
+| Quản lý phiên học | Bắt đầu, tạm dừng, tiếp tục, nghỉ chủ động và kết thúc trên Watch; SQLite và clock monotonic lưu riêng thời gian học/nghỉ/tạm dừng/chưa xác định. |
+| Check-in tự nguyện | Người dùng tự ghi nhận; shadow policy chỉ so sánh, không phát lời nhắc. |
 | Tư vấn tư thế | Pose Landmarker và detector local giúp nhận biết các trạng thái tư thế cần người dùng tự kiểm tra lại. |
 | Nhận biết ngáp | Face Landmarker theo dõi tín hiệu ngáp theo thời gian mà không gửi frame ra cloud. |
-| Nhắc nghỉ | Rule Engine v2 deterministic quản lý thời điểm, lý do và cooldown của lời nhắc nghỉ. |
+| Nhắc nghỉ | Rule Engine v2 deterministic quản lý thời điểm, lý do và cooldown; mỗi đề nghị có một lượt ban đầu và tối đa một retry. |
 | Báo cáo cuối phiên | Session Advice tổng hợp tối đa ba hành động cùng bằng chứng từ dữ liệu của phiên. |
 | Dashboard cục bộ | Trình duyệt hiển thị camera, trạng thái và số liệu vận hành trực tiếp từ ESP32-S3. |
 | Hoạt động offline | Model và runtime được khóa phiên bản, kiểm tra SHA-256 và đóng gói khi build để inference không tải CDN lúc chạy. |
@@ -113,12 +118,14 @@ OV2640 → ESP32-S3 ──→ Web dashboard local → posture/yawn advisory
              ├─ BLE GATT mã hóa: bbox, trạng thái và capability
              └─ HTTP local có token: frame tạm thời → Galaxy Watch inference
 
-Watch motion/HR + trạng thái phiên ──→ Rule Engine v2 ──→ nhắc nghỉ
-Watch posture/yawn advisory ────────────────────────────→ UI và báo cáo
+Watch motion + thời gian phiên + mức mệt tự nhập ban đầu → Rule Engine v2 → nhắc nghỉ
+Watch HR/posture/yawn advisory ────────────────────────────────────────→ UI và báo cáo
+Check-in tự nguyện ──→ shadow policy (chỉ ghi so sánh, không nhắc nghỉ)
 ```
 
-Hai đường cuối được tách riêng có chủ ý: posture/yawn không trực tiếp kích hoạt
-hoặc thay đổi quyết định nhắc nghỉ của `watch_rules_v2`. Frame local chỉ tồn tại
+Các đường cuối được tách riêng có chủ ý: HR, posture, yawn và check-in shadow
+không kích hoạt hoặc thay đổi quyết định nhắc nghỉ của `watch_rules_v2`.
+Xem [vòng đời phiên v2.3.0](docs/SESSION_HEALTH_ROADMAP.md). Frame local chỉ tồn tại
 tạm thời trong RAM; BLE được bond/mã hóa, còn HTTP local dùng token theo từng
 lần boot và không được mô tả như TLS.
 
@@ -126,10 +133,14 @@ lần boot và không được mô tả như TLS.
 
 ### Bản dựng sẵn
 
-1. Tải artifact và checksum từ [FocusMate v2.2.2](https://github.com/vietdo1201/FocusMate/releases/tag/v2.2.2)
+1. Tải artifact và checksum từ [FocusMate v2.3.0](https://github.com/vietdo1201/FocusMate/releases/tag/v2.3.0)
    hoặc trang [latest release](https://github.com/vietdo1201/FocusMate/releases/latest).
 2. Cài APK lên Watch theo [hướng dẫn phát hành và ADB](RELEASE.md).
-3. Chọn đúng image và board theo [hướng dẫn flash ESP32-S3](docs/FLASHING_v2.2.2.md).
+3. Chọn đúng image và board theo [hướng dẫn flash ESP32-S3](docs/FLASHING_v2.3.0.md).
+
+`v2.3.0` đã phát hành tại commit `d7c072e`, Watch `versionCode 26` và firmware
+`2.3.0`, cùng CI build/phát hành thành công. Xem
+[release notes](docs/RELEASE_NOTES_v2.3.0.md) và [hồ sơ kiểm chứng](docs/STATUS.md).
 
 Để cập nhật thông thường, dùng riêng image `update-app` và `update-assets`; hai
 phân vùng này không ghi NVS. Image `factory-full` chỉ dành cho cài mới hoặc phục
@@ -179,22 +190,23 @@ học, báo cáo, reconnect và một phiên 61 phút đã ghi nhận.
 - [Bảng Excel: expected, actual, severity và ngày test](tests/FocusMate_Test/Excel/FocusMate_24_Test_Cases_Severity.xlsx)
 - [Trạng thái implementation và evidence gate](docs/STATUS.md)
 
-CI chứng minh các bước test, lint và build tự động; nó không thay thế kiểm thử
-thiết bị thật. Kết quả 24/24 chỉ xác minh các kịch bản đã ghi, không phải tuyên
-bố accuracy AI 100%, độ ổn định thermal/soak dài hạn hoặc hiệu quả học tập và
-sức khỏe. Byte-exact artifact `v2.2.2` chưa được cài/flash lại tại thời điểm phát
-hành; các bài posture đủ tám state, low-light, yawn/speech false-positive và
-long-run vẫn còn giới hạn được công bố trong [STATUS.md](docs/STATUS.md).
+CI ghi nhận các bước test, lint và build tự động. Kết quả 24/24 xác minh các
+kịch bản đã ghi; accuracy AI, thermal/soak dài hạn và hiệu quả học tập/sức khỏe
+được quản lý bằng metric và evidence riêng. Hồ sơ ngày 28–29/08/2026, CI
+`v2.3.0` và current main được trình bày theo phiên bản trong
+[STATUS.md](docs/STATUS.md). Quy trình kiểm chứng nằm trong
+[hồ sơ đồng bộ](docs/V2.3.0_SYNC_PLAN.md).
 
 ## Tài liệu
 
 | Nhu cầu | Tài liệu |
 |---|---|
-| Build và cài đặt | [Build từ nguồn](docs/BUILDING.md) · [Cài Watch/signing](RELEASE.md) · [Flash v2.2.2](docs/FLASHING_v2.2.2.md) |
+| Build và cài đặt | [Build từ nguồn](docs/BUILDING.md) · [Cài Watch/signing](RELEASE.md) · [Flash v2.3.0](docs/FLASHING_v2.3.0.md) |
 | AI, dữ liệu và giới hạn | [AI.md](docs/AI.md) · [STATUS.md](docs/STATUS.md) |
 | Kiến trúc và protocol | [GATT profile](docs/GATT_PROFILE.md) · [Local Frame V1](docs/LOCAL_FRAME_V1.md) · [Web dashboard](docs/WEB_DASHBOARD.md) · [ADR](docs/decisions/) |
 | Kiểm thử và trạng thái | [Test matrix](tests/FocusMate_Test/TEST_MATRIX.md) · [Tổng quan test](tests/README.md) · [Device reports](reports/) |
-| Release và thay đổi | [Release notes v2.2.2](docs/RELEASE_NOTES_v2.2.2.md) · [Changelog](CHANGELOG.md) |
+| Release và thay đổi | [Release notes v2.3.0](docs/RELEASE_NOTES_v2.3.0.md) · [Changelog](CHANGELOG.md) |
+| Kiểm chứng và lộ trình | [Trạng thái](docs/STATUS.md) · [Hồ sơ đồng bộ/kiểm chứng](docs/V2.3.0_SYNC_PLAN.md) |
 | Đóng góp và bảo mật | [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Issues](https://github.com/vietdo1201/FocusMate/issues) |
 | License và dependency | [Third-party notices](THIRD_PARTY_NOTICES.md) · [Licensing policy](docs/LICENSING.md) · [SBOM hiện tại](sbom/focusmate-current.spdx.json) |
 
